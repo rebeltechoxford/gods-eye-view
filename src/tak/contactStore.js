@@ -23,7 +23,7 @@ export function createCotStore({ limit = 1000, now = Date.now } = {}) {
           continue;
         }
         const prior = records.get(contact.uid);
-        if (prior?.eventTimeMs !== null &&
+        if (prior && prior.eventTimeMs !== null &&
             contact.eventTimeMs !== null &&
             contact.eventTimeMs < prior.eventTimeMs) {
           ignored++;
