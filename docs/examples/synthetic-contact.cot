@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TRAINING DATA ONLY. NOT AN OPERATIONAL POSITION. -->
+<event version="2.0"
+  uid="SYNTHETIC-TAK-OXFORD-1"
+  type="a-f-G-U-C"
+  how="h-g-i-g-o"
+  time="2026-10-13T19:00:00Z"
+  start="2026-10-13T19:00:00Z"
+  stale="2026-10-14T19:00:00Z">
+  <point lat="34.3665" lon="-89.5192" hae="125" ce="9999999" le="9999999"/>
+  <detail>
+    <contact callsign="SYNTHETIC DEMO - NOT REAL"/>
+  </detail>
+</event>
