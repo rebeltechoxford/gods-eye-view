@@ -74,7 +74,8 @@ CoT alone is not equivalent to complete ATAK or WinTAK feature parity.
 Run npm ci, npm test, npm run format:check, npm run check:boundaries and
 npm run build using the Node versions declared by the upstream project.
 Unit coverage is in src/tak/cot.test.mjs. Without a connected TAK Server, test
-CoT import and local markers with synthetic non-sensitive events.
+CoT import with docs/examples/synthetic-contact.cot and add a local marker using
+the TAK panel. The synthetic contact is not an operational location.
 
 This branch is intentionally additive. Merge only after the repository CI,
 browser smoke tests, and an operator acceptance review pass.
