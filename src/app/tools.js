@@ -1,3 +1,4 @@
+import { initTakWebClient } from '../tak/index.js';
 import { SceneDirector } from '../scenes/director.js';
 import { initAnnotations } from '../annotations/index.js';
 import { initDrawTool } from '../annotations/drawTool.js';
@@ -160,6 +161,9 @@ export function createApplicationTools({
   defer(() => {
     if (window.__godsEyeView === debug) delete window.__godsEyeView;
   });
+  // Additive web-native TAK preview; independent of existing GEV layers.
+  const takClient = initTakWebClient({ viewer });
+  defer(() => takClient.destroy());
   const voiceCommands = initGevVoiceCommands({
     ...voice,
     floorServices: operations.surface.groundFloor,
@@ -188,5 +192,5 @@ export function createApplicationTools({
       signal,
     }),
   );
-  return { sceneDirector, annotations, voiceCommands };
+  return { sceneDirector, annotations, voiceCommands, takClient };
 }
