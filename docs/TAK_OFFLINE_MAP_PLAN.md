@@ -112,19 +112,22 @@ access uses the existing HTTPS operator session, while dev/lab requires its
 existing guarded loopback token. No arbitrary URL downloader was added.
 
 `scripts/qa-offline-maps.mjs` passed **8/8 scenarios** on 2026-10-16 at
-20:38:23 UTC, using Chrome 152.0.7977.75 on Windows x64 at 390 × 844. The
+21:00:54 UTC, using Chrome 152.0.7977.75 on Windows x64 at 390 × 844. The
 local HTTPS listener used generated fixture certificates trusted only by the
 test browser's leaf SPKI. All map acquisition in this gate used synthetic image
 bytes; it made **zero external bulk downloads**. Its evidence is saved locally
 under `qa-artifacts/offline-maps/results.json` and three screenshots.
 
 1. Native HTTPS login and the Saved Maps UI retained 21 verified tiles on both
-   server and device. The explicitly saved app contained 433 cache entries and
-   43,848,951 bytes, including 110 Cesium worker files.
+   server and device. The explicitly saved app contained 452 cache entries and
+   44,207,116 bytes, including 110 Cesium worker files and 19 independently
+   hash-verified font/CSS/license/provenance files.
 2. Actual Cesium imagery decoded 256-pixel images with 2,730 sampled colors and
    produced 20 textured globe tiles, preserving all 30 GEV layer registrations.
    Requested terrain geometry sampled zero height; source, pack and flat
    ellipsoid credits were present.
+   All six area/zoom inputs measured 165 × 44 pixels, inside their labels and
+   the panel at the 390-pixel viewport.
 3. A real browser export produced a 256,728-byte `.gevmap`; device deletion and
    file-input restoration retained 21 tiles with independently checked hashes.
 4. Cancellation retained eight tiles. Resuming and using the visible row's
@@ -139,6 +142,8 @@ under `qa-artifacts/offline-maps/results.json` and three screenshots.
    remained true. A stale `map=osm` share hash did not override the selected
    saved pack. Actual globe input panned the local map with 20 textured tiles
    and no online map/terrain requests; tactical contacts/chat were not restored.
+   The saved Material Symbols face loaded and rendered the `public` ligature
+   as a single 24-pixel glyph, with no external Google font requests.
 7. Restarting the server on the same port retained its pack. Explicit UI
    deletion left zero server packs, device packs/tiles and saved app caches.
 8. Advancing the server's injected clock caused a real service-worker manifest
@@ -158,16 +163,44 @@ removes the staging generation and preserves the previous saved app. Once
 pointer commit starts, cancellation is refused; delete and save cannot mutate
 the app cache concurrently. The final worker test file passed 11/11 tests.
 
-A subsequent phone CSS correction gives all six area/zoom inputs their own
-bounded row width. The browser gate now asserts, at 390 pixels, that each field
-fits its label and panel, is at least 100 pixels wide, and has a 44-pixel touch
-height. These added layout assertions require the next rebuilt browser run;
-they were added after the eight-scenario evidence above. External Google font
-and icon-glyph durability was not established by the hermetic fixture, which
-stubs public requests. Physical iOS/Android installation, storage persistence,
-eviction/restart behavior and disconnected field use remain unverified.
+The final run includes the phone numeric-field CSS correction and self-hosted
+existing fonts. Fourteen unchanged font binaries total 309,408 bytes; source
+hashes and retained OFL/Apache notices are in `public/fonts/provenance.json`.
+The gate verifies every cached font, stylesheet, license and provenance file
+against those hashes. Its image fixtures establish local rendering and input
+behavior, not real geographic alignment: the disconnected screenshot at
+0°/0° and 50 km altitude shows a nearly uniform pale area from the repeated
+synthetic imagery/view. Actual known-landmark coverage/alignment and readable
+map detail still require real-device/source acceptance.
+
+This verification caught and repaired a production-host omission: the build
+and worker included fonts, while the authenticated static host initially
+refused the `/fonts` directory. The host now allows that build directory;
+its 10-test real-TLS suite verifies font/CSS/license MIME and bytes after
+login, existing static redirects to login before authorization, API HTTP 401,
+and refusal of an unapproved private directory. A separate closed-store
+regression verifies that an old server-store reference cannot cancel/delete
+a replacement writer's retained pack or lock after shutdown.
+
+Physical iOS/Android installation, storage persistence, eviction/restart
+behavior and disconnected field use remain unverified.
 
 ## File imports and elevation
+
+### Supported-runtime regression record
+
+The combined offline/foundation source at `49aaf7de` passed the complete local
+Node 24.19.0 suite with Git 2.53: 6,554 ordinary tests, 6,544 passes, ten existing
+skips and no failures, followed by all 14 isolated allocation tests. The later
+closed-store mutation guard passed its replacement-writer regression; the
+font-directory host correction passed all ten real local HTTPS tests. The final
+eight-scenario browser run above includes both corrections.
+
+Formatting checked 1,397 source files; import/package boundaries and all 29
+published layer tokens passed. Production and portable panel builds passed
+(10.73 and 11.30 seconds), with existing chunk-size warnings retained.
+`npm audit --omit=dev` reported zero production vulnerabilities. Complete final
+CI evidence is linked from [PR #5](https://github.com/rebeltechoxford/gods-eye-view/pull/5).
 
 Raster MBTiles and raster PMTiles are appropriate portable inputs. MBTiles is
 SQLite and uses TMS tile rows: convert to XYZ with `y = 2^z - 1 - tile_row`.

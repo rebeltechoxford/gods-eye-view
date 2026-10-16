@@ -103,6 +103,7 @@ const ASSET_DIRECTORIES = new Set([
   'assets',
   'cesium',
   'events',
+  'fonts',
   'models',
   'panel',
   'pwa',
