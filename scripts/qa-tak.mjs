@@ -484,51 +484,162 @@ try {
           position,
         });
         gev.viewer.trackedEntity = target;
+        const viewer = gev.viewer;
+        const ownDescriptor = Object.getOwnPropertyDescriptor(viewer, 'flyTo');
+        const original = viewer.flyTo;
+        const probe = {
+          calls: 0,
+          settled: false,
+          result: null,
+          error: null,
+          stableFrames: 0,
+          samples: [],
+        };
+        window.__qaTakFocusProbe = probe;
+        const observedFlyTo = function (entity, options) {
+          const result = original.call(this, entity, options);
+          if (entity?.id === 'tak:QA-IMPORT') {
+            probe.calls++;
+            probe.requestedRange = options?.offset?.range;
+            // Viewer.flyTo queues a post-render bounding-sphere lookup before
+            // starting Camera's flight. Only its public Promise covers both.
+            Promise.resolve(result).then(
+              (completed) => {
+                probe.result = completed;
+                probe.settled = true;
+              },
+              (error) => {
+                probe.error = String(error?.message || error);
+                probe.settled = true;
+              },
+            );
+          }
+          return result;
+        };
+        viewer.flyTo = observedFlyTo;
+        window.__qaRestoreTakFocus = () => {
+          if (viewer.flyTo !== observedFlyTo) return;
+          if (ownDescriptor)
+            Object.defineProperty(viewer, 'flyTo', ownDescriptor);
+          else delete viewer.flyTo;
+        };
       });
-      await fill(page, '[data-tak-filter]', 'SYNTHETIC IMPORT');
-      await page.waitForFunction(
-        () => document.querySelectorAll('.tak-web-contact').length === 1,
-      );
-      const point = await page.$eval('.tak-web-contact', (el) => {
-        window.__qaContactButton = el;
-        el.scrollIntoView({ block: 'center' });
-        const r = el.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      });
-      await page.mouse.move(point.x, point.y);
-      await page.mouse.down();
-      await page.evaluate(
-        async (xml) => {
-          window.__godsEyeView.takClient.client.importXml(xml);
-          await new Promise(requestAnimationFrame);
-        },
-        cot({ uid: 'QA-IMPORT', callsign: 'SYNTHETIC IMPORT', lat: 34.36651 }),
-      );
-      assert.equal(
+      try {
+        await fill(page, '[data-tak-filter]', 'SYNTHETIC IMPORT');
+        await page.waitForFunction(
+          () => document.querySelectorAll('.tak-web-contact').length === 1,
+        );
+        const point = await page.$eval('.tak-web-contact', (el) => {
+          window.__qaContactButton = el;
+          el.scrollIntoView({ block: 'center' });
+          const r = el.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        });
+        await page.mouse.move(point.x, point.y);
+        await page.mouse.down();
         await page.evaluate(
-          () =>
-            window.__qaContactButton ===
-            document.querySelector(
-              '[data-tak-uid="QA-IMPORT"] .tak-web-contact',
-            ),
-        ),
-        true,
-        'contact update keeps the pointer-down button attached',
-      );
-      await page.mouse.up();
-      await page.waitForFunction(
-        () => !window.__godsEyeView.viewer.trackedEntity,
-      );
-      await page.waitForFunction(
-        () => !window.__godsEyeView.viewer.camera._currentFlight,
-      );
-      const height = await page.evaluate(
-        () => window.__godsEyeView.viewer.camera.positionCartographic.height,
-      );
-      assert(
-        height >= 500 && height < 10000,
-        `TAK focus keeps a useful above-ground view (${height} m)`,
-      );
+          async (xml) => {
+            window.__godsEyeView.takClient.client.importXml(xml);
+            await new Promise(requestAnimationFrame);
+          },
+          cot({
+            uid: 'QA-IMPORT',
+            callsign: 'SYNTHETIC IMPORT',
+            lat: 34.36651,
+          }),
+        );
+        assert.equal(
+          await page.evaluate(
+            () =>
+              window.__qaContactButton ===
+              document.querySelector(
+                '[data-tak-uid="QA-IMPORT"] .tak-web-contact',
+              ),
+          ),
+          true,
+          'contact update keeps the pointer-down button attached',
+        );
+        await page.mouse.up();
+        await page.waitForFunction(
+          () => !window.__godsEyeView.viewer.trackedEntity,
+        );
+        await page.waitForFunction(() => window.__qaTakFocusProbe.settled);
+        const completion = await page.evaluate(() => {
+          const { calls, result, error, requestedRange } =
+            window.__qaTakFocusProbe;
+          return { calls, result, error, requestedRange };
+        });
+        assert.equal(completion.calls, 1, JSON.stringify(completion));
+        assert.equal(completion.result, true, JSON.stringify(completion));
+        await page.waitForFunction(
+          () => {
+            const viewer = window.__godsEyeView.viewer;
+            const camera = viewer.camera;
+            const probe = window.__qaTakFocusProbe;
+            const sample = {
+              position: [
+                camera.positionWC.x,
+                camera.positionWC.y,
+                camera.positionWC.z,
+              ],
+              direction: [
+                camera.directionWC.x,
+                camera.directionWC.y,
+                camera.directionWC.z,
+              ],
+              height: camera.positionCartographic.height,
+              tracked: viewer.trackedEntity?.id ?? null,
+              activeCameraFlight: !!camera._currentFlight,
+            };
+            const previous = probe.samples.at(-1);
+            const stable =
+              previous &&
+              !sample.tracked &&
+              sample.position.every(
+                (value, i) => Math.abs(value - previous.position[i]) < 0.01,
+              ) &&
+              sample.direction.every(
+                (value, i) => Math.abs(value - previous.direction[i]) < 1e-8,
+              );
+            probe.stableFrames = stable ? probe.stableFrames + 1 : 0;
+            probe.samples.push(sample);
+            if (probe.samples.length > 8) probe.samples.shift();
+            return probe.stableFrames >= 3;
+          },
+          { polling: 'raf', timeout },
+        );
+        const height = await page.evaluate(
+          () => window.__godsEyeView.viewer.camera.positionCartographic.height,
+        );
+        assert(
+          height >= 500 && height < 10000,
+          `TAK focus keeps a useful above-ground view (${height} m)`,
+        );
+      } finally {
+        const diagnostic = await page
+          .evaluate(() => {
+            const viewer = window.__godsEyeView.viewer;
+            return {
+              ...window.__qaTakFocusProbe,
+              finalHeight: viewer.camera.positionCartographic.height,
+              tracked: viewer.trackedEntity?.id ?? null,
+              selected: viewer.selectedEntity?.id ?? null,
+              pendingViewerTarget: !!viewer.cesiumWidget._zoomTarget,
+              activeCameraFlight: !!viewer.camera._currentFlight,
+            };
+          })
+          .catch((error) => ({ error: String(error?.message || error) }));
+        await page
+          .evaluate(() => {
+            window.__qaRestoreTakFocus?.();
+            delete window.__qaRestoreTakFocus;
+          })
+          .catch(() => {});
+        await fs.writeFile(
+          path.join(artifactDir, 'focus.json'),
+          JSON.stringify(diagnostic, null, 2),
+        );
+      }
       await fill(page, '[data-tak-filter]', '');
       await page.evaluate(() =>
         window.__godsEyeView.viewer.entities.removeById('qa-public-follow'),

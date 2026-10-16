@@ -33,6 +33,7 @@ const requests = [],
   results = [];
 let failId = null;
 let phoneMetrics = null;
+let phoneOpenEvidence = null;
 const browser = await puppeteer.launch({
   headless: !args.includes('--headful'),
   executablePath:
@@ -194,6 +195,168 @@ async function capture(name) {
     { timeout: 30000 },
   );
   await page.screenshot({ path: path.join(dir, `${name}.png`) });
+}
+async function openPhoneReferenceTray() {
+  // Enable real touch dispatch without setViewport(hasTouch), which reloads
+  // the page and discards the contact/controller state under preservation test.
+  const touchClient = await page.createCDPSession();
+  try {
+    await touchClient.send('Emulation.setTouchEmulationEnabled', {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+  } finally {
+    await touchClient.detach();
+  }
+  await page.waitForFunction(() => innerWidth === 390 && innerHeight === 844, {
+    timeout: 5000,
+    polling: 50,
+  });
+  await page.evaluate(async () => {
+    const button = document.getElementById('control-panel-toggle');
+    if (!button) throw new Error('Phone map disclosure is missing');
+    const deadline = performance.now() + 5000;
+    let previous = null;
+    let stable = 0;
+    for (;;) {
+      const rect = button.getBoundingClientRect();
+      const current = [rect.x, rect.y, rect.width, rect.height];
+      const animations = new Set();
+      for (let node = button; node; node = node.parentElement)
+        for (const animation of node.getAnimations())
+          if (
+            (animation.pending || animation.playState === 'running') &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime)
+          )
+            animations.add(animation);
+      stable =
+        !animations.size &&
+        previous &&
+        current.every((value, i) => Math.abs(value - previous[i]) <= 0.25)
+          ? stable + 1
+          : 0;
+      if (stable >= 3) return;
+      previous = current;
+      const remaining = deadline - performance.now();
+      if (remaining <= 0)
+        throw new Error('Phone map disclosure did not settle after resize');
+      let timer;
+      try {
+        await Promise.race([
+          animations.size
+            ? Promise.all(
+                [...animations].map((animation) =>
+                  animation.finished.catch(() => {}),
+                ),
+              )
+            : new Promise((resolve) => requestAnimationFrame(resolve)),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error('Phone map disclosure did not settle after resize'),
+                ),
+              remaining,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  });
+  const point = await page.evaluate(() => {
+    window.__qaPhoneMapInput = [];
+    for (const type of ['pointerdown', 'pointerup', 'click'])
+      document.addEventListener(
+        type,
+        (event) => {
+          const trace = window.__qaPhoneMapInput;
+          trace.push({
+            type,
+            target: event.target?.id || event.target?.tagName,
+            x: event.clientX,
+            y: event.clientY,
+            pointerType: event.pointerType || null,
+            expanded: document
+              .getElementById('control-panel-toggle')
+              ?.getAttribute('aria-expanded'),
+            collapsed: document
+              .getElementById('control-panel')
+              ?.classList.contains('collapsed'),
+          });
+          if (trace.length > 30) trace.shift();
+        },
+        { capture: true },
+      );
+    const button = document.getElementById('control-panel-toggle');
+    const rect = button.getBoundingClientRect();
+    const x = rect.x + rect.width / 2,
+      y = rect.y + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      x,
+      y,
+      width: rect.width,
+      height: rect.height,
+      hit: hit?.id || hit?.tagName,
+      reachable:
+        x >= 0 &&
+        y >= 0 &&
+        x < innerWidth &&
+        y < innerHeight &&
+        !button.disabled &&
+        !!hit &&
+        (hit === button || button.contains(hit)),
+    };
+  });
+  phoneOpenEvidence = { point };
+  assert(
+    point.reachable,
+    `Phone map disclosure must have a reachable hit target: ${JSON.stringify(point)}`,
+  );
+  // A desktop mouse move can intentionally hover-open this tray before the
+  // press arrives, turning a requested open into a close. Phones have no hover.
+  const state = await page.evaluate(() => ({
+    expanded: document
+      .getElementById('control-panel-toggle')
+      ?.getAttribute('aria-expanded'),
+    collapsed: document
+      .getElementById('control-panel')
+      ?.classList.contains('collapsed'),
+  }));
+  phoneOpenEvidence.before = state;
+  if (state.expanded !== 'true' || state.collapsed) {
+    phoneOpenEvidence.clicked = true;
+    await page.touchscreen.tap(point.x, point.y);
+  } else phoneOpenEvidence.clicked = false;
+  await page.waitForFunction(
+    () => {
+      const panel = document.getElementById('control-panel');
+      const button = document.getElementById('control-panel-toggle');
+      const select = document.getElementById('map-reference-select');
+      const rect = select?.getBoundingClientRect();
+      return (
+        button?.getAttribute('aria-expanded') === 'true' &&
+        panel &&
+        !panel.classList.contains('collapsed') &&
+        select &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        getComputedStyle(select).visibility === 'visible'
+      );
+    },
+    { timeout: 5000, polling: 50 },
+  );
+  phoneOpenEvidence.after = await page.evaluate(() => ({
+    expanded: document
+      .getElementById('control-panel-toggle')
+      ?.getAttribute('aria-expanded'),
+    collapsed: document
+      .getElementById('control-panel')
+      ?.classList.contains('collapsed'),
+    input: window.__qaPhoneMapInput,
+  }));
 }
 try {
   await fs.mkdir(dir, { recursive: true });
@@ -430,15 +593,7 @@ try {
     'reference selector remains usable on a phone with original quick controls',
     async () => {
       await page.setViewport({ width: 390, height: 844 });
-      if (
-        await page.$eval(
-          '#control-panel-toggle',
-          (node) => node.getAttribute('aria-expanded') === 'true',
-        )
-      )
-        await page.click('#control-panel-toggle');
-      await page.click('#control-panel-toggle');
-      await page.waitForSelector('#map-reference-select', { visible: true });
+      await openPhoneReferenceTray();
       await select('esri-topo');
       const measure = () =>
         page.$eval('#map-reference-select', (node) => ({
@@ -562,6 +717,7 @@ try {
         workerNetwork,
         fixtureScripts,
         phoneMetrics,
+        phoneOpenEvidence,
         console: monitor.console,
         failedRequests: monitor.failed,
       },
@@ -604,6 +760,7 @@ try {
         fixtureScripts,
         phoneMetrics,
         console: monitor.console,
+        phoneOpenEvidence,
         failedRequests: monitor.failed,
         documentState: await page
           .evaluate(() => {
@@ -646,6 +803,7 @@ try {
                 ?.outerHTML,
               select: document.getElementById('map-reference-select')
                 ?.outerHTML,
+              phoneInput: window.__qaPhoneMapInput,
             };
           })
           .catch(() => null),
