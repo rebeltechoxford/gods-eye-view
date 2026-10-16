@@ -29,6 +29,21 @@ before(() => {
   fixtures = createTakTlsFixtures();
   directory = mkdtempSync(path.join(tmpdir(), 'gev-tak-dist-'));
   mkdirSync(path.join(directory, 'assets'));
+  mkdirSync(path.join(directory, 'fonts/licenses'), { recursive: true });
+  mkdirSync(path.join(directory, 'private'));
+  writeFileSync(path.join(directory, 'fonts/synthetic.woff2'), 'wOF2SYNTHETIC');
+  writeFileSync(
+    path.join(directory, 'private/synthetic.woff2'),
+    'DO NOT SERVE',
+  );
+  writeFileSync(
+    path.join(directory, 'fonts/gev-fonts.css'),
+    '@font-face{font-family:Synthetic;src:url(./synthetic.woff2)}',
+  );
+  writeFileSync(
+    path.join(directory, 'fonts/licenses/synthetic.txt'),
+    'Synthetic license fixture.',
+  );
   writeFileSync(
     path.join(directory, 'index.html'),
     '<!doctype html><title>Synthetic private console</title>',
@@ -221,6 +236,42 @@ test('production browser policy preserves GEV CSP and guarded provider APIs/stat
   });
   assert.equal(range.status, 206);
   assert.equal(range.body, 'global');
+});
+
+test('private static font assets and notices remain behind login with their correct MIME types', async (t) => {
+  const instance = await app(t);
+  const files = [
+    ['/fonts/synthetic.woff2', 'font/woff2', 'wOF2SYNTHETIC'],
+    [
+      '/fonts/gev-fonts.css',
+      'text/css; charset=utf-8',
+      '@font-face{font-family:Synthetic;src:url(./synthetic.woff2)}',
+    ],
+    [
+      '/fonts/licenses/synthetic.txt',
+      'text/plain; charset=utf-8',
+      'Synthetic license fixture.',
+    ],
+  ];
+  for (const [url] of files) {
+    const denied = await request(instance, url);
+    assert.equal(denied.status, 303);
+    assert.equal(denied.headers.location, '/login');
+    assert.equal(denied.headers['cache-control'], 'no-store');
+  }
+  assert.equal((await request(instance, '/api/tak/status')).status, 401);
+  const cookie = await login(instance);
+  for (const [url, mime, body] of files) {
+    const served = await request(instance, url, { cookie });
+    assert.equal(served.status, 200);
+    assert.equal(served.headers['content-type'], mime);
+    assert.equal(served.headers['cache-control'], 'no-store');
+    assert.equal(served.body, body);
+  }
+  assert.equal(
+    (await request(instance, '/private/synthetic.woff2', { cookie })).status,
+    404,
+  );
 });
 
 test('HTTPS login rejects wrong token, origin/proxy/CORS/body overflow and never remotely bootstraps a token', async (t) => {

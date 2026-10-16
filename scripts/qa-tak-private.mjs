@@ -59,6 +59,7 @@ const results = [];
 const errors = [];
 const authRequests = [];
 const unloadSnapshots = [];
+const touchTrace = [];
 const pages = [];
 const interceptions = [];
 let nowMs = Date.now();
@@ -109,59 +110,132 @@ function request(
     req.end(body);
   });
 }
-async function touch(page, selector) {
-  await page.$eval(selector, (el) =>
-    el.scrollIntoView({ block: 'center', behavior: 'instant' }),
-  );
-  await page.evaluate(
-    () =>
-      new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve)),
-      ),
-  );
-  const point = await page.$eval(selector, (el) => {
-    const rect = el.getBoundingClientRect();
-    const x = rect.x + rect.width / 2;
-    const y = rect.y + rect.height / 2;
-    const hit = document.elementFromPoint(x, y);
-    return {
-      x,
-      y,
-      visible: !!hit && (hit === el || el.contains(hit)),
-      width: innerWidth,
-      height: innerHeight,
-    };
-  });
-  assert(
-    point.visible &&
-      point.x >= 0 &&
-      point.x <= point.width &&
-      point.y >= 0 &&
-      point.y <= point.height,
-    `Touch target is covered or outside the viewport: ${selector}`,
-  );
-  const marker = `QA tap delivered ${selector}`;
-  const clicked = new Promise((resolve, reject) => {
-    const listener = (message) => {
-      if (message.text() !== marker) return;
-      clearTimeout(timer);
-      page.off('console', listener);
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      page.off('console', listener);
-      reject(new Error(`Physical touch did not deliver a click: ${selector}`));
-    }, 3000);
-    page.on('console', listener);
-  });
-  await page.$eval(
-    selector,
-    (el, text) =>
-      el.addEventListener('click', () => console.debug(text), { once: true }),
-    marker,
-  );
-  await page.touchscreen.tap(point.x, point.y);
-  await clicked;
+async function touch(page, selector, { panelOpen } = {}) {
+  const trace = { selector, startedAt: Date.now() };
+  touchTrace.push(trace);
+  if (touchTrace.length > 128) touchTrace.shift();
+  let element, observer, listener, timer;
+  try {
+    if (panelOpen !== undefined) {
+      const alreadyOpen = await page.evaluate(
+        (open) =>
+          document.querySelector('#tak-web-panel')?.hidden === !open &&
+          document
+            .querySelector('.tak-web-launcher')
+            ?.getAttribute('aria-expanded') === String(open),
+        panelOpen,
+      );
+      if (alreadyOpen) {
+        trace.alreadyInRequestedState = true;
+        return;
+      }
+    }
+    element = await page.$(selector);
+    assert(element, `Missing physical touch target: ${selector}`);
+    await element.evaluate((el) =>
+      el.scrollIntoView({ block: 'center', behavior: 'instant' }),
+    );
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    const point = await element.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const x = rect.x + rect.width / 2;
+      const y = rect.y + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return {
+        x,
+        y,
+        visible: !!hit && (hit === el || el.contains(hit)) && !el.disabled,
+        hit: hit?.tagName + '.' + hit?.className,
+        width: innerWidth,
+        height: innerHeight,
+      };
+    });
+    trace.point = point;
+    assert(
+      point.visible &&
+        point.x >= 0 &&
+        point.x <= point.width &&
+        point.y >= 0 &&
+        point.y <= point.height,
+      `Touch target is covered, disabled or outside the viewport: ${selector}`,
+    );
+    if (panelOpen !== undefined) {
+      // The launcher is a toggle. Assert its requested DOM state after actual
+      // input, rather than relying on a console event during a slow CDP roundtrip.
+      await page.touchscreen.tap(point.x, point.y);
+      trace.dispatchedAt = Date.now();
+      const state = await page.waitForFunction(
+        (open) =>
+          document.querySelector('#tak-web-panel')?.hidden === !open &&
+          document
+            .querySelector('.tak-web-launcher')
+            ?.getAttribute('aria-expanded') === String(open),
+        { timeout: 10000, polling: 50 },
+        panelOpen,
+      );
+      await state.dispose();
+      trace.acknowledgedAt = Date.now();
+      return;
+    }
+    const marker = `QA tap delivered ${trace.startedAt} ${selector}`;
+    let rejectClick;
+    const clicked = new Promise((resolve, reject) => {
+      rejectClick = reject;
+      listener = (message) => {
+        if (message.text() !== marker) return;
+        trace.acknowledgedAt = Date.now();
+        resolve();
+      };
+      page.on('console', listener);
+    });
+    // Observe rejection before any awaited CDP command. Promise.all below still
+    // propagates it to the gate's catch/finally instead of crashing Node early.
+    void clicked.catch(() => {});
+    observer = await element.evaluateHandle((el, text) => {
+      const clicked = () => console.debug(text);
+      el.addEventListener('click', clicked, { once: true });
+      return { dispose: () => el.removeEventListener('click', clicked) };
+    }, marker);
+    trace.observerReadyAt = Date.now();
+    timer = setTimeout(
+      () =>
+        rejectClick(
+          new Error(`Physical touch did not deliver a click: ${selector}`),
+        ),
+      10000,
+    );
+    await Promise.all([
+      page.touchscreen.tap(point.x, point.y).then(() => {
+        trace.dispatchedAt = Date.now();
+      }),
+      clicked,
+    ]);
+  } catch (error) {
+    trace.error = scrub(error?.message || error);
+    trace.state = await page
+      .evaluate(() => ({
+        path: location.pathname,
+        panelHidden: document.querySelector('#tak-web-panel')?.hidden,
+        launcherExpanded: document
+          .querySelector('.tak-web-launcher')
+          ?.getAttribute('aria-expanded'),
+        visibility: document.visibilityState,
+      }))
+      .catch(() => null);
+    console.error(`Physical touch trace: ${JSON.stringify(trace)}`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (listener) page.off('console', listener);
+    await observer?.evaluate((value) => value.dispose()).catch(() => {});
+    await Promise.allSettled([observer?.dispose(), element?.dispose()]);
+    trace.finishedAt = Date.now();
+  }
 }
 async function openSection(page, name) {
   await page.$eval(`[data-tak-section="${name}"]`, (el) => {
@@ -205,7 +279,7 @@ async function boot(page) {
     async () => !!(await navigator.serviceWorker.getRegistration('/'))?.active,
     { timeout },
   );
-  await touch(page, '.tak-web-launcher');
+  await touch(page, '.tak-web-launcher', { panelOpen: true });
   await page.waitForSelector('#tak-web-panel:not([hidden])');
 }
 async function connect(page) {
@@ -1124,6 +1198,7 @@ try {
             (item) => item.cancellations,
           ),
           authRequests,
+          touchTrace,
           results,
           errors,
         },

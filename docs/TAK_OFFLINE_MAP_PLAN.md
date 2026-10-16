@@ -1,7 +1,11 @@
 # Retained offline maps and terrain
 
-Source audit: 2026-10-16. This is an implementation proposal, not an implemented
-offline feature. The requested behavior is to choose an area/detail level,
+Source audit: 2026-10-16. The first bounded USGS raster-pack implementation is
+on `feature/tak-offline-iphone`; eight production browser scenarios passed with
+synthetic tiles and a real closed-server outage on desktop Chromium at a phone
+viewport. This evidence is separate from focused tests and physical-phone
+acceptance. The broader chart/3D-terrain inputs below remain
+planned. Physical-phone acceptance has not been performed. The requested behavior is to choose an area/detail level,
 download it, and retain it locally until explicitly deleted. A phone must be
 able to reopen and render the saved area with all network access disabled.
 Keeping tiles only on the desktop server does not satisfy that requirement.
@@ -44,8 +48,11 @@ Primary sources:
   [Mapterhorn source attribution](https://mapterhorn.com/attribution/),
   [Re:Earth terrain formats, datums and operating model](https://terrain.reearth.land/).
 
-Only metadata/pages were inspected for this proposal. No export job or public
-bulk download was started. `exportTilesAllowed` describes server capability;
+The source audit inspected metadata/pages. A later bounded source check used
+the implemented server store to retain one real USGS tile over the public
+National Mall test area: zoom 10, 43,463 bytes, verified JPEG, at
+2026-10-16T20:24:05Z. No public bulk download or ArcGIS export job was started.
+`exportTilesAllowed` describes server capability;
 it is not itself a substitute for the source's license. ArcGIS export jobs
 produce TPK/TPKX/cache datasets, which require a supported import/conversion
 path rather than being called MBTiles.
@@ -67,7 +74,7 @@ path rather than being called MBTiles.
    existing map controller. Local reads must not construct an online ArcGIS
    provider or fetch metadata. Missing area/zoom tiles show a clear coverage
    state and neutral globe, without silently fetching a public fallback.
-4. Add an actual offline application shell. `public/gev-sw.js` currently
+4. Add an actual offline application shell. `public/gev-sw.js` at the foundation checkpoint
    deliberately stores nothing and serves a reconnect screen; changing only
    map storage would still leave a disconnected phone unable to open GEV.
    Cache versioned static code, styles, required local fonts, Cesium assets and
@@ -91,6 +98,139 @@ tile format/size, zoom limits, tile count, bytes, hashes, acquisition time,
 source/edition dates, attribution/license notices and ready/partial status.
 Elevation packs additionally require height units and vertical datum. Preserve
 the original source metadata alongside any normalized manifest.
+
+## Implemented bounds and verification
+
+The first slice accepts only the pinned USGS Topo XYZ source, PNG/JPEG tiles at
+256 pixels, and validated area/zoom parameters. It caps each pack at 5,000 tiles
+and 512 MiB, the aggregate store at 2 GiB, each tile at 2 MiB, and downloading at
+four concurrent requests. Server manifests and tile writes are durable; explicit
+resume reuses only verified retained bytes. Device copies use IndexedDB and
+check SHA-256, length and MIME. `.gevmap` backups support bounded export/import.
+The server cache is private and outside public assets/Git by default; production
+access uses the existing HTTPS operator session, while dev/lab requires its
+existing guarded loopback token. No arbitrary URL downloader was added.
+
+`scripts/qa-offline-maps.mjs` passed **8/8 scenarios** on 2026-10-16 at
+21:00:54 UTC, using Chrome 152.0.7977.75 on Windows x64 at 390 × 844. The
+local HTTPS listener used generated fixture certificates trusted only by the
+test browser's leaf SPKI. All map acquisition in this gate used synthetic image
+bytes; it made **zero external bulk downloads**. Its evidence is saved locally
+under `qa-artifacts/offline-maps/results.json` and three screenshots.
+
+1. Native HTTPS login and the Saved Maps UI retained 21 verified tiles on both
+   server and device. The explicitly saved app contained 452 cache entries and
+   44,207,116 bytes, including 110 Cesium worker files and 19 independently
+   hash-verified font/CSS/license/provenance files.
+2. Actual Cesium imagery decoded 256-pixel images with 2,730 sampled colors and
+   produced 20 textured globe tiles, preserving all 30 GEV layer registrations.
+   Requested terrain geometry sampled zero height; source, pack and flat
+   ellipsoid credits were present.
+   All six area/zoom inputs measured 165 × 44 pixels, inside their labels and
+   the panel at the 390-pixel viewport.
+3. A real browser export produced a 256,728-byte `.gevmap`; device deletion and
+   file-input restoration retained 21 tiles with independently checked hashes.
+4. Cancellation retained eight tiles. Resuming and using the visible row's
+   cancel control retained 12, then another resume completed the 85-tile pack.
+   Device copying and explicit deletion also passed. Observed download
+   concurrency never exceeded four.
+5. Synthetic contact/chat data and the runtime operator token were absent from
+   saved app responses and localStorage. API/login/logout responses and
+   credential cookies were excluded from app caches.
+6. The test closed the actual HTTPS listener, opened a fresh page, and received
+   the saved root document from the service worker while `navigator.onLine`
+   remained true. A stale `map=osm` share hash did not override the selected
+   saved pack. Actual globe input panned the local map with 20 textured tiles
+   and no online map/terrain requests; tactical contacts/chat were not restored.
+   The saved Material Symbols face loaded and rendered the `public` ligature
+   as a single 24-pixel glyph, with no external Google font requests.
+7. Restarting the server on the same port retained its pack. Explicit UI
+   deletion left zero server packs, device packs/tiles and saved app caches.
+8. Advancing the server's injected clock caused a real service-worker manifest
+   request to receive HTTP 401. Before redirecting to login, the departing app
+   cleared its synthetic contact/chat, USER fix, disclosure authorization and
+   private form inputs.
+
+The separate real-source check described above retained one USGS JPEG tile
+(43,463 bytes, zoom 10, public National Mall test area) at 20:24:05 UTC. This
+checks the fixed acquisition path against the actual service; it does not turn
+the synthetic browser gate into a live bulk-download or operational field test.
+
+Focused worker regression tests also cover expiry during a later concurrent
+asset request, preserving the HTTP 401 reason when sibling requests abort,
+and the save/cancel/delete commit races. An accepted cancellation before commit
+removes the staging generation and preserves the previous saved app. Once
+pointer commit starts, cancellation is refused; delete and save cannot mutate
+the app cache concurrently. The final worker test file passed 11/11 tests.
+
+The final run includes the phone numeric-field CSS correction and self-hosted
+existing fonts. Fourteen unchanged font binaries total 309,408 bytes; source
+hashes and retained OFL/Apache notices are in `public/fonts/provenance.json`.
+The gate verifies every cached font, stylesheet, license and provenance file
+against those hashes. Its image fixtures establish local rendering and input
+behavior, not real geographic alignment: the disconnected screenshot at
+0°/0° and 50 km altitude shows a nearly uniform pale area from the repeated
+synthetic imagery/view. The separate real-tile check below establishes visible
+geographic map detail locally; real-device alignment, editions and navigation
+acceptance remain separate requirements.
+
+This verification caught and repaired a production-host omission: the build
+and worker included fonts, while the authenticated static host initially
+refused the `/fonts` directory. The host now allows that build directory;
+its 10-test real-TLS suite verifies font/CSS/license MIME and bytes after
+login, existing static redirects to login before authorization, API HTTP 401,
+and refusal of an unapproved private directory. A separate closed-store
+regression verifies that an old server-store reference cannot cancel/delete
+a replacement writer's retained pack or lock after shutdown.
+
+Physical iOS/Android installation, storage persistence, eviction/restart
+behavior and disconnected field use remain unverified.
+
+### Real one-tile geographic rendering check
+
+A separate bounded check passed at 2026-10-16 21:07:33 UTC using the same built
+private HTTPS host and Saved Maps UI. It acquired exactly one actual USGS Topo
+tile over the public National Mall area: XYZ `14/4685/6268`, source endpoint
+`/tile/14/6268/4685`, HTTP 200 JPEG, 34,900 bytes, SHA-256
+`f0f57148ba36ed828cff9d3b8d6f0038fe8b122d0ff1858fc52c3c9f445e6f4c`.
+The small selected box was west −77.0369, east −77.0364, south 38.8852,
+north 38.8857; planning asserted one tile before starting. The Node fetch
+fixture allowed only that fixed USGS URL and one acquisition request.
+
+The UI saved server/device copies and the app, then selected the local map.
+A controlled downward camera at the public Lincoln Memorial coordinates
+(38.88927, −77.0502; 1,300 m) produced actual canvas pixels showing river,
+road/traffic-circle geometry and park labels. After the actual server stopped,
+a fresh cached page rendered the same map while `navigator.onLine` remained
+true, with no online map/terrain/font requests. The central 220-pixel sample
+contained 10,919 distinct colors online and 10,694 offline, with luminance
+ranges of 227 and 201. Raw Cesium canvas captures and full UI screenshots were
+visually inspected; the empty area north of the retained tile remained blank
+rather than fetching an online fallback.
+
+Evidence is local under `qa-artifacts/offline-national-mall/`: `results.json`,
+`online-national-mall-canvas.png`, `offline-national-mall-canvas.png`, and the
+corresponding `-ui.png` captures. This was Windows Chromium at a 390 × 844
+phone viewport with a synthetic operator and generated local TLS fixture;
+it was not a physical phone, operational TAK test or bulk download. The
+one-off runner stayed in ignored `.gev-cache`; it changed no shipped runtime
+or browser harness. Real-device alignment, edition and navigation acceptance
+remain separate work.
+
+## Supported-runtime regression record
+
+The combined offline/foundation source at `49aaf7de` passed the complete local
+Node 24.19.0 suite with Git 2.53: 6,554 ordinary tests, 6,544 passes, ten existing
+skips and no failures, followed by all 14 isolated allocation tests. The later
+closed-store mutation guard passed its replacement-writer regression; the
+font-directory host correction passed all ten real local HTTPS tests. The final
+eight-scenario browser run above includes both corrections.
+
+Formatting checked 1,397 source files; import/package boundaries and all 29
+published layer tokens passed. Production and portable panel builds passed
+(10.73 and 11.30 seconds), with existing chunk-size warnings retained.
+`npm audit --omit=dev` reported zero production vulnerabilities. Complete final
+CI evidence is linked from [PR #5](https://github.com/rebeltechoxford/gods-eye-view/pull/5).
 
 ## File imports and elevation
 

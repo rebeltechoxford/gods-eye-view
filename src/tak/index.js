@@ -11,6 +11,7 @@ import { createTakPanel } from './ui.js';
 import { createGeolocation } from './geolocation.js';
 import { createMobileSession } from './mobile.js';
 import { logoutOperatorSession } from './session.js';
+import { createSavedMaps } from '../maps/offline/ui.js';
 import {
   authorizeTakDisclosure,
   markTakDataPrivate,
@@ -62,7 +63,12 @@ function mapCenter(viewer) {
  * after the operator presses Connect.
  * @param {{viewer: Cesium.Viewer, overlays: {setEntries:Function, clearSource:Function, setVisible:Function}}} options
  */
-export function initTakWebClient({ viewer, overlays, navigate }) {
+export function initTakWebClient({
+  viewer,
+  overlays,
+  navigate,
+  mapStackController,
+}) {
   const controller = new AbortController();
   let gatewayInfo = null;
   let gatewayReady;
@@ -108,6 +114,50 @@ export function initTakWebClient({ viewer, overlays, navigate }) {
       authorize: (enabled) => authorizeTakDisclosure(viewer, enabled),
     },
   });
+  let mapBootstrap = null;
+  let mapBootstrapAt = 0;
+  const savedMaps = mapStackController
+    ? createSavedMaps({
+        container: document.getElementById('tak-web-panel'),
+        controller: mapStackController,
+        viewer,
+        getMapCenter: () => mapCenter(viewer),
+        markPrivate: () => markTakDataPrivate(viewer),
+        onSessionExpired: () => {
+          if (gatewayInfo?.sessionAuthenticated) {
+            gatewayInfo = { ...gatewayInfo, sessionExpired: true };
+            renderScene();
+          }
+        },
+        navigate,
+        async getAccessHeaders(signal) {
+          if (!gatewayInfo) await gatewayReady;
+          signal?.throwIfAborted();
+          if (gatewayInfo?.sessionAuthenticated) return {};
+          if (gatewayInfo?.bootstrapAllowed) {
+            if (!mapBootstrap || Date.now() - mapBootstrapAt > 30_000) {
+              mapBootstrapAt = Date.now();
+              mapBootstrap = fetchGatewaySession(
+                globalThis.fetch,
+                signal,
+              ).catch((error) => {
+                mapBootstrap = null;
+                throw error;
+              });
+            }
+            return { Authorization: `Bearer ${(await mapBootstrap).token}` };
+          }
+          const token = document
+            .querySelector('[data-tak-token]')
+            ?.value.trim();
+          if (!token)
+            throw new Error(
+              'Sign in to the private server, or enter the configured local gateway token in Network',
+            );
+          return { Authorization: `Bearer ${token}` };
+        },
+      })
+    : null;
 
   const renderScene = () => {
     if (
@@ -154,6 +204,7 @@ export function initTakWebClient({ viewer, overlays, navigate }) {
   const api = Object.freeze({
     client,
     overlay,
+    savedMaps,
     privacy: () => takPrivacyState(viewer),
     destroy() {
       controller.abort();
@@ -164,6 +215,8 @@ export function initTakWebClient({ viewer, overlays, navigate }) {
       unsubscribeMobile();
       mobile.destroy();
       geolocation.destroy();
+      savedMaps?.destroy();
+      mapBootstrap = null;
       panel.destroy();
       overlay.destroy();
       client.destroy();

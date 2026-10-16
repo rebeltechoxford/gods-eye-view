@@ -49,6 +49,7 @@
     "tak:serve": "node server/standalone/tak-https.mjs",
     "qa:tak": "node scripts/qa-tak.mjs",
     "qa:tak:private": "node scripts/qa-tak-private.mjs",
+    "qa:maps:offline": "node scripts/qa-offline-maps.mjs",
     "qa:map-source-tray": "node scripts/qa-map-source-tray.mjs",
     "qa:panel-resize": "node scripts/qa-panel-resize.mjs",
     "qa:street-level": "node scripts/qa-street-level.mjs",

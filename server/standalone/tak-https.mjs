@@ -22,6 +22,15 @@ import {
   matchesToken,
 } from '../providers/tak/access.js';
 import { createRateLimiter } from '../../src/tak/protocol/router.js';
+import {
+  createOfflinePackStore,
+  defaultOfflinePackRoot,
+} from '../maps/offline/store.js';
+import {
+  createOfflineMapsHandler,
+  isOfflineMapsRequest,
+} from '../maps/offline/http.js';
+import { createOfflineShellManifest } from '../maps/offline/shell.js';
 
 const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
 export const SESSION_COOKIE = '__Host-gev-tak-session';
@@ -94,6 +103,7 @@ const ASSET_DIRECTORIES = new Set([
   'assets',
   'cesium',
   'events',
+  'fonts',
   'models',
   'panel',
   'pwa',
@@ -198,6 +208,7 @@ export async function startTakHttpsServer({
   env = process.env,
   distRoot = path.join(workspaceRoot, 'dist'),
   providerPlugins,
+  offlineMaps,
   now = Date.now,
   port,
 } = {}) {
@@ -252,6 +263,9 @@ export async function startTakHttpsServer({
   const sockets = new Set();
   const loginLimiter = createRateLimiter({ rate: 5 / 60, burst: 5, now });
   let gateway;
+  let offlineStorePromise;
+  let offlineHandler;
+  let shellManifestPromise;
   let policy;
   let closed = false;
   function pruneSessions() {
@@ -393,6 +407,33 @@ export async function startTakHttpsServer({
       return res.end();
     }
     if (gateway.handleHttpRequest(req, res)) return;
+    if (isOfflineMapsRequest(req)) {
+      offlineStorePromise ||= createOfflinePackStore({
+        ...offlineMaps,
+        root: offlineMaps?.root || defaultOfflinePackRoot(env),
+        forbiddenRoots: [workspaceRoot, distRoot],
+      });
+      const store = await offlineStorePromise;
+      offlineHandler ||= createOfflineMapsHandler({
+        store,
+        now,
+        authorize: (request, { mutation }) =>
+          authenticateSession(request)
+            ? authorizeBrowserRequest(request, policy, {
+                requireOrigin: mutation,
+              })
+            : { ok: false, status: 401 },
+        shellManifest: () =>
+          (shellManifestPromise ||= createOfflineShellManifest(distRoot).catch(
+            (error) => {
+              shellManifestPromise = null;
+              throw error;
+            },
+          )),
+      });
+      await offlineHandler(req, res);
+      return;
+    }
     if (target.startsWith('/api/')) {
       middlewares(req, res, () =>
         reply(res, 404, { error: 'Unknown API route' }),
@@ -529,6 +570,7 @@ export async function startTakHttpsServer({
       clearInterval(expiryTimer);
       sessions.clear();
       gateway.close();
+      await offlineStorePromise?.then((store) => store.close()).catch(() => {});
       await cleanupProviders();
       const finished = new Promise((resolve) => server.close(resolve));
       server.closeIdleConnections?.();
@@ -538,6 +580,7 @@ export async function startTakHttpsServer({
     return { server, gateway, origin, close, policy };
   } catch (error) {
     gateway?.close();
+    await offlineStorePromise?.then((store) => store.close()).catch(() => {});
     await cleanupProviders();
     for (const socket of sockets) socket.destroy();
     if (server.listening) await new Promise((resolve) => server.close(resolve));

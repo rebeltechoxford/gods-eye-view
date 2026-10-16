@@ -176,8 +176,10 @@ The production host retains GEV's provider middleware and built globe/layers,
 voice and PWA assets. Existing provider credentials and coverage requirements
 still apply. `/api/setup` and `/mcp` remain unavailable on the private host;
 perform credential administration locally. Production framing stays disabled.
-Optional **Add to Home Screen** uses the authenticated HTTPS manifest; it does
-not provide offline maps, persisted TAK data or reliable background GPS.
+Optional **Add to Home Screen** uses the authenticated HTTPS manifest. Offline
+maps and application storage require the explicit Saved Maps actions below;
+installation alone does not download them. Tactical contacts/chat stay in page
+memory, and reliable background GPS is not supplied by the browser.
 
 `TAK_HTTPS_*` protects browser-to-GEV traffic. The separate `TAK_SERVER_*`
 settings above protect the gateway-to-TAK Server connection. Configure both
@@ -190,6 +192,87 @@ GPS permissions and authorized TAK peer still needs acceptance. No public
 deployment, private LAN listener or device trust-store change was performed
 to produce those local results.
 
+## Install the iPhone package through AltStore Classic
+
+The unsigned device package was built and validated on real macOS/Xcode and
+started in an iPhone simulator. The verified handoff copy is
+`output/ios/f3f65373/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`provenance.json` and a simulator screenshot. The same package is in the
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38962072944)
+while GitHub retains it. Its SHA-256 is
+`da65e0a67ad3b2adb8ab88f840bda5ac9007a68620f0504eab1768bba51fd61b`.
+
+1. Set up [AltStore Classic/AltServer on Windows](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows)
+   for your own iPhone. Apple authentication and personal signing stay in that
+   tooling; the repository and CI need no Apple credentials.
+2. Import the unsigned IPA through AltStore's **My Apps → +** and complete the
+   device's required signing/trust/Developer Mode steps. Free-account apps
+   require [seven-day refresh](https://faq.altstore.io/altstore-classic/your-altstore).
+3. Open **GEV TAK**, enter your approved private HTTPS origin, such as
+   `https://gev.internal:8443`, then use the web operator login. The phone must
+   reach that private host and trust its matching certificate. System TLS
+   validation remains enabled; the app provides no certificate bypass.
+
+The IPA is a native container for this full private web application. Keep it
+visible for foreground GPS. Downloads require consent before the system Files
+picker; native exports are limited to 256 MiB, so use smaller map packs for
+phone export. `data:` downloads and reliable background TAK/GPS are not
+implemented. Physical-device login/WSS, media/GPS, Files and disconnected
+WebKit acceptance remain open. The desktop offline gate does not establish
+those iOS behaviors. See [TAK_IOS_IPA.md](docs/TAK_IOS_IPA.md) for the source,
+reproducible Mac build and device acceptance checklist.
+
+## Retain topographic maps on the server and phone
+
+On the built private HTTPS app, open **TAK → SAVED MAPS / OFFLINE**. Use the
+10 km box around the map center or enter west/south/east/north bounds. Choose
+minimum/maximum zoom; the panel counts tiles before requesting anything. The
+first supported source is USGS Topographic. This downloads raster map images,
+not 3D elevation meshes. Google 3D remains an online base; other imagery and
+charts have separate download permissions and import work.
+
+Leave **Also retain on this device** checked, then choose **Download area**.
+The server retains verified tiles on disk; the browser copies and verifies a
+separate pack in IndexedDB, selects it on the same GEV globe, and saves the
+built app/Cesium workers for disconnected launch. Watch the separate map/app
+results. A partial copy is not ready. Use Cancel, then Refresh and Resume or
+Save to this device to reuse verified retained tiles after interruption.
+
+Limits are 5,000 tiles and 512 MiB per pack, 32 packs and 2 GiB per store, with
+four concurrent upstream requests. Download smaller adjacent areas when the
+area/detail exceeds those limits. The displayed size estimate is approximate;
+actual image sizes, available device quota and server disk space decide whether
+the download completes.
+
+Server files default to `gods-eye-view/offline-maps` under `LOCALAPPDATA`,
+`XDG_DATA_HOME`, or `~/.local/share`. An absolute `TAK_MAP_PACKS_DIR` can select
+another private directory outside the checkout and built public directory.
+One running server owns a cache directory. Keep its manifests and tile files
+together for backup; stop the server before copying the directory.
+
+**Show saved map** uses only the local device pack and flat ellipsoid terrain.
+Coverage/detail misses remain blank rather than silently contacting an online
+map source. A selected saved pack is remembered for startup. Choose an online
+map explicitly to return to the normal GEV sources.
+
+Map copies and the app shell remain after logout/reload until explicitly
+deleted. Anyone with access to this browser profile can open them offline;
+download only on an appropriate device. No operator token, session response,
+TAK contact, message or GPS fix is stored in these map/application caches.
+The OS/browser can still evict website storage or the user can clear it:
+export a **.gevmap backup** and retain the server copy. Restore a backup with
+the file control; its schema, source, bounds, size and every tile hash are
+checked. Delete device/server copies separately; **Remove offline app** removes
+only the cached app. Ordinary browsing does not opt in to application caching.
+
+After downloading, close/reopen the app with the server and all networks
+unreachable and inspect the saved area. Repeat on the actual target phone;
+desktop Chromium evidence does not establish iOS WebKit storage behavior. The
+local development lab can create/copy packs, but saving a launchable offline
+app requires `npm run build` and the production HTTPS host. Read
+[the source/download ledger](docs/TAK_OFFLINE_MAP_PLAN.md) for licensed sources,
+terrain and chart import work that remains.
+
 ## Reproduce verification
 
 ```sh
@@ -200,6 +283,20 @@ npm test
 npm run build
 npm run build:panel
 ```
+
+After the production build, these two gates start their own temporary
+loopback HTTPS servers and synthetic fixtures; run them sequentially:
+
+```sh
+npm run qa:tak:private
+npm run qa:maps:offline
+```
+
+Their reports and screenshots are written under `qa-artifacts/`. The latest
+integrated CI evidence is linked from the
+[offline-map pull request](https://github.com/rebeltechoxford/gods-eye-view/pull/5).
+These are local/synthetic checks, with separate physical-phone and authorized
+TAK-peer acceptance still required.
 
 With `npm run tak:lab` running on its default port, verify the browser and the
 synthetic peer's marker/chat return path with:
@@ -216,10 +313,11 @@ also asserts the lab-specific synthetic replies. Other options: `--headful`,
 `--timeout <milliseconds>` and
 `--artifact-dir <directory>`. Evidence goes to gitignored `qa-artifacts/tak/`.
 The harness stubs public HTTP data and imagery and uses synthetic TAK fixtures;
-it does not test a real TAK peer. Add `--fonts` for visual review with the app's
-Google-hosted fonts; only Google font stylesheet/font requests are allowed
-through that mode, while TAK and public data stay synthetic. The repeated map
-texture is a bundled image fixture, not geographic imagery acceptance.
+it does not test a real TAK peer. App fonts and icons are self-hosted by default.
+`--fonts` permits optional external Google font stylesheet/font requests when
+present; the default app has no Google-font network dependency. TAK and public
+data stay synthetic in either mode. The repeated map texture is a bundled image
+fixture, not geographic imagery acceptance.
 Existing GEV browser gates and acceptance
 scope are documented in [the implementation plan](docs/TAK_IMPLEMENTATION_PLAN.md).
 
