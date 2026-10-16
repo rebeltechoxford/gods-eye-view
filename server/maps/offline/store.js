@@ -635,6 +635,7 @@ export async function createOfflinePackStore({
       }),
     cancel: (id) =>
       serial(async () => {
+        if (closed) throw failure('CLOSED', 'Offline map store is closed', 503);
         const record = recordOf(id);
         const queued = queue.indexOf(record);
         if (queued >= 0) queue.splice(queued, 1);
@@ -649,6 +650,7 @@ export async function createOfflinePackStore({
       }),
     delete: (id) =>
       serial(async () => {
+        if (closed) throw failure('CLOSED', 'Offline map store is closed', 503);
         const record = recordOf(id);
         const queued = queue.indexOf(record);
         if (queued >= 0) queue.splice(queued, 1);

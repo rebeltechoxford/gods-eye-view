@@ -121,6 +121,55 @@ test('fixed-source packs persist verified images and survive process-store resta
   assert.deepEqual(await readdir(root), ['.lock']);
 });
 
+test(
+  'a retained closed writer cannot cancel or delete packs owned by its replacement',
+  { timeout: 5000 },
+  async (t) => {
+    const root = await directory(t);
+    let oldWrites = 0;
+    const original = await createTestStore({
+      root,
+      fetchImpl: async () => response(),
+      async writeImpl(handle, bytes) {
+        oldWrites++;
+        await handle.writeFile(bytes);
+        await handle.sync();
+      },
+    });
+    const created = await original.create(small);
+    assert.equal((await settled(original, created.id)).state, 'ready');
+    await original.close();
+    const replacement = await createTestStore({
+      root,
+      fetchImpl: () => {
+        throw new Error('A ready pack must not be fetched again');
+      },
+    });
+    const manifestPath = path.join(root, created.id, 'manifest.json');
+    const manifest = await readFile(manifestPath);
+    const writesBefore = oldWrites;
+    for (const operation of ['cancel', 'delete']) {
+      await assert.rejects(
+        original[operation](created.id),
+        (error) => error.code === 'CLOSED' && error.status === 503,
+      );
+      assert.equal(oldWrites, writesBefore);
+      assert.deepEqual(await readFile(manifestPath), manifest);
+      assert.equal(replacement.get(created.id).state, 'ready');
+      assert.deepEqual(
+        (await replacement.tile(created.id, '0/0/0')).bytes,
+        image,
+      );
+    }
+    await assert.rejects(
+      createOfflinePackStore({ root }),
+      (error) => error.code === 'STORE_BUSY',
+    );
+    await replacement.delete(created.id);
+    assert.deepEqual(await readdir(root), ['.lock']);
+  },
+);
+
 test('downloads are globally bounded to four and cancelled partial packs resume only missing tiles after restart', async (t) => {
   const root = await directory(t);
   let active = 0;
