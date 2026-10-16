@@ -55,9 +55,13 @@ panel as a replacement application.
 
 The current gateway serves **one local operator**, not multiple users. Enabling
 it requires `TAK_GATEWAY=1` and a valid random `TAK_GATEWAY_TOKEN` of 24–128
-allowed characters. Browser upgrades require a direct loopback socket, matching
-loopback host/port, same Origin, no forwarding headers, `tak.v1` and the valid
-token. This service is not intended for public reverse-proxy deployment.
+allowed characters. Dev/lab browser upgrades require a direct loopback socket,
+matching loopback host/port, same Origin, no forwarding headers, `tak.v1` and
+the valid token. The production `npm run tak:serve` host additionally supports
+an explicitly configured private HTTPS origin and revocable secure-cookie
+session; the private WSS listener always requires that session. Public listeners
+and reverse proxies are outside this implementation. See the run guide for
+the certificate, private address and pinned-origin requirements.
 
 The authenticated session registers a `GEV-<UUIDv4>` device identity before
 publishing. The gateway enforces its supported own-device/own-marker namespace
@@ -92,6 +96,12 @@ ping and emergency/cancel. Parsing a type or preserving an unknown detail
 extension does not implement its complete ATAK workflow. Directed/group chat,
 mission packages/data sync, attachments, drawing/route editing, full 2525 symbols,
 offline field resilience and native plugins remain outside this foundation.
+The confirmed next download requirement is a retained copy on both the server
+and phone, including actual disconnected phone launch/rendering. Source
+permissions and acceptance criteria are recorded in
+[the offline map plan](TAK_OFFLINE_MAP_PLAN.md). This proposal does not yet
+provide offline storage. AltStore IPA delivery also needs a native build and
+device acceptance; a browser package does not establish native TAK parity.
 
 Browser connection, gateway submission, upstream queue/write and real peer
 receipt are different states. Never describe `LIVE`, a successful send return

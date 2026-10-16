@@ -12,6 +12,7 @@ import {
 /** World-overlay source id for TAK callsign cards. */
 export const TAK_OVERLAY_SOURCE_ID = 'tak-contacts';
 export const TAK_SYMBOL_PX = 26;
+export const TAK_FOCUS_RANGE_M = 2000;
 
 /** MIL-STD-2525-style frame fills by affiliation family. */
 export const TAK_AFFILIATION_COLORS = Object.freeze({
@@ -299,10 +300,17 @@ export function createCotOverlay(
         for (const contact of contacts) {
           live.add(contact.uid);
           const stale = isStale(contact);
+          const prior = entities.get(contact.uid);
+          // Store contacts are immutable snapshots. A status notification or a
+          // different contact's update must not dirty every Cesium entity/card.
+          if (prior?.contact === contact && prior.stale === stale) {
+            cards.push(prior.card);
+            continue;
+          }
           upsert(contact, stale);
           const { lat, lon, hae } = contact.point;
           const height = isAirborne(contact) ? hae : 0;
-          cards.push({
+          const card = {
             id: contact.uid,
             position: Cesium.Cartesian3.fromDegrees(lon, lat, height),
             // Lifted anchor so the horizon test judges the real surface.
@@ -328,7 +336,12 @@ export function createCotOverlay(
             protected: contact.emergency || contact.origin === 'self',
             accessibilityLabel: `Focus ${contact.callsign}`,
             activate: () => onActivate(contact.uid),
-          });
+          };
+          const record = entities.get(contact.uid);
+          record.contact = contact;
+          record.stale = stale;
+          record.card = card;
+          cards.push(card);
         }
         for (const uid of Array.from(entities.keys())) {
           if (!live.has(uid)) remove(uid);
@@ -353,7 +366,14 @@ export function createCotOverlay(
       return navigate(() => {
         viewer.selectedEntity = record.entity;
         void viewer
-          .flyTo(record.entity, { duration: 1.2 })
+          .flyTo(record.entity, {
+            duration: 1.2,
+            offset: new Cesium.HeadingPitchRange(
+              viewer.camera.heading || 0,
+              Cesium.Math.toRadians(-40),
+              TAK_FOCUS_RANGE_M,
+            ),
+          })
           .catch((error) => console.warn('[TAK] Cannot focus contact', error));
         return true;
       });

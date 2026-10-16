@@ -42,6 +42,7 @@ body.recording-mode .tak-web-root {
   bottom: 52px;
   width: min(355px, calc(100vw - 24px));
   max-height: min(72vh, 660px);
+  max-height: min(72dvh, 660px);
   overflow: auto;
   padding: 14px;
   border: 1px solid #4b83a1;
@@ -63,6 +64,14 @@ body.recording-mode .tak-web-root {
 .tak-web-header strong {
   font-size: 14px;
   letter-spacing: 0.08em;
+}
+.tak-web-header {
+  position: sticky;
+  top: -14px;
+  z-index: 1;
+  padding: 10px 0;
+  background: #081522;
+  border-bottom: 1px solid #35516a;
 }
 .tak-web-header span {
   color: #f4c675;
@@ -349,11 +358,54 @@ body.recording-mode .tak-web-root {
 }
 @media (max-width: 600px) {
   .tak-web-root {
-    right: 12px;
-    bottom: 60px;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(
+      60px + env(safe-area-inset-bottom) + var(--tak-keyboard-inset, 0px)
+    );
   }
   .tak-web-panel {
-    bottom: 48px;
-    max-height: 64vh;
+    bottom: 52px;
+    width: min(
+      380px,
+      calc(
+        100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)
+      )
+    );
+    max-height: calc(
+      var(--tak-viewport-height, 100dvh) - 140px - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom)
+    );
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-top: 50px;
+  }
+  .tak-web-root button,
+  .tak-web-root select,
+  .tak-web-root input:not([type='checkbox']),
+  .tak-web-root summary {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .tak-web-root input:not([type='checkbox']),
+  .tak-web-root textarea,
+  .tak-web-root select {
+    font-size: 16px;
+  }
+  .tak-web-root .tak-web-check input {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+  }
+  .tak-web-section > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    list-style: none;
+  }
+  .tak-web-section > summary::before {
+    content: '▸';
+  }
+  .tak-web-section[open] > summary::before {
+    content: '▾';
   }
 }

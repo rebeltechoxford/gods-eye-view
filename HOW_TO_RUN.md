@@ -5,6 +5,18 @@ Use this repository's `dev/tak-web-foundation` development line from
 public globe, layers, HUD, camera, scenes and voice remain available under their
 existing provider/key requirements.
 
+The full GEV globe is the workspace for TAK. Google photorealistic 3D remains
+the preferred map when a configured Google/Cesium provider can supply it; the
+existing keyless globe is its fallback. The synthetic lab does not replace GEV
+with a reduced map application. Additional chart/map choices are optional views
+of the same engine, with their own availability, coverage and credits.
+
+The **More maps/charts** selector adds curated Esri, USGS Topo, NOAA ENC and
+FAA VFR/IFR references alongside the original quick map controls. Read the
+source's coverage, edition/lifecycle and attribution notes. A chart rendering
+on the globe does not establish current navigation coverage or operational
+acceptance; see [TAK_MAP_SOURCES.md](docs/TAK_MAP_SOURCES.md).
+
 ## Start the local working project
 
 Install Node **24.14.0 or newer in the 24.x line**, or Node **26.x**, then open
@@ -46,6 +58,11 @@ disconnected remain local and are not silently broadcast on reconnect.
 The TAK panel retains positions/chat in page memory. Reloading drops that
 session data. Device UID/callsign/team/role may persist locally so identity can
 remain stable; position and chat are not browser-persisted by this foundation.
+Contact state is bounded by 2,000 contacts, 8 MiB of serialized contact data
+and 100,000 retained XML nodes. When a limit is reached, the oldest nonself
+contacts are evicted locally, or an oversized update is refused without
+replacing the prior contact. The panel displays a capacity notice. Chat remains
+bounded separately; these limits do not promise a frame rate on every EUD.
 
 ## Privacy controls
 
@@ -63,12 +80,17 @@ of the public GEV layer registry and share-state formats.
 ## Connect an authorized real TAK Server
 
 This requires credentials issued for a TAK Server you are authorized to use.
-The current gateway is a **single local operator** service: browser access is
-restricted to direct loopback connections. It is not a shared multiuser or
-public hosting service.
+The gateway serves **one operator**. Development/lab access stays on direct
+loopback; the production host below also supports explicitly configured private
+HTTPS access for that operator's EUD. Distinct users, roles and TAK groups are
+not implemented.
 
 Keep certificate files outside Git. Set these values in the gitignored `.env`
 file, substituting your actual authorized server and absolute certificate paths:
+
+The repository also ignores common private certificate/key file extensions and
+`.tak-secrets/` as a second safeguard; keeping them outside the checkout remains
+the preferred practice.
 
 ```dotenv
 TAK_GATEWAY=1
@@ -105,6 +127,69 @@ Server do not bridge to each other unless `TAK_BRIDGE=1` is explicitly set.
 Protocol-v1 protobuf, private/group chat and native plugins remain unsupported
 unless listed otherwise in [TAK_TODO.md](TAK_TODO.md).
 
+## Run the private HTTPS console on an EUD
+
+`npm run tak:serve` is a Node HTTPS server for the built application and its
+existing provider APIs. It does not run Vite. Every app/API request requires an
+operator session; keys, certificates and provider administration stay on the
+server. This is an internal host, with no public or wildcard binding, reverse
+proxy, remote MCP endpoint or remote token bootstrap.
+
+First obtain a server certificate whose SAN matches your chosen internal DNS
+name or IP, issued by a CA your EUD trusts. Keep its private key outside Git.
+Configure a gitignored `.env.production.local`, for example:
+
+```dotenv
+TAK_GATEWAY_TOKEN=<random-operator-token-of-24-to-128-allowed-characters>
+TAK_HTTPS_CERT=<absolute-path-to-server-certificate-chain.pem>
+TAK_HTTPS_KEY=<absolute-path-to-server-private-key.pem>
+TAK_HTTPS_HOST=10.20.30.40
+TAK_HTTPS_PORT=8443
+TAK_BROWSER_ORIGIN=https://tak.internal:8443
+```
+
+The address/name above is an example. Use the server's actual private address
+and a DNS name resolving to it; the certificate must cover that name. With an
+IP origin, use that private IP in the certificate SAN. The origin must match
+exactly, including its nondefault port, with no trailing slash. Default binding
+is `127.0.0.1:8443`; a nonloopback bind requires `TAK_BROWSER_ORIGIN` explicitly.
+Allowed connections are loopback or RFC1918 IPv4. Public, wildcard, link-local,
+CGNAT and IPv6 ULA addresses, forwarded headers and cross-origin requests are
+refused. Do not expose or forward this listener to the public Internet.
+
+```sh
+npm ci
+npm run build
+npm run tak:serve
+```
+
+Open the printed HTTPS origin on the authorized private network. Sign in with
+the operator token, then use **TAK → NETWORK → Connect**. The HTTPS session
+authenticates that connection; no second token entry or browser-held TAK
+certificate is required. **Sign out** clears local tactical state and revokes
+the server session. Sessions are memory-only, capped at 32 and expire after
+eight hours of idle time or eight hours total; restarting the host requires
+sign-in again. Expired active WebSockets are revoked, and the client clears
+private state and returns to sign-in when it receives that expiry response.
+
+The production host retains GEV's provider middleware and built globe/layers,
+voice and PWA assets. Existing provider credentials and coverage requirements
+still apply. `/api/setup` and `/mcp` remain unavailable on the private host;
+perform credential administration locally. Production framing stays disabled.
+Optional **Add to Home Screen** uses the authenticated HTTPS manifest; it does
+not provide offline maps, persisted TAK data or reliable background GPS.
+
+`TAK_HTTPS_*` protects browser-to-GEV traffic. The separate `TAK_SERVER_*`
+settings above protect the gateway-to-TAK Server connection. Configure both
+when using an authorized real server. HTTPS login alone does not establish
+TAK peer delivery or browser GPS permission.
+
+Local tests use temporary synthetic certificates and loopback HTTPS/WSS. A
+real phone with its issued/trusted certificate, private-network reachability,
+GPS permissions and authorized TAK peer still needs acceptance. No public
+deployment, private LAN listener or device trust-store change was performed
+to produce those local results.
+
 ## Reproduce verification
 
 ```sh
@@ -137,6 +222,19 @@ through that mode, while TAK and public data stay synthetic. The repeated map
 texture is a bundled image fixture, not geographic imagery acceptance.
 Existing GEV browser gates and acceptance
 scope are documented in [the implementation plan](docs/TAK_IMPLEMENTATION_PLAN.md).
+
+For a synthetic 2,000-contact desktop stress check against the local lab:
+
+```sh
+node scripts/qa-tak-stress.mjs --url http://127.0.0.1:4174 --expect-cached
+```
+
+It imports bounded batches, measures updates/render scheduling/clear, checks
+contact and roster limits, preserves all 30 GEV registrations and checks
+teardown/render errors. Results go to gitignored `qa-artifacts/tak/stress.json`.
+Headless SwiftShader, intercepted providers and synthetic map tiles are a
+desktop regression fixture, not real-phone, live-layer or GPU performance
+acceptance. Run without competing browser/test jobs when comparing timings.
 
 If startup fails, check the declared Node version, rerun `npm ci`, and run the
 doctor command. If the gateway stays off, verify that the token is configured

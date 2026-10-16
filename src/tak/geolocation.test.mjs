@@ -67,3 +67,45 @@ test('GPS handles unavailable devices and synchronous permission failure', () =>
   );
   assert.deepEqual(cleared, [9]);
 });
+
+test('foreground GPS pauses on hide, resumes only an armed watch, and keeps measured timestamps', () => {
+  const doc = new EventTarget();
+  doc.hidden = false;
+  const watches = [],
+    cleared = [],
+    fixes = [];
+  const gps = createGeolocation(
+    {
+      watchPosition: (fix, error) => {
+        watches.push({ fix, error });
+        return watches.length;
+      },
+      clearWatch: (id) => cleared.push(id),
+    },
+    { documentRef: doc, now: () => 999 },
+  );
+  gps.start(
+    (fix) => fixes.push(fix),
+    () => {},
+  );
+  watches[0].fix({
+    coords: { latitude: 1, longitude: 2, accuracy: 9 },
+    timestamp: 123,
+  });
+  assert.equal(fixes[0].observedAtMs, 123);
+  doc.hidden = true;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(cleared, [1]);
+  watches[0].fix({ coords: { latitude: 8, longitude: 9 }, timestamp: 124 });
+  assert.equal(fixes.length, 1);
+  doc.hidden = false;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(watches.length, 2);
+  gps.destroy();
+  doc.hidden = true;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  doc.hidden = false;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(watches.length, 2);
+  assert.deepEqual(cleared, [1, 2]);
+});

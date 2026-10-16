@@ -1,5 +1,5 @@
 import { isIP } from 'node:net';
-import { parseTapAddress } from '../../../src/data/tapAddress.js';
+import { isLocalIpv4 } from '../../../src/data/tapAddress.js';
 
 /**
  * TAK gateway configuration. Every upstream comes from operator-set
@@ -21,7 +21,6 @@ import { parseTapAddress } from '../../../src/data/tapAddress.js';
  * | TAK_SERVER_PROTOCOL          | tls (default) or tcp                                      |
  * | TAK_SERVER_CERT/_KEY/_CA     | PEM client cert, key and CA for mutual TLS                |
  * | TAK_SERVER_P12 / _PASSWORD   | PKCS#12 client bundle (alternative to PEM files)          |
- * | TAK_SERVER_ALLOW_PLAINTEXT=1 | Permit tcp to a non-private host (lab use only)           |
  * | TAK_BRIDGE=1                 | Relay mesh <-> TAK Server (default: both feed browsers)   |
  * | TAK_GATEWAY_CALLSIGN         | Callsign of the gateway node itself                       |
  */
@@ -129,11 +128,12 @@ export function readTakGatewayConfig(env = process.env) {
       errors.push('TAK_SERVER_PROTOCOL must be tls or tcp');
     else if (
       protocol === 'tcp' &&
-      !parseTapAddress(`${address.host}:${address.port}`) &&
-      !flag(env.TAK_SERVER_ALLOW_PLAINTEXT)
+      address.host !== 'localhost' &&
+      address.host !== '::1' &&
+      !(isIP(address.host) === 4 && isLocalIpv4(address.host))
     )
       errors.push(
-        'Plain tcp is only allowed to loopback/private hosts; set TAK_SERVER_ALLOW_PLAINTEXT=1 to override',
+        'Plain tcp requires a literal loopback/RFC1918 address or localhost; use verified TLS for other hosts',
       );
     else {
       const tls =

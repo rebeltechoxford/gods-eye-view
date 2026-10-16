@@ -19,6 +19,7 @@ import {
   normalizeIdentity,
 } from './protocol/builders.js';
 import { createTakStore } from './store.js';
+import { isGpsFixFresh } from './position.js';
 
 export const IDENTITY_STORAGE_KEY = 'gev.tak.identity.v1';
 export const SA_INTERVAL_MS = 10_000;
@@ -36,6 +37,7 @@ export function createTakClient({
   createTransport,
   storage = { get: () => null, set: () => {} },
   now = Date.now,
+  canReportPosition = () => true,
   setInterval: every = (fn, ms) => setInterval(fn, ms),
   clearInterval: stopEvery = (h) => clearInterval(h),
 }) {
@@ -53,6 +55,7 @@ export function createTakClient({
   let saTimer = null;
   let emergencyActive = false;
   let destroyed = false;
+  let sessionExpired = false;
 
   let identity = loadIdentity();
   store.setSelfUid(identity.uid);
@@ -111,7 +114,14 @@ export function createTakClient({
     },
     onControl(message) {
       if (destroyed) return;
-      if (message?.op === 'hello' || message?.op === 'status')
+      if (message?.op === 'session-expired') {
+        sessionExpired = true;
+        clearPrivateState();
+        lastReject = {
+          reason: 'Operator session expired; sign in again',
+          atMs: now(),
+        };
+      } else if (message?.op === 'hello' || message?.op === 'status')
         gateway = message.status || null;
       else if (message?.op === 'reject')
         lastReject = {
@@ -151,12 +161,29 @@ export function createTakClient({
 
   function beacon() {
     if (!saEnabled || !fix || destroyed) return { sent: false };
+    if (
+      fix.source === 'GPS' &&
+      (!canReportPosition() || !isGpsFixFresh(fix, now()))
+    )
+      return { sent: false, reason: 'position-unavailable' };
     return emit(buildSelfSa(identity, fix, { nowMs: now() }), true);
   }
 
   function restartSaTimer() {
     if (saTimer) stopEvery(saTimer);
     saTimer = saEnabled ? every(beacon, SA_INTERVAL_MS) : null;
+  }
+
+  function clearPrivateState() {
+    saEnabled = false;
+    restartSaTimer();
+    fix = null;
+    emergencyActive = false;
+    gateway = null;
+    ownMarkers.clear();
+    sharedMarkers.clear();
+    store.clear();
+    notify();
   }
 
   return Object.freeze({
@@ -178,12 +205,24 @@ export function createTakClient({
     },
     connect(token) {
       if (destroyed) return;
-      transport.connect({ token, identity });
+      sessionExpired = false;
+      const authentication =
+        token && typeof token === 'object'
+          ? { session: token.session === true }
+          : { token };
+      transport.connect({ ...authentication, identity });
     },
     disconnect() {
       transport.disconnect();
     },
-    link: () => ({ state: linkState, detail: linkDetail, gateway, lastReject }),
+    link: () => ({
+      state: linkState,
+      detail: linkDetail,
+      gateway,
+      lastReject,
+      sessionExpired,
+    }),
+    clearPrivateState,
     counters: () => ({ ...counters }),
     requestStatus: () => {
       if (!destroyed) transport.requestStatus();
@@ -199,6 +238,9 @@ export function createTakClient({
         ? Object.freeze({
             ...next,
             ...validated.point,
+            observedAtMs: Number.isFinite(next.observedAtMs)
+              ? next.observedAtMs
+              : now(),
             source: next.source === 'GPS' ? 'GPS' : 'USER',
           })
         : null;
@@ -272,6 +314,14 @@ export function createTakClient({
       if (!fix)
         throw new CotValidationError(
           'Set your position before raising an alert',
+        );
+      if (
+        active &&
+        fix.source === 'GPS' &&
+        (!canReportPosition() || !isGpsFixFresh(fix, now()))
+      )
+        throw new CotValidationError(
+          'A fresh foreground GPS fix is required before raising an alert.',
         );
       const event = buildEmergency(identity, fix, {
         kind,

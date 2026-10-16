@@ -3,17 +3,20 @@ import assert from 'node:assert/strict';
 import {
   createGatewayTransport,
   fetchGatewaySession,
+  fetchGatewayStatus,
   CONNECT_TIMEOUT_MS,
   MAX_TRANSPORT_BUFFER_BYTES,
   MAX_TRANSPORT_FRAME_BYTES,
+  SESSION_PROBE_TIMEOUT_MS,
 } from './transport.js';
 
-function setup() {
+function setup({ fetchImpl } = {}) {
   const sockets = [];
   const timers = new Map();
   let sequence = 0;
   const states = [];
   const received = [];
+  const controls = [];
   class Socket {
     constructor(url, protocols) {
       Object.assign(this, {
@@ -43,9 +46,11 @@ function setup() {
   }
   const transport = createGatewayTransport({
     onXml: (xml) => received.push(xml),
+    onControl: (control) => controls.push(control),
     onState: (state) => states.push(state),
     url: 'ws://127.0.0.1:4174/api/tak/ws',
     WebSocketImpl: Socket,
+    fetchImpl,
     setTimer(fn, ms) {
       timers.set(++sequence, { fn, ms });
       return sequence;
@@ -58,7 +63,16 @@ function setup() {
   };
   const connect = () =>
     transport.connect({ token: 'synthetic-token-for-tests-only', identity });
-  return { transport, identity, connect, sockets, timers, states, received };
+  return {
+    transport,
+    identity,
+    connect,
+    sockets,
+    timers,
+    states,
+    received,
+    controls,
+  };
 }
 
 test('identity is authenticated before CoT is allowed and tokens remain in subprotocol only', () => {
@@ -125,6 +139,107 @@ test('invalid replacement credentials close an existing connection', () => {
   assert.equal(s.timers.size, 0);
 });
 
+test('private HTTPS sessions use cookie authentication without exposing the operator token', () => {
+  const s = setup();
+  s.transport.connect({ session: true, identity: s.identity });
+  const socket = s.sockets[0];
+  assert.deepEqual(socket.protocols, ['tak.v1']);
+  socket.open();
+  assert.equal(s.transport.send('<event/>'), false);
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  assert.equal(s.transport.isOpen(), true);
+  s.transport.disconnect();
+});
+
+test('explicit cookie-session expiration locks the transport without retrying an expired session', () => {
+  const s = setup();
+  s.transport.connect({ session: true, identity: s.identity });
+  const socket = s.sockets[0];
+  socket.open();
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  socket.readyState = 3;
+  socket.onclose({ code: 1008, reason: 'session expired' });
+  assert.equal(s.transport.state(), 'refused');
+  assert.equal(s.timers.size, 0);
+  assert.deepEqual(s.controls.at(-1), { op: 'session-expired' });
+  assert.equal(s.transport.send('<event/>'), false);
+});
+
+test('failed cookie upgrade probes same-origin status and clears revoked sessions', async () => {
+  let request;
+  const s = setup({
+    fetchImpl: async (...args) => {
+      request = args;
+      return { status: 401 };
+    },
+  });
+  s.transport.connect({ session: true, identity: s.identity });
+  s.sockets[0].onclose({ code: 1006, reason: '' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(request[0], '/api/tak/status');
+  assert.equal(request[1].cache, 'no-store');
+  assert.equal(request[1].credentials, 'same-origin');
+  assert.equal(s.transport.state(), 'refused');
+  assert.deepEqual(s.controls, [{ op: 'session-expired' }]);
+  assert.equal(s.timers.size, 0);
+});
+
+test('unavailable cookie status probes retain bounded reconnect behavior without claiming expiry', async () => {
+  for (const fetchImpl of [
+    async () => {
+      throw new Error('offline');
+    },
+    async () => ({ status: 503 }),
+  ]) {
+    const s = setup({ fetchImpl });
+    s.transport.connect({ session: true, identity: s.identity });
+    s.sockets[0].onclose({ code: 1006 });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(s.transport.state(), 'refused');
+    assert.deepEqual(s.controls, []);
+    assert.equal(s.timers.size, 1);
+    assert.equal([...s.timers.values()][0].ms, 30000);
+    s.transport.disconnect();
+  }
+});
+
+test('cookie probe timeout and retired resolutions cannot affect new attempts or disconnected clients', async () => {
+  let resolve;
+  let signal;
+  const s = setup({
+    fetchImpl: (_url, options) => {
+      signal = options.signal;
+      return new Promise((done) => {
+        resolve = done;
+      });
+    },
+  });
+  s.transport.connect({ session: true, identity: s.identity });
+  s.sockets[0].onclose({ code: 1006 });
+  await Promise.resolve();
+  const timeout = [...s.timers.values()].find(
+    (entry) => entry.ms === SESSION_PROBE_TIMEOUT_MS,
+  );
+  timeout.fn();
+  assert.equal(signal.aborted, true);
+  assert.deepEqual(s.controls, []);
+  assert.equal(s.transport.state(), 'refused');
+  s.transport.connect({ session: true, identity: s.identity });
+  resolve({ status: 401 });
+  await new Promise((done) => setImmediate(done));
+  assert.equal(s.transport.state(), 'connecting');
+  assert.deepEqual(s.controls, []);
+  s.sockets[1].onclose({ code: 1006 });
+  await Promise.resolve();
+  s.transport.disconnect();
+  assert.equal(signal.aborted, true);
+  resolve({ status: 401 });
+  await new Promise((done) => setImmediate(done));
+  assert.equal(s.transport.state(), 'closed');
+  assert.deepEqual(s.controls, []);
+  assert.equal(s.timers.size, 0);
+});
+
 test('bootstrap is explicit same-origin POST and refused sessions never provide fallback credentials', async () => {
   let args;
   const session = await fetchGatewaySession(async (...values) => {
@@ -142,6 +257,21 @@ test('bootstrap is explicit same-origin POST and refused sessions never provide 
     fetchGatewaySession(async () => ({ ok: false })),
     /refused/,
   );
+});
+
+test('initial HTTP401 is an expired operator session; network/server failures are ordinary unavailable status', async () => {
+  const expired = await fetchGatewayStatus(async () => ({
+    ok: false,
+    status: 401,
+  }));
+  assert.equal(expired.sessionExpired, true);
+  assert.equal(expired.enabled, false);
+  const unavailable = await fetchGatewayStatus(async () => ({
+    ok: false,
+    status: 503,
+  }));
+  assert.equal(unavailable.sessionExpired, undefined);
+  assert.equal(unavailable.enabled, false);
 });
 
 test('inbound CoT waits for identity acknowledgement and duplicate ACKs do not reopen', () => {

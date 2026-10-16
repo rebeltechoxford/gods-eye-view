@@ -1,6 +1,7 @@
 import { expandApplicationHtml } from '../build/application-html.js';
 import { readStylesheet } from './testSupport/readStylesheet.mjs';
 import { GEV_REALTIME_TOOLS } from '../server/providers/openai/tools.js';
+import { ALL_MAP_IDS, CORE_MAP_IDS } from './maps/referenceCatalog.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -662,6 +663,11 @@ test('the voice TOOL SCHEMA matches the pinned contract — the mission mapping 
   // ordering while allowing source formatting. Derived from the unchanged
   // release schema before formatting (the previous source-byte pin passed).
   const legacyTools = structuredClone(GEV_REALTIME_TOOLS).filter((tool) => tool.name !== 'set_cyber_sonar');
+  // Eight curated reference/chart sources deliberately extend map selection.
+  // First-run missions still ride the original tool contract unchanged.
+  const mapStack = legacyTools.find((tool) => tool.name === 'set_map_stack').parameters.properties.stack;
+  assert.deepEqual(mapStack.enum, ALL_MAP_IDS);
+  mapStack.enum = mapStack.enum.filter((id) => CORE_MAP_IDS.includes(id));
   const hudLayout = legacyTools.find((tool) => tool.name === 'set_hud').parameters.properties.layout;
   assert.deepEqual(hudLayout.enum, ['tactical', 'operator', 'minimal', 'cyber']);
   // Cyber deliberately adds one layout; first-run missions still change no tools.

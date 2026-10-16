@@ -8,6 +8,7 @@ import {
   ESRI_ATTRIBUTION_HTML,
 } from './imagery.js';
 import { createWorldTerrain, createKeylessTerrain } from './terrain.js';
+import { createReferenceImagery } from './referenceImagery.js';
 
 /** Select sources and setup guidance without putting provider branches in the controller. */
 export function createDefaultMapSources({
@@ -45,15 +46,31 @@ export function createDefaultMapSources({
           tileset: googleTileset,
         };
       const imagery =
-        descriptor.kind === 'ion'
-          ? () => createIonImagery(descriptor.style, ionToken)
-          : descriptor.id === 'osm'
-            ? createOsmImagery
-            : createEsriImagery;
+        descriptor.kind === 'reference'
+          ? (request) => createReferenceImagery(descriptor.id, request)
+          : descriptor.kind === 'ion'
+            ? () => createIonImagery(descriptor.style, ionToken)
+            : descriptor.id === 'osm'
+              ? createOsmImagery
+              : createEsriImagery;
       return {
         ...common,
         imagery,
         terrain,
+        ...(descriptor.kind === 'reference'
+          ? {
+              credit: descriptor.credit,
+              constructionFallback: {
+                id: 'osm',
+                message: `${descriptor.label} is unavailable; using OSM`,
+              },
+              tileFailureFallback: {
+                id: 'osm',
+                threshold: 3,
+                message: `${descriptor.label} tile requests failed; using OSM`,
+              },
+            }
+          : {}),
         ...(descriptor.id === 'esri-imagery'
           ? {
               credit: ESRI_ATTRIBUTION_HTML,

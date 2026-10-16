@@ -8,6 +8,13 @@ are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 
 ## First: real peer acceptance
 
+- Accept the private HTTPS host on a real EUD: use an issued certificate/SAN
+  trusted by that device, verify internal DNS/routing, login/Connect, Sign out,
+  expiry/restart and denied access. Keep the listener internal; never replace
+  certificate validation with a browser warning bypass. The Node host and local
+  HTTPS/WSS fixtures are implemented; actual private-network/device acceptance
+  remains open.
+
 - Connect to an authorized TAK Server with issued certificates, then record
   actual server/client versions and transport settings.
 - Create and share a web marker/contact; observe it on a real ATAK-CIV peer.
@@ -27,8 +34,10 @@ running.
 ## Finish the collaboration product
 
 1. **Multiuser authorization and TAK groups.** The current gateway serves one
-   authenticated local operator. Add proper users/roles, group-scoped reads,
-   subscriptions, replay and revocation before shared/public hosting. Preserve
+   authenticated operator, using loopback token access or a private HTTPS
+   cookie session. Add proper users/roles, group-scoped reads,
+   subscriptions, replay and revocation before shared multiuser operation. Public
+   hosting remains outside the authorized scope. Preserve
    server-side object ownership and denied impersonation/deletion.
 2. **Delivery state and synchronization.** A successful WebSocket write is a
    gateway submission, not a peer receipt. Add compatible peer acknowledgements
@@ -63,6 +72,15 @@ running.
 
 ## Preserve, measure and harden
 
+- Extend the optional map/chart catalog on the full GEV globe rather than
+  substituting a reduced TAK map. Curated reference choices are implemented;
+  track live rendering, coverage/zoom and edition
+  acceptance for Esri reference maps, USGS Topo, NOAA ENC and FAA VFR/IFR; add
+  operator WMS/WMTS/XYZ only through trusted bounded configuration. Source
+  verification and lifecycle/licensing limits are recorded in
+  [TAK_MAP_SOURCES.md](docs/TAK_MAP_SOURCES.md). Maintain Google 3D and the original
+  quick-map identities/default workspace.
+
 - Retest upstream GEV workflows after changes: all 30 catalog registrations,
   source availability, public feeds, map switches, cockpit/tracking, HUD/Cyber,
   radio/CCTV/Street Level, annotations/director, voice, MCP Apps/embedding,
@@ -70,6 +88,11 @@ running.
 - Extend performance evidence using actual target hardware and realistic
   contacts/trails/chat alongside public GEV layers. Bounded state is necessary
   but not a measured frame-rate or memory guarantee.
+  The contact store now enforces aggregate serialized-byte and retained-XML-node
+  limits as well as count; the panel reports eviction/refusal. A single-contact
+  overlay update reuses unchanged entity/card snapshots. Keep the 2,000-contact
+  Chromium regression and verify frame timing under matched conditions; the
+  initial concurrent SwiftShader runs had inconsistent frame intervals.
 - Keep privacy race coverage across viewport/pointer imagery, structured AI/
   voice/tool requests, public links, scenes/exports, recording, logs/analytics
   and embed handoffs. Session disclosure authorization is broad; refine it per
@@ -77,6 +100,13 @@ running.
 - Review certificates, session lifecycle, reconnect queues, malformed CoT,
   resource limits and rejected access as protocol support expands. Do not
   introduce browser-held privileged keys or unauthorized arbitrary upstreams.
+- Retest the production Node host alongside dev/lab after provider changes:
+  ordered preview middleware, login wall on every app/API path, fixed private
+  HTTPS authority, session expiry/logout, bounded login/connections and static
+  traversal/source-map/symlink exclusion. Provider settings and MCP are local
+  administration functions and must not be exposed by the private host. Close
+  the disconnected/offline-cookie-expiry and physical-device acceptance cases
+  with explicit results; a connected-socket fixture is narrower evidence.
 - Audit each reused library/plugin/data asset. Keep MIT notices and existing
   provider credits. Noncommercial datasets and model/OSM/GPL-related terms have
   separate obligations; a working map is not a license for every deployment.

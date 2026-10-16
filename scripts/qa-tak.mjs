@@ -247,6 +247,10 @@ async function newPage(name, embed = false) {
     { timeout },
   );
   if (!embed) {
+    if (fonts)
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
     await page.click('.tak-web-launcher');
     await page.waitForSelector('#tak-web-panel:not([hidden])');
   }
@@ -326,7 +330,11 @@ async function captureEvidence(page, name) {
         bloom: gev.viewer.scene.postProcessStages.bloom.enabled,
         takVisible: gev.takClient.overlay.isVisible(),
         contacts: gev.takClient.client.store.count(),
-        iconsLoaded: document.fonts.check('20px "Material Symbols Outlined"'),
+        iconsLoaded: [...document.fonts].some(
+          (font) =>
+            font.family.includes('Material Symbols Outlined') &&
+            font.status === 'loaded',
+        ),
       };
     }, name),
   );
@@ -427,9 +435,45 @@ try {
       await page.waitForFunction(
         () => document.querySelectorAll('.tak-web-contact').length === 1,
       );
-      await press(page, '.tak-web-contact');
+      const point = await page.$eval('.tak-web-contact', (el) => {
+        window.__qaContactButton = el;
+        el.scrollIntoView({ block: 'center' });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      });
+      await page.mouse.move(point.x, point.y);
+      await page.mouse.down();
+      await page.evaluate(
+        async (xml) => {
+          window.__godsEyeView.takClient.client.importXml(xml);
+          await new Promise(requestAnimationFrame);
+        },
+        cot({ uid: 'QA-IMPORT', callsign: 'SYNTHETIC IMPORT', lat: 34.36651 }),
+      );
+      assert.equal(
+        await page.evaluate(
+          () =>
+            window.__qaContactButton ===
+            document.querySelector(
+              '[data-tak-uid="QA-IMPORT"] .tak-web-contact',
+            ),
+        ),
+        true,
+        'contact update keeps the pointer-down button attached',
+      );
+      await page.mouse.up();
       await page.waitForFunction(
         () => !window.__godsEyeView.viewer.trackedEntity,
+      );
+      await page.waitForFunction(
+        () => !window.__godsEyeView.viewer.camera._currentFlight,
+      );
+      const height = await page.evaluate(
+        () => window.__godsEyeView.viewer.camera.positionCartographic.height,
+      );
+      assert(
+        height >= 500 && height < 10000,
+        `TAK focus keeps a useful above-ground view (${height} m)`,
       );
       await fill(page, '[data-tak-filter]', '');
       await page.evaluate(() =>
@@ -449,6 +493,17 @@ try {
         }),
       );
       await fill(page, '[data-tak-filter]', 'QA CLOCK CHECK');
+      await page.waitForFunction(
+        () =>
+          !!document.querySelector(
+            '[data-tak-uid="QA-STALE"] .tak-web-contact',
+          ),
+      );
+      await page.evaluate(() => {
+        window.__qaStaleButton = document.querySelector(
+          '[data-tak-uid="QA-STALE"] .tak-web-contact',
+        );
+      });
       assert.equal(
         await page.evaluate(() =>
           window.__godsEyeView.takClient.client.store.isStale(
@@ -468,6 +523,17 @@ try {
                 .includes('STALE'),
           ),
         { timeout: 22000 },
+      );
+      assert.equal(
+        await page.evaluate(
+          () =>
+            window.__qaStaleButton ===
+            document.querySelector(
+              '[data-tak-uid="QA-STALE"] .tak-web-contact',
+            ),
+        ),
+        true,
+        'clock refresh preserves the contact button',
       );
       await importXml(
         page,
@@ -690,6 +756,51 @@ try {
         JSON.stringify(box),
       );
       assert(box.overflow, 'long content remains internally scrollable');
+      const phoneControls = await page.$$eval(
+        '#tak-web-panel button, #tak-web-panel input:not([type="checkbox"]):not([type="file"]), #tak-web-panel select, #tak-web-panel textarea, #tak-web-panel summary',
+        (els) =>
+          els
+            .filter((el) => el.getBoundingClientRect().height > 0)
+            .map((el) => ({
+              tag: el.tagName,
+              text: (el.getAttribute('aria-label') || el.textContent || '')
+                .trim()
+                .slice(0, 40),
+              height: el.getBoundingClientRect().height,
+              font: parseFloat(getComputedStyle(el).fontSize),
+            })),
+      );
+      assert(
+        phoneControls.every((control) => control.height >= 43.5),
+        JSON.stringify(phoneControls),
+      );
+      assert(
+        phoneControls
+          .filter((control) =>
+            ['INPUT', 'SELECT', 'TEXTAREA'].includes(control.tag),
+          )
+          .every((control) => control.font >= 16),
+        'phone form text prevents automatic focus zoom',
+      );
+      const sticky = await page.$eval('#tak-web-panel', (el) => {
+        el.scrollTop = el.scrollHeight;
+        const header = el.querySelector('.tak-web-header');
+        const r = header.getBoundingClientRect();
+        const panel = el.getBoundingClientRect();
+        return {
+          position: getComputedStyle(header).position,
+          headerTop: r.top,
+          headerBottom: r.bottom,
+          panelTop: panel.top,
+          panelBottom: panel.bottom,
+        };
+      });
+      assert.equal(sticky.position, 'sticky');
+      assert(
+        sticky.headerTop >= sticky.panelTop - 1 &&
+          sticky.headerBottom <= sticky.panelBottom + 1,
+        JSON.stringify(sticky),
+      );
       await page.$eval('#tak-web-panel', (el) => {
         el.scrollTop = 0;
       });
@@ -757,6 +868,10 @@ try {
     JSON.stringify(
       {
         date: new Date().toISOString(),
+        status: 'passed',
+        node: process.version,
+        platform: process.platform,
+        browser: await browser.version(),
         url: appUrl.origin,
         syntheticOnly: true,
         localGateway: gateway,
@@ -777,6 +892,25 @@ try {
   );
 } catch (error) {
   await saveFailureArtifacts({ dir: artifactDir, browser, monitors, error });
+  await fs.writeFile(
+    path.join(artifactDir, 'results.json'),
+    JSON.stringify(
+      {
+        date: new Date().toISOString(),
+        status: 'failed',
+        url: appUrl.origin,
+        syntheticOnly: true,
+        localGateway: gateway,
+        localSyntheticPeerRoundtrip: lab,
+        externalFontsAllowed: fonts,
+        visualStates,
+        results,
+        error: redact(error?.message || error),
+      },
+      null,
+      2,
+    ),
+  );
   console.error(redact(error?.stack || error));
   process.exitCode = 1;
 } finally {

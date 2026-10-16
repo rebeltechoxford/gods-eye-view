@@ -92,6 +92,22 @@ export function hideOsmCredit(viewer, owner) {
 }
 
 export const DATA_CREDITS = [
+  {
+    key: 'esri-reference-maps',
+    html: 'Reference basemaps: <a href="https://doc.arcgis.com/en/arcgis-online/reference/access-use-constraints.htm" target="_blank" rel="noopener">Esri and service contributors</a>. Selected source credits and legacy status appear in Map Source.',
+  },
+  {
+    key: 'usgs-topographic',
+    html: 'Topographic basemap: <a href="https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer" target="_blank" rel="noopener">USGS The National Map and contributors</a>',
+  },
+  {
+    key: 'noaa-enc-charts',
+    html: 'Electronic nautical chart display: <a href="https://nauticalcharts.noaa.gov/data/gis-data-and-services.html" target="_blank" rel="noopener">NOAA Office of Coast Survey</a> — reference display only',
+  },
+  {
+    key: 'faa-aeronautical-charts',
+    html: 'Aeronautical charts: <a href="https://www.faa.gov/data/aero_data" target="_blank" rel="noopener">Federal Aviation Administration, Aeronautical Information Services</a> — check current edition and alerts; reference display only',
+  },
   // ── Live sources ────────────────────────────────────────────────
   {
     key: 'opensky',

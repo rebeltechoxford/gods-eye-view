@@ -9,11 +9,14 @@ import {
   cotKind,
   isCotStale,
   serializeCotEvent,
+  byteLength,
 } from './protocol/cot.js';
 
 export const DEFAULT_CONTACT_LIMIT = 2000;
 export const DEFAULT_CHAT_LIMIT = 500;
 export const DEFAULT_TRAIL_POINTS = 32;
+export const DEFAULT_CONTACT_BYTES_LIMIT = 8 * 1024 * 1024;
+export const DEFAULT_XML_NODE_LIMIT = 100_000;
 /** How long a stale contact stays (greyed) before the sweep removes it. */
 export const DEFAULT_STALE_RETAIN_MS = 10 * 60 * 1000;
 
@@ -54,15 +57,37 @@ function senderUidOf(event) {
 const chatKey = ({ senderUid, chatroom, id }) =>
   JSON.stringify([senderUid, chatroom, id]);
 
+/** Count distinct retained XML objects, including preserved parsed extensions. */
+function retainedXmlNodes(event, maximum) {
+  const pending = [...(event.detail.extras || [])];
+  if (event.detail.raw) pending.push(event.detail.raw);
+  const seen = new Set();
+  while (pending.length) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object' || seen.has(node)) continue;
+    seen.add(node);
+    if (seen.size > maximum) return seen.size;
+    if (Array.isArray(node.children)) pending.push(...node.children);
+  }
+  return seen.size;
+}
+
 export function createTakStore({
   limit = DEFAULT_CONTACT_LIMIT,
   chatLimit = DEFAULT_CHAT_LIMIT,
   trailPoints = DEFAULT_TRAIL_POINTS,
+  byteLimit = DEFAULT_CONTACT_BYTES_LIMIT,
+  xmlNodeLimit = DEFAULT_XML_NODE_LIMIT,
   staleRetainMs = DEFAULT_STALE_RETAIN_MS,
   now = Date.now,
 } = {}) {
   /** @type {Map<string, TakContact>} insertion order = least recently updated first */
   const contacts = new Map();
+  const contactResources = new Map();
+  let serializedBytes = 0;
+  let xmlNodes = 0;
+  let evictedContacts = 0;
+  let rejectedContacts = 0;
   /** @type {TakChatMessage[]} */
   const chats = [];
   const chatIds = new Set();
@@ -87,15 +112,63 @@ export function createTakStore({
     }
   }
 
+  function forgetContact(uid) {
+    if (!contacts.delete(uid)) return false;
+    const cost = contactResources.get(uid);
+    serializedBytes -= cost.bytes;
+    xmlNodes -= cost.nodes;
+    contactResources.delete(uid);
+    return true;
+  }
+
+  function rejectHeavyContact() {
+    rejectedContacts++;
+    publish();
+    return false;
+  }
+
   function upsertContact(event, origin) {
     const prior = contacts.get(event.uid);
     if (prior && event.timeMs < prior.event.timeMs) return false;
+    let xml;
+    try {
+      xml = serializeCotEvent(event);
+    } catch {
+      return rejectHeavyContact();
+    }
     if (
       prior &&
       event.timeMs === prior.event.timeMs &&
-      serializeCotEvent(event) === serializeCotEvent(prior.event)
+      xml === serializeCotEvent(prior.event)
     )
       return false;
+    const cost = {
+      bytes: byteLength(xml),
+      nodes: retainedXmlNodes(event, xmlNodeLimit),
+    };
+    if (cost.bytes > byteLimit || cost.nodes > xmlNodeLimit || limit < 1)
+      return rejectHeavyContact();
+    const priorCost = contactResources.get(event.uid);
+    let proposedBytes = serializedBytes - (priorCost?.bytes || 0) + cost.bytes;
+    let proposedNodes = xmlNodes - (priorCost?.nodes || 0) + cost.nodes;
+    let proposedCount = contacts.size + (prior ? 0 : 1);
+    const exceeds = () =>
+      proposedCount > limit ||
+      proposedBytes > byteLimit ||
+      proposedNodes > xmlNodeLimit;
+    const victims = [];
+    for (const uid of contacts.keys()) {
+      if (!exceeds()) break;
+      if (uid === selfUid || uid === event.uid) continue;
+      const removed = contactResources.get(uid);
+      proposedBytes -= removed.bytes;
+      proposedNodes -= removed.nodes;
+      proposedCount--;
+      victims.push(uid);
+    }
+    // A protected self contact still counts toward every resource limit. Refuse
+    // an update before changing prior contacts when no eviction can make it fit.
+    if (exceeds()) return rejectHeavyContact();
     const point = event.point;
     let trail = prior ? prior.trail : [];
     const last = trail[trail.length - 1];
@@ -129,20 +202,15 @@ export function createTakStore({
       trail,
       emergency: !!event.detail.emergency && !event.detail.emergency.cancel,
     });
-    contacts.delete(event.uid);
-    contacts.set(event.uid, contact);
-    while (contacts.size > limit) {
-      // Evict the least recently updated contact that is not ourselves.
-      let victim = null;
-      for (const key of contacts.keys()) {
-        if (key !== selfUid) {
-          victim = key;
-          break;
-        }
-      }
-      if (victim === null) break;
-      contacts.delete(victim);
+    for (const uid of victims) {
+      forgetContact(uid);
+      evictedContacts++;
     }
+    forgetContact(event.uid);
+    contacts.set(event.uid, contact);
+    contactResources.set(event.uid, cost);
+    serializedBytes += cost.bytes;
+    xmlNodes += cost.nodes;
     return true;
   }
 
@@ -181,7 +249,9 @@ export function createTakStore({
     if (kind === 'ping') return 'ignored';
     if (kind === 'delete') {
       const target = cotDeleteTarget(event);
-      if (target && target !== selfUid && contacts.delete(target)) {
+      if (event.timeMs < (contacts.get(target)?.event.timeMs ?? -Infinity))
+        return 'ignored';
+      if (target && target !== selfUid && forgetContact(target)) {
         publish();
         return 'deleted';
       }
@@ -197,7 +267,9 @@ export function createTakStore({
     }
     if (event.type === 'b-a-o-can') {
       // Cancel: the alert uid is "<sender>-9-1-1".
-      if (contacts.delete(event.uid)) {
+      if (event.timeMs < (contacts.get(event.uid)?.event.timeMs ?? -Infinity))
+        return 'ignored';
+      if (forgetContact(event.uid)) {
         publish();
         return 'cancelled';
       }
@@ -236,6 +308,16 @@ export function createTakStore({
     selfUid: () => selfUid,
     get: (uid) => contacts.get(uid) || null,
     count: () => contacts.size,
+    resourceStats: () => ({
+      contacts: contacts.size,
+      serializedBytes,
+      xmlNodes,
+      contactLimit: limit,
+      byteLimit,
+      xmlNodeLimit,
+      evictedContacts,
+      rejectedContacts,
+    }),
     /** Contacts sorted for display: emergencies, self, then callsign. */
     list() {
       return Array.from(contacts.values()).sort(
@@ -251,7 +333,7 @@ export function createTakStore({
     isStale: (contact) => isCotStale(contact?.event, now()),
     remove(uid) {
       if (destroyed) return false;
-      if (!contacts.delete(uid)) return false;
+      if (!forgetContact(uid)) return false;
       publish();
       return true;
     },
@@ -263,7 +345,7 @@ export function createTakStore({
       for (const [uid, contact] of contacts) {
         if (uid === selfUid) continue;
         if (contact.event.staleMs <= cutoff) {
-          contacts.delete(uid);
+          forgetContact(uid);
           removed++;
         }
       }
@@ -273,6 +355,9 @@ export function createTakStore({
     clear() {
       if (!contacts.size && !chats.length) return;
       contacts.clear();
+      contactResources.clear();
+      serializedBytes = 0;
+      xmlNodes = 0;
       chats.length = 0;
       chatIds.clear();
       publish();
@@ -286,6 +371,9 @@ export function createTakStore({
       destroyed = true;
       listeners.clear();
       contacts.clear();
+      contactResources.clear();
+      serializedBytes = 0;
+      xmlNodes = 0;
       chats.length = 0;
       chatIds.clear();
       selfUid = null;

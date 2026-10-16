@@ -1,4 +1,5 @@
 import { MAX_COT_DOCUMENT_BYTES } from './protocol/cot.js';
+import { describePosition } from './position.js';
 import {
   ALL_CHAT_ROOMS,
   TAK_ROLES,
@@ -25,10 +26,16 @@ const PANEL_HTML = `
     <strong>TAK OPERATIONS</strong>
     <span data-tak-link role="status" aria-live="polite">LOCAL</span>
   </header>
+  <p class="tak-web-hint" data-tak-device-state>Foreground device state…</p>
   <p class="tak-web-explainer" data-tak-gateway>Checking gateway…</p>
   <label class="tak-web-check"><input type="checkbox" data-tak-visible checked/> Show TAK layer on globe</label>
   <label class="tak-web-check"><input type="checkbox" data-tak-disclosure/> Allow AI, public links, scene exports and recording to include private TAK data and locations for this page session</label>
   <p class="tak-web-hint" data-tak-privacy>Privacy protection starts when TAK data is loaded.</p>
+  <details class="tak-web-section" data-tak-section="phone">
+    <summary>PHONE EUD / INSTALL</summary>
+    <button type="button" data-tak-install>Install / home screen</button>
+    <p class="tak-web-hint" data-tak-install-state>Private HTTPS is required on a real phone. Keep the app visible for device GPS; offline maps and background tracking are not available.</p>
+  </details>
 
   <details class="tak-web-section" data-tak-section="identity">
     <summary>IDENTITY · <span data-tak-whoami></span></summary>
@@ -50,6 +57,7 @@ const PANEL_HTML = `
       <div class="tak-web-row">
         <button type="submit" data-tak-connect>Connect</button>
         <button type="button" data-tak-disconnect>Disconnect</button>
+        <button type="button" data-tak-logout hidden>Sign out</button>
       </div>
     </form>
     <p class="tak-web-hint" data-tak-uplinks></p>
@@ -79,7 +87,7 @@ const PANEL_HTML = `
         <button type="button" data-tak-marker-center>Map center</button>
         <button type="submit">Add marker</button>
       </div>
-      <label class="tak-web-check"><input type="checkbox" data-tak-marker-broadcast checked/> Share with network</label>
+      <label class="tak-web-check"><input type="checkbox" data-tak-marker-broadcast/> Share with network</label>
     </form>
   </details>
 
@@ -87,6 +95,7 @@ const PANEL_HTML = `
     <strong data-tak-count>CONTACTS · 0</strong>
     <button type="button" data-tak-clear>Clear</button>
   </div>
+  <p class="tak-web-hint" data-tak-resources hidden></p>
   <input data-tak-filter aria-label="Filter contacts" placeholder="Filter callsign…"/>
   <div class="tak-web-roster" data-tak-list role="list"></div>
 
@@ -111,11 +120,6 @@ const PANEL_HTML = `
   <div class="tak-web-status" data-tak-status role="status" aria-live="polite">Imported files and unshared markers never leave this page.</div>
   <footer data-tak-footer>NOT VERIFIED TACTICAL DATA · OPERATOR JUDGEMENT REQUIRED</footer>
 </section>`;
-
-function formatFix(fix) {
-  if (!fix) return 'No position set.';
-  return `${fix.lat.toFixed(5)}, ${fix.lon.toFixed(5)} · ${fix.source === 'GPS' ? 'device GPS' : 'operator set'}`;
-}
 
 function describeGateway(link, gatewayInfo) {
   const g = link.gateway || gatewayInfo;
@@ -163,6 +167,8 @@ export function createTakPanel({
   gatewayInfo,
   privacy,
   connect,
+  mobile,
+  logout,
 }) {
   const root = document.createElement('section');
   root.className = 'tak-web-root';
@@ -184,6 +190,8 @@ export function createTakPanel({
   let renderedChat = null;
   let renderedReject = null;
   let connectAttempt = null;
+  let reportedEvictions = 0;
+  let reportedRejections = 0;
 
   function report(message, error = false) {
     if (destroyed) return;
@@ -210,6 +218,63 @@ export function createTakPanel({
     $('[data-tak-uid]').textContent = `Device uid ${id.uid}`;
   }
 
+  function clearPrivateInputs() {
+    for (const input of root.querySelectorAll(
+      'input:not([type="checkbox"]), textarea',
+    ))
+      input.value = '';
+    for (const record of rosterRows.values()) record.row.remove();
+    rosterRows.clear();
+    $('[data-tak-chat]').replaceChildren();
+    $('[data-tak-fix]').textContent = 'No position set.';
+    $('[data-tak-sa]').checked = false;
+    $('[data-tak-disclosure]').checked = false;
+    $('[data-tak-marker-broadcast]').checked = false;
+    gpsOn = false;
+    const gps = $('[data-tak-gps]');
+    gps.setAttribute('aria-pressed', 'false');
+    gps.textContent = 'Use device GPS';
+    const emergency = $('[data-tak-emergency]');
+    emergency.setAttribute('aria-pressed', 'false');
+    emergency.textContent = 'RAISE 911 ALERT';
+  }
+
+  const rosterRows = new Map();
+  const rosterNote = document.createElement('p');
+  rosterNote.className = 'tak-web-empty';
+  function createRosterRow(uid) {
+    const row = document.createElement('div');
+    row.className = 'tak-web-contact-row';
+    row.setAttribute('role', 'listitem');
+    row.dataset.takUid = uid;
+    const entry = document.createElement('button');
+    entry.type = 'button';
+    entry.className = 'tak-web-contact';
+    const title = document.createElement('strong');
+    const swatch = document.createElement('i');
+    const label = document.createTextNode('');
+    title.append(swatch, label);
+    const meta = document.createElement('span');
+    entry.append(title, meta);
+    entry.addEventListener('click', () => overlay.focus(uid));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'tak-web-remove';
+    remove.textContent = '×';
+    remove.addEventListener(
+      'click',
+      guard(() => {
+        const contact = client.store.get(uid);
+        if (!contact) return '';
+        const result = client.removeContact(uid);
+        return result.sent
+          ? `Deletion sent to gateway for ${contact.callsign}; peer delivery is not confirmed.`
+          : `Removed ${contact.callsign} locally.`;
+      }, 'Unable to remove contact.'),
+    );
+    row.append(entry, remove);
+    return { row, entry, swatch, label, meta, remove };
+  }
   function renderRoster() {
     const filter = $('[data-tak-filter]').value.trim().toLowerCase();
     const contacts = client.store
@@ -217,71 +282,55 @@ export function createTakPanel({
       .filter((c) => !filter || c.callsign.toLowerCase().includes(filter));
     $('[data-tak-count]').textContent = `CONTACTS · ${client.store.count()}`;
     const roster = $('[data-tak-list]');
-    roster.replaceChildren();
-    if (!contacts.length) {
-      const empty = document.createElement('p');
-      empty.className = 'tak-web-empty';
-      empty.textContent = filter ? 'No contacts match.' : 'No contacts yet.';
-      roster.append(empty);
-      return;
+    const visible = contacts.slice(0, ROSTER_LIMIT);
+    const wanted = new Set(visible.map((contact) => contact.uid));
+    for (const [uid, record] of rosterRows) {
+      if (!wanted.has(uid)) {
+        record.row.remove();
+        rosterRows.delete(uid);
+      }
     }
-    for (const contact of contacts.slice(0, ROSTER_LIMIT)) {
-      const row = document.createElement('div');
-      row.className = 'tak-web-contact-row';
-      row.setAttribute('role', 'listitem');
-      const entry = document.createElement('button');
-      entry.type = 'button';
-      entry.className = 'tak-web-contact';
-      if (contact.emergency) entry.classList.add('tak-web-contact-emergency');
+    for (const [index, contact] of visible.entries()) {
+      let record = rosterRows.get(contact.uid);
+      if (!record) {
+        record = createRosterRow(contact.uid);
+        rosterRows.set(contact.uid, record);
+      }
+      const { row, entry, swatch, label, meta, remove } = record;
+      entry.classList.toggle('tak-web-contact-emergency', contact.emergency);
       entry.title = `Focus on ${contact.callsign}`;
-      const title = document.createElement('strong');
-      title.textContent = contact.callsign;
-      const swatch = document.createElement('i');
+      label.data = contact.callsign;
       swatch.className = `tak-web-swatch tak-web-${contact.origin === 'self' ? 'self' : contact.affiliation}`;
-      title.prepend(swatch);
-      const meta = document.createElement('span');
-      const stale = client.store.isStale(contact);
       meta.textContent = [
         `${contact.point.lat.toFixed(5)}, ${contact.point.lon.toFixed(5)}`,
         contact.origin.toUpperCase(),
         contact.event.detail.group?.name || null,
-        stale ? 'STALE' : null,
+        client.store.isStale(contact) ? 'STALE' : null,
         contact.emergency ? 'EMERGENCY' : null,
       ]
         .filter(Boolean)
         .join(' · ');
-      entry.append(title, meta);
-      entry.addEventListener('click', () => overlay.focus(contact.uid));
-      row.append(entry);
-      if (contact.origin !== 'self') {
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'tak-web-remove';
-        remove.textContent = '×';
-        const shared = client.isOwnMarker(contact.uid);
-        remove.title = shared
-          ? `Delete ${contact.callsign} for everyone`
-          : `Remove ${contact.callsign} from this page`;
-        remove.setAttribute('aria-label', remove.title);
-        remove.addEventListener(
-          'click',
-          guard(() => {
-            const result = client.removeContact(contact.uid);
-            return result.sent
-              ? `Deletion sent to gateway for ${contact.callsign}; peer delivery is not confirmed.`
-              : `Removed ${contact.callsign} locally.`;
-          }, 'Unable to remove contact.'),
-        );
-        row.append(remove);
-      }
-      roster.append(row);
+      remove.hidden = contact.origin === 'self';
+      remove.title = client.isOwnMarker(contact.uid)
+        ? `Delete ${contact.callsign} for everyone`
+        : `Remove ${contact.callsign} from this page`;
+      remove.setAttribute('aria-label', remove.title);
+      // Keep existing buttons attached across status, stale and position updates.
+      // Replacing them between pointerdown/up loses a legitimate phone tap.
+      const current = roster.children[index];
+      if (current !== row) roster.insertBefore(row, current || null);
     }
-    if (contacts.length > ROSTER_LIMIT) {
-      const limited = document.createElement('p');
-      limited.className = 'tak-web-empty';
-      limited.textContent = `Showing first ${ROSTER_LIMIT} of ${contacts.length}.`;
-      roster.append(limited);
-    }
+    const note = !contacts.length
+      ? filter
+        ? 'No contacts match.'
+        : 'No contacts yet.'
+      : contacts.length > ROSTER_LIMIT
+        ? `Showing first ${ROSTER_LIMIT} of ${contacts.length}.`
+        : '';
+    if (note) {
+      rosterNote.textContent = note;
+      if (rosterNote.parentNode !== roster) roster.append(rosterNote);
+    } else rosterNote.remove();
   }
 
   function renderChat() {
@@ -312,6 +361,14 @@ export function createTakPanel({
     frame = 0;
     if (destroyed) return;
     const link = client.link();
+    const device = mobile.state();
+    $('[data-tak-connect]').disabled = !gatewayInfo();
+    const operatorSession =
+      gatewayInfo()?.sessionAuthenticated || link.gateway?.sessionAuthenticated;
+    $('[data-tak-logout]').hidden = !operatorSession;
+    const tokenInput = $('[data-tak-token]');
+    tokenInput.hidden = !!operatorSession;
+    if (operatorSession) tokenInput.value = '';
     if (link.lastReject && link.lastReject !== renderedReject) {
       renderedReject = link.lastReject;
       report(
@@ -319,7 +376,24 @@ export function createTakPanel({
         true,
       );
     }
-    const label = LINK_LABELS[link.state] || link.state.toUpperCase();
+    const resources = client.store.resourceStats?.();
+    if (resources) {
+      const { evictedContacts, rejectedContacts } = resources;
+      const notice = $('[data-tak-resources]');
+      notice.hidden = !evictedContacts && !rejectedContacts;
+      const message = `Contact capacity: ${evictedContacts} older contacts removed; ${rejectedContacts} updates refused because they exceed resource limits. Remaining contacts stay available.`;
+      if (!notice.hidden) notice.textContent = message;
+      if (
+        evictedContacts > reportedEvictions ||
+        rejectedContacts > reportedRejections
+      )
+        report(message, true);
+      reportedEvictions = evictedContacts;
+      reportedRejections = rejectedContacts;
+    }
+    const label = device.online
+      ? LINK_LABELS[link.state] || link.state.toUpperCase()
+      : 'OFFLINE';
     $('[data-tak-badge]').textContent = label;
     $('[data-tak-link]').textContent =
       link.detail && link.state !== 'open'
@@ -332,7 +406,26 @@ export function createTakPanel({
     const whoami = $('[data-tak-whoami]');
     whoami.textContent = `${id.callsign} · ${id.team}`;
     whoami.style.borderBottomColor = TAK_TEAM_COLORS[id.team] || 'transparent';
-    $('[data-tak-fix]').textContent = formatFix(client.fix());
+    $('[data-tak-fix]').textContent = describePosition(client.fix(), {
+      foreground: device.foreground,
+      gpsActive: gpsOn,
+    });
+    $('[data-tak-device-state]').textContent =
+      `${device.online ? 'BROWSER ONLINE' : 'OFFLINE / LOCAL'} · ${device.foreground ? 'FOREGROUND' : 'BACKGROUND · GPS paused'} · ${device.standalone ? 'INSTALLED' : 'BROWSER'}${device.secure ? '' : ' · PHONE HTTPS REQUIRED'}`;
+    $('[data-tak-install]').textContent = device.standalone
+      ? 'Installed on this device'
+      : device.installAvailable
+        ? 'Install EUD'
+        : 'Install / home screen';
+    if (device.viewportHeight)
+      root.style.setProperty(
+        '--tak-viewport-height',
+        `${Math.round(device.viewportHeight)}px`,
+      );
+    root.style.setProperty(
+      '--tak-keyboard-inset',
+      `${Math.round(device.keyboardInset)}px`,
+    );
     $('[data-tak-sa]').checked = client.saEnabled();
     const gps = $('[data-tak-gps]');
     gps.setAttribute('aria-pressed', String(gpsOn));
@@ -379,6 +472,28 @@ export function createTakPanel({
     render();
   });
   $('[data-tak-filter]').addEventListener('input', () => renderRoster());
+  $('[data-tak-install]').addEventListener('click', async () => {
+    try {
+      const result = await mobile.install();
+      if (destroyed || result === 'closed') return;
+      const installMessage =
+        result === 'installed'
+          ? 'This app is already running from the home screen.'
+          : result === 'accepted'
+            ? 'Installation requested. Keep using the app while your browser completes it.'
+            : result === 'dismissed'
+              ? 'Installation dismissed. The app remains available in this browser.'
+              : result === 'https-required'
+                ? 'Open the approved private HTTPS address on your phone before installing or using GPS.'
+                : 'Use your browser menu to install. On iPhone/iPad: Share → Add to Home Screen. On Android: menu → Install app / Add to Home screen.';
+      $('[data-tak-install-state]').textContent = installMessage;
+    } catch {
+      report(
+        'The browser could not complete installation. Use its home screen menu.',
+        true,
+      );
+    }
+  });
 
   $('[data-tak-identity-form]').addEventListener(
     'submit',
@@ -417,6 +532,25 @@ export function createTakPanel({
       return 'Disconnected. Working local-only.';
     }, 'Unable to disconnect.'),
   );
+  $('[data-tak-logout]').addEventListener('click', async () => {
+    connectAttempt?.abort();
+    geolocation.stop();
+    gpsOn = false;
+    client.disconnect();
+    client.clearPrivateState();
+    privacy.authorize(false);
+    clearPrivateInputs();
+    report('Signing out. Local tactical data cleared.');
+    try {
+      await logout();
+    } catch (error) {
+      report(
+        error?.message ||
+          'Server sign-out could not be confirmed; retry while connected.',
+        true,
+      );
+    }
+  });
 
   $('[data-tak-gps]').addEventListener('click', () => {
     if (gpsOn) {
@@ -504,7 +638,7 @@ export function createTakPanel({
         broadcast: $('[data-tak-marker-broadcast]').checked,
       });
       markerForm.reset();
-      $('[data-tak-marker-broadcast]').checked = true;
+      $('[data-tak-marker-broadcast]').checked = false;
       overlay.focus(result.uid);
       return result.sent
         ? 'Marker sent to gateway; peer delivery is not confirmed.'
@@ -568,6 +702,7 @@ export function createTakPanel({
 
   return Object.freeze({
     render: scheduleRender,
+    clearPrivateInputs,
     destroy() {
       destroyed = true;
       connectAttempt?.abort();

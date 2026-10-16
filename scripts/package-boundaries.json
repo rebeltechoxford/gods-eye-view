@@ -314,7 +314,8 @@
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
       "server/providers/openai/toolDescriptions.js",
-      "src/sources/rateLimit.js"
+      "src/sources/rateLimit.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   },
@@ -418,7 +419,9 @@
       "src/ui/mapSourceControls.js",
       "src/mapStackChips.js",
       "src/keySetupCore.mjs",
-      "src/localRequestGate.mjs"
+      "src/localRequestGate.mjs",
+      "src/maps/referenceCatalog.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": []
   },
@@ -669,7 +672,9 @@
       "src/layers/localAdsb/feedNames.js",
       "src/ui/localSdrPresentation.js",
       "src/data/cameraArrival.js",
-      "src/tak/privacy.js"
+      "src/tak/privacy.js",
+      "src/maps/referenceCatalog.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": ["cesium"]
   },
@@ -776,7 +781,8 @@
       "src/scenes/sharing.js",
       "src/ui/sceneSharing.js",
       "src/data/cameraArrival.js",
-      "src/tak/privacy.js"
+      "src/tak/privacy.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": ["cesium"]
   },
@@ -1355,7 +1361,9 @@
       "src/maps/terrainRetry.js",
       "src/keySetupCore.mjs",
       "src/localRequestGate.mjs",
-      "src/maps/imageryHost.js"
+      "src/maps/imageryHost.js",
+      "src/maps/referenceCatalog.js",
+      "src/maps/referenceImagery.js"
     ],
     "external": ["cesium"]
   },
@@ -2214,7 +2222,6 @@
       "src/data/cameraArrival.js",
       "src/layers/alpr/floors.js",
       "src/data/militaryNames.js",
-      "src/sources/requestDeadline.js",
       "src/data/local_data/osm_military_names/names.json",
       "src/layers/installations/namedMarkers.js",
       "src/data/infrastructureOverlayEntry.js",
@@ -2224,7 +2231,13 @@
       "src/view/index.js",
       "src/app/embed.js",
       "src/tak/privacy.js",
-      "src/tak/geolocation.js"
+      "src/tak/geolocation.js",
+      "src/tak/position.js",
+      "src/tak/mobile.js",
+      "src/tak/session.js",
+      "src/maps/referenceCatalog.js",
+      "src/maps/referenceImagery.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": [
       "hls.js",
@@ -2747,7 +2760,6 @@
       "src/data/cameraArrival.js",
       "src/layers/alpr/floors.js",
       "src/data/militaryNames.js",
-      "src/sources/requestDeadline.js",
       "src/data/local_data/osm_military_names/names.json",
       "src/layers/installations/namedMarkers.js",
       "src/data/infrastructureOverlayEntry.js",
@@ -3003,7 +3015,8 @@
     "modules": [
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
-      "src/hudLayoutPolicy.js"
+      "src/hudLayoutPolicy.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   },
@@ -3396,7 +3409,8 @@
       "src/view/index.js",
       "src/tools/views.js",
       "src/tools/globePanel.js",
-      "src/tools/queries/panelRequest.js"
+      "src/tools/queries/panelRequest.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": ["satellite.js"]
   },
@@ -3492,7 +3506,8 @@
       "src/view/index.js",
       "src/data/idSwitches.js",
       "src/data/layerState.js",
-      "src/data/layerStateTokenReservations.json"
+      "src/data/layerStateTokenReservations.json",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   }

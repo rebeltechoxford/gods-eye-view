@@ -12,6 +12,12 @@ Street Level viewer; the complete resolved dependency inventory remains in
 - Source: <https://github.com/websockets/ws>
 - License: MIT; license text is distributed in `node_modules/ws/LICENSE`.
 
+The private HTTPS host also uses `connect` 3.7.0 (MIT, Sencha Labs and
+contributors; [source and license](https://github.com/senchalabs/connect)) to
+retain the established GEV provider middleware order behind its authenticated
+session. Its resolved dependencies and notices remain in `package-lock.json`
+and the installed packages. It does not start a Vite development server.
+
 The TAK protocol modules are independently written project code. No ATAK-CIV
 application source, SDK binaries, plugin binaries, imagery or operational data
 was incorporated. The official TAK wire-format specification is a protocol

@@ -38,20 +38,29 @@ the remaining peer/service/hardware prerequisites explicitly.
 
 ## Ordered delivery
 
-| Order | Deliverable                                | Completion criteria                                                                                                                                                                                                                                                    | Independent of live credentials?                                                    |
-| ----- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 1     | Reproducible repository baseline           | Fetch fork; inspect branch/PR state and instructions; preserve local changes; use supported Node and `npm ci`; record all gate results and environment.                                                                                                                | Yes                                                                                 |
-| 2     | Audit and repair local prototype           | Strict numeric/coordinate/time/altitude handling, no ID collisions, bounded imports/state, time-driven stale cleanup, shared overlay text/navigation, deterministic teardown, keyboard/phone/embed behavior and private-data capture safeguards.                       | Yes                                                                                 |
-| 3     | Secure gateway and bounded transport       | Disabled unless configured; authenticated same-origin browser session, fixed authorized server, verified mTLS, fail-closed authorization/UID ownership, bounded framing/queues/rate/clients, disconnect/cleanup/reconnect, no automatic network bridge or replay leak. | Yes, with local TLS fixtures; real server config remains separate                   |
-| 4     | Genuine end-to-end exchange                | Operator creates and explicitly shares contact/marker; authorized real peer receives it; peer update returns correctly; inspect type/UID/time/stale/position; repeat rejection/disconnect cases. Record peer/server versions.                                          | Live acceptance requires authorized peers/server; local implementation/tests do not |
-| 5     | Contacts, status, tracks and self position | Accurate identity/source/accuracy/freshness, bounded histories, correct stale/delete semantics, explicit foreground position broadcast, send/fail/unsent status and navigation handoffs.                                                                               | Mostly; peer interpretation requires live acceptance                                |
-| 6     | Chat, recipients and groups                | Authentic sender, allowlisted group subscriptions/recipients, scoped replay/history, dedup/order, limits and truthful send/delivery states. Group revocation prevents future reads and writes.                                                                         | Mostly; real multi-peer acceptance remains required                                 |
-| 7     | Shared drawings and routes                 | Focused editable objects with ownership/conflicts/deletes, compatible CoT representations and peer roundtrips; preserve existing GEV whiteboard and directions.                                                                                                        | Mostly                                                                              |
-| 8     | Mission packages and attachments           | Safe manifest/archive import, authorized upload/download, hashing/limits/path validation, group scope and sync/conflict recovery; real-client package roundtrip.                                                                                                       | Mostly                                                                              |
-| 9     | Coordinate and navigation tools            | Defined datum/units and supported formats, tested conversions and measurement/range/bearing, route/waypoint workflow; clear map-center versus GPS source.                                                                                                              | Yes                                                                                 |
-| 10    | GPS/offline resilience                     | Permission/source/accuracy UI, bounded explicit retention/cache, restart/eviction/unsent/reconnect handling, approved offline maps; document foreground/background limits.                                                                                             | Mostly; device/browser tests required                                               |
-| 11    | Supported video and sensors                | Named authorized transports/codecs/metadata with resource cleanup, privacy and access tests; native/hardware adapters only where required and verified.                                                                                                                | Fixture work yes; live integration needs authorized sources/hardware                |
-| 12    | Versioned parity and release acceptance    | ATAK-CIV, iTAK and WinTAK each tested against the matrix; supported subsets, plugin gaps, hardware needs and remaining failures published.                                                                                                                             | No for peer/hardware acceptance; documentation remains independent                  |
+The requested map expansion is an additive workstream on this same full GEV
+workspace: curated Esri/topo/terrain/ocean, USGS, NOAA ENC and FAA VFR/IFR choices,
+followed by trusted operator-configured WMS/WMTS/XYZ. Preserve the existing five
+quick controls and conditional Google 3D startup. Source verification, limits,
+licensing and the implementation proposal are in [TAK_MAP_SOURCES.md](TAK_MAP_SOURCES.md).
+Chart service metadata and a listed option do not by themselves establish live
+rendering, coverage or navigation acceptance.
+
+| Order | Deliverable                                | Completion criteria                                                                                                                                                                                                                                                    | Independent of live credentials?                                                                                      |
+| ----- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1     | Reproducible repository baseline           | Fetch fork; inspect branch/PR state and instructions; preserve local changes; use supported Node and `npm ci`; record all gate results and environment.                                                                                                                | Yes                                                                                                                   |
+| 2     | Audit and repair local prototype           | Strict numeric/coordinate/time/altitude handling, no ID collisions, bounded imports/state, time-driven stale cleanup, shared overlay text/navigation, deterministic teardown, keyboard/phone/embed behavior and private-data capture safeguards.                       | Yes                                                                                                                   |
+| 3     | Secure gateway and bounded transport       | Disabled unless configured; authenticated same-origin browser session, fixed authorized server, verified mTLS, fail-closed authorization/UID ownership, bounded framing/queues/rate/clients, disconnect/cleanup/reconnect, no automatic network bridge or replay leak. | Yes, with local TLS fixtures; real server config remains separate                                                     |
+| 3a    | Internal HTTPS host and EUD session        | Serve production assets and established provider APIs through Node HTTPS; pinned private listener/origin, operator login wall, secure bounded sessions, logout/expiry revocation, no remote bootstrap/admin/MCP, bounded static serving and cleanup.                   | Local implementation/fixtures yes; issued device certificate, private routing and real-EUD acceptance remain external |
+| 4     | Genuine end-to-end exchange                | Operator creates and explicitly shares contact/marker; authorized real peer receives it; peer update returns correctly; inspect type/UID/time/stale/position; repeat rejection/disconnect cases. Record peer/server versions.                                          | Live acceptance requires authorized peers/server; local implementation/tests do not                                   |
+| 5     | Contacts, status, tracks and self position | Accurate identity/source/accuracy/freshness, bounded histories, correct stale/delete semantics, explicit foreground position broadcast, send/fail/unsent status and navigation handoffs.                                                                               | Mostly; peer interpretation requires live acceptance                                                                  |
+| 6     | Chat, recipients and groups                | Authentic sender, allowlisted group subscriptions/recipients, scoped replay/history, dedup/order, limits and truthful send/delivery states. Group revocation prevents future reads and writes.                                                                         | Mostly; real multi-peer acceptance remains required                                                                   |
+| 7     | Shared drawings and routes                 | Focused editable objects with ownership/conflicts/deletes, compatible CoT representations and peer roundtrips; preserve existing GEV whiteboard and directions.                                                                                                        | Mostly                                                                                                                |
+| 8     | Mission packages and attachments           | Safe manifest/archive import, authorized upload/download, hashing/limits/path validation, group scope and sync/conflict recovery; real-client package roundtrip.                                                                                                       | Mostly                                                                                                                |
+| 9     | Coordinate and navigation tools            | Defined datum/units and supported formats, tested conversions and measurement/range/bearing, route/waypoint workflow; clear map-center versus GPS source.                                                                                                              | Yes                                                                                                                   |
+| 10    | GPS/offline resilience                     | Permission/source/accuracy UI, bounded explicit retention/cache, restart/eviction/unsent/reconnect handling, approved offline maps; document foreground/background limits.                                                                                             | Mostly; device/browser tests required                                                                                 |
+| 11    | Supported video and sensors                | Named authorized transports/codecs/metadata with resource cleanup, privacy and access tests; native/hardware adapters only where required and verified.                                                                                                                | Fixture work yes; live integration needs authorized sources/hardware                                                  |
+| 12    | Versioned parity and release acceptance    | ATAK-CIV, iTAK and WinTAK each tested against the matrix; supported subsets, plugin gaps, hardware needs and remaining failures published.                                                                                                                             | No for peer/hardware acceptance; documentation remains independent                                                    |
 
 Order 4 is the first network acceptance milestone. Do not postpone authorization
 or privacy behind additional collaboration features. Implement browser workflows
@@ -79,8 +88,9 @@ For a PR that changes shared layer serialization, run
 `npm run layer-token:check -- --base-ref origin/main` as CI does. TAK should not
 consume public layer/share tokens simply to persist private contacts.
 
-Browser acceptance must use the production build through the supported preview
-server and the existing browser. The repository's existing commands include:
+Browser acceptance uses the production build through the supported local preview
+for legacy GEV gates, and `npm run tak:serve` for private HTTPS/EUD hosting. Vite
+dev/preview is not the production internal host. Existing commands include:
 
 ```sh
 npm run qa:street-level:fixtures -- --strict --url http://localhost:4173
@@ -107,16 +117,17 @@ local synthetic evidence, excluded from Git when they contain private data.
 
 ## Gateway negative and resilience acceptance
 
-| Area                  | Required scenarios                                                                                                                                                                                                    |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser access        | Missing/wrong credentials, forged/missing Origin as applicable, refused protocol, session revocation, arbitrary browser-supplied upstream and cross-group read/write.                                                 |
-| Identity and commands | Forged UID/callsign ownership, deletion/update of another principal's objects, group/recipient changes, imported content accidentally becoming outbound, replayed/duplicate commands.                                 |
-| TLS                   | Trusted authorized client succeeds; untrusted CA, wrong server name, missing/invalid client certificate and expired certificate fail; no insecure bypass. Keep test keys synthetic.                                   |
-| Malformed input       | DTD/entity, nested/oversized XML, invalid encoding/attributes, non-finite/out-of-range coordinates, timestamp abuse, stream fragments/coalescing/truncation and unsupported protobuf.                                 |
-| Limits                | Bounded frames/events/contact history, per-session/link rate, connection count, slow browser/backpressure, replay/queue capacity and upstream flood. Refusal cannot crash the app or grow memory without bound.       |
-| Recovery              | Upstream refused/offline, browser refresh, disconnect while write/capture is pending, bounded backoff, re-authentication, stale contacts, no silent resend/broadcast or cross-network bridge.                         |
-| Lifetime              | Gateway shutdown closes sockets/timers/subscriptions; late callbacks cannot revive retired sessions. Browser destroy removes overlay/UI/geolocation/watchers and cancels focus/reconnect work.                        |
-| Privacy               | TAK absent from AI image/structured requests, public MCP tools, HUD summaries, logs/analytics, links/scenes/exports and embedded handoffs. Exercise races during enable/disable/capture, not just empty steady state. |
+| Area                  | Required scenarios                                                                                                                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser access        | Missing/wrong credentials, forged/missing Origin as applicable, refused protocol, session revocation, arbitrary browser-supplied upstream and cross-group read/write.                                                                                            |
+| Internal HTTPS host   | Real TLS login/cookie/WSS, pinned Host/Origin and actual private socket, refused public/wildcard/proxy access, 2 KiB login and rate/session limits, cookie logout/expiry, source-map/traversal/symlink rejection, protected existing provider APIs and shutdown. |
+| Identity and commands | Forged UID/callsign ownership, deletion/update of another principal's objects, group/recipient changes, imported content accidentally becoming outbound, replayed/duplicate commands.                                                                            |
+| TLS                   | Trusted authorized client succeeds; untrusted CA, wrong server name, missing/invalid client certificate and expired certificate fail; no insecure bypass. Keep test keys synthetic.                                                                              |
+| Malformed input       | DTD/entity, nested/oversized XML, invalid encoding/attributes, non-finite/out-of-range coordinates, timestamp abuse, stream fragments/coalescing/truncation and unsupported protobuf.                                                                            |
+| Limits                | Bounded frames/events/contact history, per-session/link rate, connection count, slow browser/backpressure, replay/queue capacity and upstream flood. Refusal cannot crash the app or grow memory without bound.                                                  |
+| Recovery              | Upstream refused/offline, browser refresh, disconnect while write/capture is pending, bounded backoff, re-authentication, stale contacts, no silent resend/broadcast or cross-network bridge.                                                                    |
+| Lifetime              | Gateway shutdown closes sockets/timers/subscriptions; late callbacks cannot revive retired sessions. Browser destroy removes overlay/UI/geolocation/watchers and cancels focus/reconnect work.                                                                   |
+| Privacy               | TAK absent from AI image/structured requests, public MCP tools, HUD summaries, logs/analytics, links/scenes/exports and embedded handoffs. Exercise races during enable/disable/capture, not just empty steady state.                                            |
 
 ## Evidence and integration record
 
@@ -124,9 +135,11 @@ The initial inventory is based on integration commit `aee71aba`. The handoff's
 eleven parser/store passes are historical and narrow. The local
 `feature/tak-foundation` gateway was unverified at intake. Audit found missing
 server-side device/object authorization and unsafe interoperability claims.
-The additive hardening now registers authenticated device identity, enforces
-own-device/own-marker action policy and restricts browsers to one local operator
-on direct loopback. Distinct users, roles and TAK Server groups remain planned.
+The additive hardening now registers authenticated device identity and enforces
+own-device/own-marker action policy for one operator. Dev/lab stays on loopback;
+the production Node host additionally permits an explicit private HTTPS listener
+with a pinned authority and authenticated secure-cookie session. Distinct users,
+roles and TAK Server groups remain planned.
 
 The prototype audit also replaced native Cesium text with shared overlay cards,
 added navigation ownership and timed stale refresh, repaired rolling chat and
@@ -134,6 +147,35 @@ geolocation cleanup, bounded transport/state and prevented implicit private-data
 disclosure. The local lab starts an isolated synthetic peer and a transient
 authenticated gateway without operational credentials or a LAN connection.
 None of these changes establishes real ATAK/iTAK/WinTAK acceptance.
+
+The private host serves the existing built GEV app and preserves provider order
+by installing established preview middleware without starting Vite. An operator
+login protects static assets and every provider API. Credentials/private keys
+stay server-side; `/api/setup`, `/mcp`, remote token bootstrap, public/wildcard
+listeners and proxies are unavailable. Cookies are random, HttpOnly, Secure and
+SameSite=Strict, memory-only, capped at 32 and limited to eight hours idle/total.
+Private WSS always uses the revocable cookie session, even if a caller also
+offers the valid operator token. That token cannot preserve a socket after
+logout/expiry. Local real HTTPS/WSS tests cover this rejection, the login/body/
+rate limits, protected provider APIs, PWA MIME, static exclusions, lifecycle
+cleanup and certificate failures. A default-provider startup/shutdown smoke also
+passed on loopback with temporary certificates and no TAK upstream. Final gate
+totals are recorded by the final revision sweep; physical EUD and private LAN
+acceptance remain open.
+
+The contact store additionally bounds aggregate serialized payloads at 8 MiB and
+retained XML nodes at 100,000, alongside the 2,000-contact limit. Accepted updates
+evict the oldest nonself contacts as needed; an individually oversized update
+does not mutate its prior contact, and self state cannot bypass the budget.
+Extensions remain intact for interoperability. Resource accounting covers
+update/delete/cancel/remove/sweep/clear/destroy, with a visible anonymous capacity
+notice. Overlay snapshots cache unchanged immutable contact/card state while
+preserving clock staleness, type/altitude/trail/emergency changes and cleanup.
+The local 2,000-contact Chromium stress fixture confirmed bounded overflow,
+150 roster rows, all 30 GEV registrations and teardown without render errors;
+one-contact updates dirtied one entity after caching instead of 2,000. Initial
+concurrent SwiftShader runs had inconsistent frame intervals, so matched
+frame-time comparison and physical EUD performance remain open acceptance work.
 
 ### Reproduced intake baseline, 2026-10-16
 
@@ -169,7 +211,33 @@ must remain visible below before integration.
   timed staleness/expiry, chat rollover, privacy, phone/embed and cleanup) before
   a development-server reload interrupted its final error read. This interrupted
   run is not the final browser pass; rerun with stable source/HMR disabled.
-- Final full suite/build/browser results are recorded when their runs finish.
+- Final TAK browser run: `node scripts/qa-tak.mjs --url
+http://127.0.0.1:4176 --lab --fonts` passed all 12 scenarios at
+  `2026-10-16T18:40:19Z`, Windows, Node 26.7.0, Chrome 152.0.7977.75. It verified
+  all 30 GEV registrations; actual import/invalid-coordinate controls; local
+  and disconnected marker state; stable keyed roster nodes during a physical
+  pointer-down/update/pointer-up; follow release and safe completed camera
+  focus; real clock-driven stale presentation/expiry; rolling 500-message chat
+  at message 501; share/scene disclosure guards, authorization/revocation and
+  sticky hide/clear policy; explicit bootstrap; a marker correction returning
+  through the actual local TCP peer with the same UID and network origin; and
+  returned synthetic peer chat. Phone bounds, 44 px controls, 16 px form text,
+  sticky header, embedded isolation and teardown passed, with no uncaught
+  browser/promise/Cesium render errors.
+- Local evidence: `qa-artifacts/tak/results.json`, `desktop-private-tak.png`,
+  `desktop-lab-return.png` and `phone-tak.png`. All three captures reported
+  imagery ready, bloom off and actual icon fonts loaded; pixels were inspected.
+  Public APIs/imagery were synthetic/intercepted, the repeated map texture was
+  bundled Natural Earth, and only Google CSS/font origins were allowed through
+  `--fonts`. This validates tested presentation and local transport, not
+  geographic imagery fidelity, real phone GPS/background behavior, all GEV
+  features or real TAK interoperability.
+- Earlier evidence attempts exposed missing font/tile fixtures, automatic Vite
+  config restarts and an intermittent detached-roster-button click. The lab now
+  disables watching/HMR for repeatable runs, the harness waits for actual fonts/
+  imagery, and keyed rows plus an explicit 2000 m focus range repair the product
+  interaction/camera defects. Final full suite/build results are recorded when
+  their runs finish.
 
 For each accepted slice, append a compact record with:
 
@@ -194,6 +262,14 @@ devices are established by this inventory. These constrain only live-server,
 peer and hardware acceptance. Local protocol, gateway TLS/auth failures,
 privacy, lifecycle, browser operation and the existing GEV regression work can
 continue without them. Do not contact arbitrary systems to fill the gap.
+
+Private EUD acceptance additionally needs an issued HTTPS certificate trusted by
+the actual phone, matching SAN/internal DNS, reachable private addressing and
+device GPS permission. Test login, Connect, logout/expiry, foreground/background
+behavior and authorized peer exchange on that device. No public deployment,
+private LAN listener or device trust-store modification was performed by the
+synthetic localhost tests. See [HOW_TO_RUN.md](../HOW_TO_RUN.md) for the explicit
+server-side configuration and [TAK_TODO.md](../TAK_TODO.md) for remaining work.
 
 The final handoff must include a Markdown run guide that works for the verified
 local configuration and a separate Markdown remaining-work list. Explain which

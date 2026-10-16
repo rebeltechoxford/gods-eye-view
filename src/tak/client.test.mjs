@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTakStore } from './store.js';
+import { GPS_FIX_MAX_AGE_MS } from './position.js';
 import {
   IDENTITY_STORAGE_KEY,
   SA_INTERVAL_MS,
@@ -70,13 +71,18 @@ function memoryStorage(initial = {}) {
   return { data, get: (k) => data[k] ?? null, set: (k, v) => (data[k] = v) };
 }
 
-function setup({ storage = memoryStorage(), now = clock() } = {}) {
+function setup({
+  storage = memoryStorage(),
+  now = clock(),
+  canReportPosition = () => true,
+} = {}) {
   const transport = fakeTransport();
   const t = timers();
   const client = createTakClient({
     createTransport: transport.factory,
     storage,
     now,
+    canReportPosition,
     setInterval: t.setInterval,
     clearInterval: t.clearInterval,
   });
@@ -418,5 +424,73 @@ test('device fixes retain normalized immutable coordinates and invalid fixes cha
   const prior = client.fix();
   assert.throws(() => client.setFix({ lat: '', lon: 0 }), /Latitude/);
   assert.equal(client.fix(), prior);
+  client.destroy();
+});
+
+test('stale or background GPS never becomes a freshly dated position beacon or emergency', () => {
+  let foreground = true;
+  const {
+    client,
+    transport,
+    timers: t,
+    now,
+  } = setup({ canReportPosition: () => foreground });
+  client.connect();
+  client.setSaEnabled(true);
+  client.setFix({
+    lat: 1,
+    lon: 2,
+    source: 'GPS',
+    observedAtMs: now() - GPS_FIX_MAX_AGE_MS - 1,
+  });
+  assert.equal(transport.sent.length, 0);
+  client.setFix({ lat: 1, lon: 2, source: 'GPS', observedAtMs: now() });
+  assert.equal(transport.sent.length, 1);
+  const measuredReport = client.store.get(client.identity().uid).event.timeMs;
+  now.advance(GPS_FIX_MAX_AGE_MS + 1);
+  t.fire(SA_INTERVAL_MS);
+  assert.equal(transport.sent.length, 1);
+  assert.equal(
+    client.store.get(client.identity().uid).event.timeMs,
+    measuredReport,
+  );
+  assert.throws(() => client.setEmergency(true), /fresh foreground GPS/);
+  assert.equal(client.emergencyActive(), false);
+  foreground = false;
+  client.setFix({ lat: 3, lon: 4, source: 'GPS', observedAtMs: now() });
+  t.fire(SA_INTERVAL_MS);
+  assert.equal(transport.sent.length, 1);
+  foreground = true;
+  t.fire(SA_INTERVAL_MS);
+  assert.equal(transport.sent.length, 2);
+  client.setFix({ lat: 3, lon: 4, source: 'USER' });
+  now.advance(GPS_FIX_MAX_AGE_MS + 1);
+  t.fire(SA_INTERVAL_MS);
+  assert.equal(
+    transport.sent.length,
+    4,
+    'operator-set static position stays explicitly USER',
+  );
+  client.destroy();
+});
+
+test('operator session expiry clears tactical memory, positions and armed broadcasts', () => {
+  const { client, transport, timers: t } = setup();
+  client.connect({ session: true });
+  client.addMarker({ callsign: 'PRIVATE', lat: 1, lon: 2 });
+  client.sendChat('SYNTHETIC PRIVATE CHAT');
+  client.setFix({ lat: 3, lon: 4, source: 'GPS' });
+  client.setSaEnabled(true);
+  transport.handlers.onControl({ op: 'session-expired' });
+  assert.equal(client.store.count(), 0);
+  assert.equal(client.store.chats().length, 0);
+  assert.equal(client.fix(), null);
+  assert.equal(client.saEnabled(), false);
+  assert.equal(client.link().sessionExpired, true);
+  assert.equal(
+    t.count(),
+    1,
+    'only the contact sweep timer remains until page teardown',
+  );
   client.destroy();
 });

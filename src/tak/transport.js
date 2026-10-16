@@ -10,6 +10,7 @@ export const RECONNECT_MS = Object.freeze({ min: 1_000, max: 30_000 });
 export const MAX_TRANSPORT_BUFFER_BYTES = 256 * 1024;
 export const MAX_TRANSPORT_FRAME_BYTES = 64 * 1024;
 export const CONNECT_TIMEOUT_MS = 15_000;
+export const SESSION_PROBE_TIMEOUT_MS = 5_000;
 const encoder = new TextEncoder();
 
 /**
@@ -32,12 +33,14 @@ export function createGatewayTransport({
   onState = () => {},
   url,
   WebSocketImpl = globalThis.WebSocket,
+  fetchImpl = globalThis.fetch,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (handle) => clearTimeout(handle),
 }) {
   let ws = null;
   let state = 'idle';
   let token = null;
+  let sessionAuthenticated = false;
   let backoff = RECONNECT_MS.min;
   let timer = null;
   let wanted = false;
@@ -45,6 +48,48 @@ export function createGatewayTransport({
   let identity = null;
   let connectTimer = null;
   let generation = 0;
+  let sessionProbe = null;
+
+  function clearSessionProbe() {
+    if (!sessionProbe) return;
+    const probe = sessionProbe;
+    sessionProbe = null;
+    clearTimer(probe.timer);
+    probe.controller.abort();
+  }
+
+  function expireSession() {
+    wanted = false;
+    onControl({ op: 'session-expired' });
+    setState('refused', 'Operator session expired; sign in again');
+  }
+
+  // Browsers hide failed WebSocket upgrade HTTP status. A bounded same-origin
+  // probe distinguishes revoked cookies from an unavailable private network.
+  function probeSession(resume) {
+    clearSessionProbe();
+    const epoch = generation;
+    const probe = { controller: new AbortController(), timer: null };
+    sessionProbe = probe;
+    const finish = (expired = false) => {
+      if (sessionProbe !== probe || epoch !== generation || !wanted) return;
+      clearSessionProbe();
+      if (expired) expireSession();
+      else resume();
+    };
+    probe.timer = setTimer(() => finish(), SESSION_PROBE_TIMEOUT_MS);
+    Promise.resolve()
+      .then(() => {
+        if (sessionProbe !== probe) return null;
+        return fetchImpl(TAK_STATUS_PATH, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: probe.controller.signal,
+        });
+      })
+      .then((response) => finish(response?.status === 401))
+      .catch(() => finish());
+  }
 
   function clearConnectTimer() {
     if (connectTimer !== null) clearTimer(connectTimer);
@@ -164,24 +209,35 @@ export function createGatewayTransport({
       if (ws !== socket) return;
       ws = null;
       clearConnectTimer();
+      if (
+        sessionAuthenticated &&
+        event?.code === 1008 &&
+        event?.reason === 'session expired'
+      ) {
+        expireSession();
+        return;
+      }
       if (!wanted) {
         setState('closed');
         return;
       }
-      // A handshake that never opened (403/401/404) will not fix itself by
-      // hammering; after the first failure back off to the slow end.
-      if (!opened && !everOpened) {
-        backoff = RECONNECT_MS.max;
-        setState('refused', 'Gateway refused or unavailable');
-        const epoch = generation;
-        timer = setTimer(() => {
-          if (epoch !== generation) return;
-          timer = null;
-          open();
-        }, RECONNECT_MS.max);
-        return;
-      }
-      scheduleReconnect(event?.reason || 'connection lost');
+      const resume = () => {
+        // A refused initial handshake will not fix itself by hammering.
+        if (!opened && !everOpened) {
+          backoff = RECONNECT_MS.max;
+          setState('refused', 'Gateway refused or unavailable');
+          const epoch = generation;
+          timer = setTimer(() => {
+            if (epoch !== generation) return;
+            timer = null;
+            open();
+          }, RECONNECT_MS.max);
+          return;
+        }
+        scheduleReconnect(event?.reason || 'connection lost');
+      };
+      if (sessionAuthenticated && !opened) probeSession(resume);
+      else resume();
     };
     socket.onerror = () => {
       // onclose follows with the details that matter.
@@ -192,7 +248,9 @@ export function createGatewayTransport({
     /** Connect (or reconnect with a new token). */
     connect(options = {}) {
       generation++;
+      clearSessionProbe();
       token = options.token ? String(options.token) : null;
+      sessionAuthenticated = options.session === true;
       identity = options.identity || null;
       wanted = true;
       everOpened = false;
@@ -206,8 +264,8 @@ export function createGatewayTransport({
         old.close();
       }
       if (
-        !token ||
-        !/^[A-Za-z0-9._~-]{24,128}$/.test(token) ||
+        (!sessionAuthenticated &&
+          (!token || !/^[A-Za-z0-9._~-]{24,128}$/.test(token))) ||
         !identity?.uid
       ) {
         wanted = false;
@@ -218,6 +276,7 @@ export function createGatewayTransport({
     },
     disconnect() {
       generation++;
+      clearSessionProbe();
       wanted = false;
       clearConnectTimer();
       if (timer !== null) clearTimer(timer);
@@ -285,6 +344,10 @@ export async function fetchGatewayStatus(fetchImpl = globalThis.fetch, signal) {
     cache: 'no-store',
   });
   if (!response.ok)
-    return { enabled: false, reason: `status ${response.status}` };
+    return {
+      enabled: false,
+      reason: `status ${response.status}`,
+      ...(response.status === 401 ? { sessionExpired: true } : {}),
+    };
   return response.json();
 }

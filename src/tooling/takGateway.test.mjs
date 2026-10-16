@@ -27,6 +27,7 @@ import {
   buildMarker,
   buildDelete,
   buildSelfSa,
+  buildEmergency,
   createIdentity,
 } from '../tak/protocol/builders.js';
 import {
@@ -84,7 +85,7 @@ test('mesh config applies ATAK defaults and validates groups/ports/interface', (
   assert.equal(bad.errors.length, 4);
 });
 
-test('server config: TLS needs client material; plaintext only to private hosts unless overridden', () => {
+test('server config: TLS needs client material; plaintext cannot escape private literal addresses', () => {
   assert.match(
     readTakGatewayConfig({ TAK_SERVER: 'tak.example.org:8089' }).errors[0],
     /CERT/,
@@ -101,7 +102,7 @@ test('server config: TLS needs client material; plaintext only to private hosts 
       TAK_SERVER: 'tak.example.org:8087',
       TAK_SERVER_PROTOCOL: 'tcp',
     }).errors[0],
-    /private/,
+    /loopback\/RFC1918/,
   );
   assert.equal(
     readTakGatewayConfig({
@@ -110,14 +111,39 @@ test('server config: TLS needs client material; plaintext only to private hosts 
     }).server.host,
     '192.168.1.20',
   );
-  assert.equal(
-    readTakGatewayConfig({
-      TAK_SERVER: 'tak.example.org:8087',
+  for (const host of [
+    'tak.example.org',
+    'tak.local',
+    '8.8.8.8',
+    '127.1',
+    '010.0.0.1',
+    '0x7f000001',
+    '2130706433',
+  ]) {
+    const rejected = readTakGatewayConfig({
+      TAK_SERVER: `${host}:8087`,
       TAK_SERVER_PROTOCOL: 'tcp',
       TAK_SERVER_ALLOW_PLAINTEXT: '1',
-    }).server.port,
-    8087,
-  );
+    });
+    assert.equal(rejected.server, null, host);
+    assert.match(rejected.errors[0], /literal loopback\/RFC1918/, host);
+  }
+  for (const host of [
+    'localhost',
+    '127.0.0.1',
+    '10.1.2.3',
+    '172.16.1.2',
+    '192.168.1.20',
+    '[::1]',
+  ]) {
+    assert.ok(
+      readTakGatewayConfig({
+        TAK_SERVER: `${host}:8087`,
+        TAK_SERVER_PROTOCOL: 'tcp',
+      }).server,
+      host,
+    );
+  }
   assert.match(
     readTakGatewayConfig({ TAK_SERVER: 'nope' }).errors[0],
     /host:port/,
@@ -418,6 +444,77 @@ test('late joiners get a replay of live (non-stale) contacts, minus deletes', as
   assert.ok(!replayed.includes('gone'));
   assert.ok(!replayed.includes('0b0b0b0b-1111-4222-8333-444444444444'));
   late.close();
+});
+
+test('late WebSocket joiners retain newer replay positions and alerts after reordered updates and removals', async (t) => {
+  const g = await startGateway();
+  t.after(g.close);
+  const time = Date.now() - 1000;
+  const marker = (nowMs, lat) =>
+    buildMarker(
+      IDENTITY,
+      {
+        uid: 'reordered-marker',
+        callsign: 'SYNTHETIC',
+        lat,
+        lon: 2,
+      },
+      { nowMs },
+    );
+  const newer = marker(time + 100, 2);
+  const alert = buildEmergency(
+    IDENTITY,
+    { lat: 2, lon: 2 },
+    { nowMs: time + 100 },
+  );
+  for (const event of [
+    newer,
+    marker(time, 1),
+    buildDelete(IDENTITY, newer.uid, newer.type, { nowMs: time + 50 }),
+    alert,
+    buildEmergency(
+      IDENTITY,
+      { lat: 1, lon: 2 },
+      { cancel: true, nowMs: time + 50 },
+    ),
+  ])
+    g.mesh.onXml(serializeCotEvent(event));
+  assert.equal(g.gateway.status().replay, 2);
+
+  const late = connect(g.port);
+  await once(late, 'open');
+  await late.next(isOp('identity'));
+  const replayed = new Map();
+  for (let i = 0; i < 2; i++) {
+    const event = parseCotEvent(await late.next(isXml));
+    replayed.set(event.uid, event);
+  }
+  assert.equal(replayed.get(newer.uid).timeMs, newer.timeMs);
+  assert.equal(replayed.get(newer.uid).point.lat, 2);
+  assert.equal(replayed.get(alert.uid).timeMs, alert.timeMs);
+  assert.equal(replayed.get(alert.uid).detail.emergency.cancel, false);
+  late.close();
+
+  g.mesh.onXml(
+    serializeCotEvent(
+      buildDelete(IDENTITY, newer.uid, newer.type, { nowMs: time + 200 }),
+    ),
+  );
+  g.mesh.onXml(
+    serializeCotEvent(
+      buildEmergency(
+        IDENTITY,
+        { lat: 2, lon: 2 },
+        { cancel: true, nowMs: time + 200 },
+      ),
+    ),
+  );
+  assert.equal(g.gateway.status().replay, 0);
+  const afterRemoval = connect(g.port);
+  await once(afterRemoval, 'open');
+  await afterRemoval.next(isOp('identity'));
+  await assert.rejects(afterRemoval.next(isXml, 150), /timed out/);
+  afterRemoval.close();
 });
 
 test('upgrades are refused for cross-origin pages, wrong protocol and missing token', async (t) => {

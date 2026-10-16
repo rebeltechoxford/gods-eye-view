@@ -13,7 +13,12 @@ import {
   parseCotEvent,
   serializeCotEvent,
 } from '../../../src/tak/protocol/cot.js';
-import { authorizeLocalRequest, matchesToken } from './access.js';
+import {
+  authorizeBrowserRequest,
+  authorizeLocalRequest,
+  createBrowserAccessPolicy,
+  matchesToken,
+} from './access.js';
 import { createMeshLink } from './meshLink.js';
 import { createServerLink } from './serverLink.js';
 
@@ -34,16 +39,39 @@ const DEVICE_UID =
   /^GEV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** One shared secret represents one local operator, never a public multiuser service. */
-export function authorizeUpgrade(req, { token }) {
-  const local = authorizeLocalRequest(req);
+function hasAuthenticatedSession(req, authenticateSession) {
+  if (!req || typeof authenticateSession !== 'function') return false;
+  try {
+    return authenticateSession(req)?.principal === 'local-operator';
+  } catch {
+    return false;
+  }
+}
+
+export function authorizeUpgrade(
+  req,
+  { token, accessPolicy = createBrowserAccessPolicy() },
+  { authenticateSession } = {},
+) {
+  const local = authorizeBrowserRequest(req, accessPolicy);
   if (!local.ok) return local;
+  if (!matchesToken(token, token))
+    return { ok: false, status: 401, reason: 'token' };
   const offered = String(req.headers?.['sec-websocket-protocol'] || '')
     .split(',')
     .map((p) => p.trim());
   if (!offered.includes(TAK_WS_PROTOCOL))
     return { ok: false, status: 400, reason: 'protocol' };
   const supplied = offered.find((p) => p.startsWith(TAK_TOKEN_PROTOCOL_PREFIX));
-  if (!matchesToken(supplied?.slice(TAK_TOKEN_PROTOCOL_PREFIX.length), token))
+  if (accessPolicy.mode === 'private-https') {
+    return hasAuthenticatedSession(req, authenticateSession)
+      ? { ok: true }
+      : { ok: false, status: 401, reason: 'operator session required' };
+  }
+  if (
+    !matchesToken(supplied?.slice(TAK_TOKEN_PROTOCOL_PREFIX.length), token) &&
+    !hasAuthenticatedSession(req, authenticateSession)
+  )
     return { ok: false, status: 401, reason: 'token' };
   return { ok: true };
 }
@@ -84,11 +112,13 @@ export function createTakGateway({
   log = console,
   setInterval: every = setInterval,
   clearInterval: stopEvery = clearInterval,
+  authenticateSession,
 }) {
   if (!config.enabled || !matchesToken(config.token, config.token))
     throw new Error('An enabled TAK gateway requires an operator token');
   const replay = new Map();
   const browsers = new Map();
+  const browserContexts = new WeakMap();
   const ownedMarkers = new Map(); // uid -> { owner: device uid, staleMs }
   const registeredIdentities = new Set();
   const networkUids = new Set();
@@ -129,11 +159,14 @@ export function createTakGateway({
     }
     const kind = cotKind(event.type);
     if (kind === 'delete') {
-      dropReplay(event.detail.links[0]?.uid);
+      const target = event.detail.links[0]?.uid;
+      const prior = replay.get(target);
+      if (prior && event.timeMs >= prior.timeMs) dropReplay(target);
       return;
     }
     if (event.type === 'b-a-o-can') {
-      dropReplay(event.uid);
+      const prior = replay.get(event.uid);
+      if (prior && event.timeMs >= prior.timeMs) dropReplay(event.uid);
       return;
     }
     if (
@@ -142,15 +175,29 @@ export function createTakGateway({
       event.timeMs > now() + 60_000
     )
       return;
+    if (event.timeMs < (replay.get(event.uid)?.timeMs ?? -Infinity)) return;
     dropReplay(event.uid);
     const bytes = Buffer.byteLength(xml);
-    replay.set(event.uid, { xml, staleMs: event.staleMs, bytes });
+    replay.set(event.uid, {
+      xml,
+      timeMs: event.timeMs,
+      staleMs: event.staleMs,
+      bytes,
+    });
     replayBytes += bytes;
     while (replay.size > REPLAY_LIMIT || replayBytes > REPLAY_BYTES_LIMIT)
       dropReplay(replay.keys().next().value);
   });
   function send(ws, payload) {
     if (closed || ws.readyState !== 1) return false;
+    const context = browserContexts.get(ws);
+    if (
+      context?.sessionBased &&
+      !hasAuthenticatedSession(context.request, authenticateSession)
+    ) {
+      ws.close(1008, 'session expired');
+      return false;
+    }
     if (
       ws.bufferedAmount + Buffer.byteLength(payload) >
       MAX_BROWSER_BUFFER_BYTES
@@ -319,10 +366,29 @@ export function createTakGateway({
     return 'Unsupported or unowned browser event';
   }
 
-  function attachBrowser(ws) {
+  function attachBrowser(ws, request) {
     const id = `browser:${++browserSeq}`;
     const limiter = createRateLimiter({ rate: 20, burst: 60, now });
-    const browser = { ws, identity: null, alive: true };
+    const offered = String(request?.headers?.['sec-websocket-protocol'] || '')
+      .split(',')
+      .map((p) => p.trim());
+    const tokenProtocol = offered.find((p) =>
+      p.startsWith(TAK_TOKEN_PROTOCOL_PREFIX),
+    );
+    const browser = {
+      ws,
+      identity: null,
+      alive: true,
+      request,
+      sessionBased:
+        config.accessPolicy?.mode === 'private-https' ||
+        (!!request &&
+          !matchesToken(
+            tokenProtocol?.slice(TAK_TOKEN_PROTOCOL_PREFIX.length),
+            config.token,
+          )),
+    };
+    browserContexts.set(ws, browser);
     let replayTimer = null;
     const link = {
       id,
@@ -366,6 +432,13 @@ export function createTakGateway({
       browser.alive = true;
     });
     ws.on('message', (data, isBinary) => {
+      if (
+        browser.sessionBased &&
+        !hasAuthenticatedSession(browser.request, authenticateSession)
+      ) {
+        ws.close(1008, 'session expired');
+        return;
+      }
       if (!limiter.take()) {
         ws.close(1008, 'rate limit');
         return;
@@ -455,6 +528,13 @@ export function createTakGateway({
   const heartbeat = every(() => {
     prune();
     for (const browser of browsers.values()) {
+      if (
+        browser.sessionBased &&
+        !hasAuthenticatedSession(browser.request, authenticateSession)
+      ) {
+        browser.ws.close(1008, 'session expired');
+        continue;
+      }
       if (!browser.alive) {
         browser.ws.terminate();
         continue;
@@ -481,21 +561,26 @@ export function createTakGateway({
       reject(503);
       return true;
     }
-    const verdict = authorizeUpgrade(req, config);
+    const verdict = authorizeUpgrade(req, config, { authenticateSession });
     if (!verdict.ok) {
       reject(verdict.status);
       return true;
     }
-    wss.handleUpgrade(req, socket, head, attachBrowser);
+    wss.handleUpgrade(req, socket, head, (ws) => attachBrowser(ws, req));
     return true;
   }
-  function publicStatus() {
+  function publicStatus(req) {
+    const internal = config.accessPolicy?.mode === 'private-https';
     return {
       enabled: true,
       tokenRequired: true,
-      localOnly: true,
+      localOnly: !internal,
+      internalOnly: internal,
       principal: 'local-operator',
-      bootstrapAllowed: !!config.localBootstrap,
+      bootstrapAllowed: !internal && !!config.localBootstrap,
+      ...(hasAuthenticatedSession(req, authenticateSession)
+        ? { sessionAuthenticated: true }
+        : {}),
     };
   }
   function status() {
@@ -520,7 +605,13 @@ export function createTakGateway({
     }
     if (path !== TAK_SESSION_ROUTE && path !== TAK_STATUS_ROUTE) return false;
     const session = path === TAK_SESSION_ROUTE;
-    const verdict = authorizeLocalRequest(req, { requireOrigin: session });
+    const verdict = session
+      ? authorizeLocalRequest(req)
+      : authorizeBrowserRequest(
+          req,
+          config.accessPolicy || createBrowserAccessPolicy(),
+          { requireOrigin: false },
+        );
     const respond = (code, value) => {
       res.writeHead(code, {
         'Content-Type': 'application/json',
@@ -539,13 +630,14 @@ export function createTakGateway({
     }
     if (session) {
       if (
+        config.accessPolicy?.mode === 'private-https' ||
         !config.localBootstrap ||
         req.headers['x-tak-session'] !== '1' ||
         closed
       )
         respond(403, { error: 'Local token bootstrap is disabled' });
       else respond(200, { token: config.token, principal: 'local-operator' });
-    } else respond(200, publicStatus());
+    } else respond(200, publicStatus(req));
     return true;
   }
   return Object.freeze({
@@ -554,6 +646,15 @@ export function createTakGateway({
     status,
     publicStatus,
     router,
+    recheckSessions() {
+      for (const browser of browsers.values()) {
+        if (
+          browser.sessionBased &&
+          !hasAuthenticatedSession(browser.request, authenticateSession)
+        )
+          browser.ws.close(1008, 'session expired');
+      }
+    },
     close() {
       if (closed) return;
       closed = true;

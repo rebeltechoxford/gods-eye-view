@@ -46,7 +46,9 @@
     "test": "node scripts/run-unit-tests.mjs",
     "test:track": "node scripts/track-regression.mjs",
     "tak:lab": "node scripts/tak-lab.mjs",
+    "tak:serve": "node server/standalone/tak-https.mjs",
     "qa:tak": "node scripts/qa-tak.mjs",
+    "qa:tak:private": "node scripts/qa-tak-private.mjs",
     "qa:map-source-tray": "node scripts/qa-map-source-tray.mjs",
     "qa:panel-resize": "node scripts/qa-panel-resize.mjs",
     "qa:street-level": "node scripts/qa-street-level.mjs",
@@ -61,20 +63,21 @@
     "@mapbox/vector-tile": "^3.0.0",
     "@meri-imperiumi/eccodes-wasm": "^2.48.2",
     "cesium": "^1.124.0",
+    "connect": "3.7.0",
     "egm96-universal": "^1.1.1",
     "hls.js": "^1.7.3",
     "mapillary-js": "^4.1.2",
     "mgrs": "^2.1.0",
     "pbf": "^5.1.2",
-    "satellite.js": "^6.0.2"
+    "satellite.js": "^6.0.2",
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "prettier": "3.9.6",
     "puppeteer": "^25.10.0",
     "sharp": "^0.35.4",
     "vite": "^6.0.0",
-    "vite-plugin-cesium": "^1.2.23",
-    "ws": "^8.21.0"
+    "vite-plugin-cesium": "^1.2.23"
   },
   "exports": {
     "./infrastructure": "./src/data/infrastructure.js",
