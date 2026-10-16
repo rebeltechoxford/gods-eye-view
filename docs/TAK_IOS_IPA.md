@@ -1,14 +1,15 @@
 # iPhone IPA and AltStore delivery plan
 
-Status: researched, not implemented or built. No iOS workflow has been added or
-run. The verified web foundation remains the checkpoint; an IPA must not be
-described as working until it has been built, personally signed, installed and
-tested on a real iPhone.
+Status: the Swift/WKWebView shell, Xcode project and unsigned IPA workflow are
+implemented on `feature/tak-ios-ipa`. No Xcode build or iOS workflow run is
+verified yet. Windows cannot compile the app. The IPA must not be described as
+built until CI succeeds, or as ready on an iPhone until personally signed,
+installed and tested on that device.
 
-## Recommended first native package
+## Implemented connected package
 
-Use a small Swift application containing `WKWebView` that loads the existing
-private HTTPS GEV application. This preserves the complete server-served globe,
+The small Swift application contains `WKWebView` and loads the existing
+private HTTPS GEV application. This preserves the server-served globe,
 layers, HUD, voice, camera controls and TAK workflows instead of creating another
 UI. Use an explicit operator-configured HTTPS origin, keep all top-level
 navigation pinned to that origin, and open approved external links separately.
@@ -31,6 +32,50 @@ trusts. Manually installing a CA profile alone does not enable SSL trust.
 
 This first connected wrapper is a packaging milestone. It does **not** complete
 the requirement for persistent maps on both the server and phone.
+
+The initial native UI accepts an HTTPS origin only, without a path, query,
+fragment or credentials. Literal IPs must be RFC1918 IPv4 or loopback; an
+internal DNS name is explicitly chosen by the operator and resolved by iOS.
+That approved hostname must resolve to the private deployment, including when
+it uses an organization's real DNS suffix and a normally issued certificate.
+The wrapper does not infer private routing from a suffix or replace TLS with a
+DNS preflight. The HTTPS server enforces its private listener/address policy;
+the exact configured origin and normal certificate validation remain required.
+Loopback names the phone itself, so a remote gateway needs its reachable private
+address. Native Back, Reload and server settings retain the existing web app.
+External HTTPS navigation requires confirmation showing the destination URL;
+other external schemes are refused. Subframe public media remain available,
+but their microphone/camera requests are denied. The configured main frame
+receives normal system media prompts only while active.
+
+Main-frame JavaScript alert, confirm and text prompts use native dialogs titled
+with the configured origin. Other frames cannot open these dialogs. Exports
+from that main frame can use same-origin HTTPS or same-origin blob downloads.
+Each requires native confirmation warning about private data, followed by the
+system Files save picker. Unknown sizes and advertised sizes above 256 MiB are
+refused; in-progress size checks cancel overruns, and the completed file is
+checked again. Cross-origin redirects and arbitrary file paths are refused.
+Temporary exports use file protection and backup exclusion and are deleted on
+completion, cancellation, local clearing or next app launch. This is an
+explicit file export, not persistent offline-map storage.
+[Apple: web dialogs](https://developer.apple.com/documentation/webkit/wkuidelegate),
+[Apple: downloads](https://developer.apple.com/documentation/webkit/wkdownloaddelegate)
+
+An opaque native cover hides the app's window while inactive; actual app
+switcher snapshots need device acceptance. The wrapper cannot prevent a
+foreground OS screenshot or external recorder. Use the website's **TAK →
+NETWORK → Sign out** to revoke a server session. Native server settings clear
+this device's WebKit cookies/site data before changing origins; that local
+clear does not claim server-side sign-out.
+
+The iOS deployment target is 16.0. Location/media purpose strings are included,
+with no background modes, native GPS service, injected scripts, message bridge,
+native HTTP transport or embedded operator token. WebKit's normal geolocation
+permission behavior is used: Apple's separate geolocation delegate is iOS27
+API and is deliberately not called from this Xcode26 build.
+[Apple: location purpose](https://developer.apple.com/documentation/bundleresources/information-property-list/nslocationwheninuseusagedescription),
+[Apple: media permission delegate](<https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:requestmediacapturepermissionfor:initiatedbyframe:type:decisionhandler:)>),
+[Apple: geolocation delegate availability](<https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:requestgeolocationpermissionfor:initiatedbyframe:decisionhandler:)>)
 
 ## Persistent maps and offline startup
 
@@ -90,18 +135,48 @@ additional behavior to review. [Capacitor: configuration](https://capacitorjs.co
 
 ## Building and personal signing
 
-Windows cannot run Xcode. A later, explicit build workflow can use a standard
+Windows cannot run Xcode. The workflow uses a standard
 GitHub-hosted macOS runner: GitHub documents these as free for public
 repositories, and its macOS 26 image includes Xcode 26. Check the selected
 runner's actual SDK/tool versions during the build; avoid paid larger runners.
 [GitHub: standard runners](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#standard-github-hosted-runners-for-public-repositories),
 [GitHub: macOS image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md)
 
-The planned output is an unsigned **device** application built for `iphoneos`,
-packaged as `Payload/<app>.app` in an IPA. Disable build-time signing and verify
-the resulting architecture and bundle contents. This recipe remains untested
-for this project; a simulator build is not a device IPA, and the unsigned output
-cannot be installed directly. Use no Apple account or signing secrets in CI.
+The workflow [`.github/workflows/ios-ipa.yml`](../.github/workflows/ios-ipa.yml)
+runs on pushes to **feature/tak-ios-ipa** and PR changes to its owned paths. It
+does not require changing `main`. Manual dispatch is also included for later
+use when GitHub exposes the workflow. It selects the installed Xcode26.6 on
+`macos-26` and the repository's existing pinned checkout/upload actions. There
+is no npm install, third-party native package, Apple account, provisioning
+service or signing secret.
+
+On a Mac with stable Xcode26 selected:
+
+```sh
+bash scripts/build-ios-ipa.sh --smoke
+```
+
+The script runs pure Swift endpoint-policy cases, archives an arm64
+**iPhoneOS device application** with signing disabled, validates its platform,
+bundle identity, permissions and lack of provisioning/ATS exceptions, then
+packages and checks `Payload/GEVTAK.app`. ZIP integrity and excluded credential
+file types are checked. `--smoke` separately builds the simulator app, boots a
+temporary iPhone, installs/launches the unconfigured setup screen and saves a
+screenshot. No private endpoint, real GPS or TAK peer is used by that smoke.
+
+The `GEVTAK-unsigned-<commit>` artifact contains `GEVTAK-unsigned.ipa`,
+`provenance.json`, `SHA256SUMS` and the simulator setup screenshot, retained
+seven days. Provenance records actual toolchain/SDK, source commit/dirty state,
+architecture, validation flags and IPA SHA-256. Intermediate build directories
+and the temporary simulator are cleaned up. These commands remain unrun on
+Xcode until CI supplies that evidence; a simulator build is not a device IPA.
+The unsigned output cannot be installed directly.
+
+Compare the IPA hash to `SHA256SUMS` before personal signing. On Windows:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\GEVTAK-unsigned.ipa
+```
 
 AltStore Classic and AltServer provide the personal signing/install step on
 Windows. Apple account authentication stays with that tooling. AltStore's
@@ -128,6 +203,17 @@ or Chromium results do not prove WKWebView behavior.
 Native downloads may also
 need local-network permission even though Apple exempts traffic originating
 directly in WKWebView. [Apple: local-network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
+
+Native downloads/Files, Google3D/WebGL/workers, voice/media, keyboard/rotation,
+location permission and inactive snapshots remain unverified on WKWebView.
+The bounded export handler still needs actual Files/device acceptance;
+there is no native map-pack storage bridge in this slice. Packaging the same web
+UI does not establish complete GEV or ATAK parity on iOS. Existing public
+map/imagery services still receive their normal area requests.
+
+The icon is rendered from the existing MIT `public/logo.svg`. Its original
+copyright/license is included in `ios/GEVTAK/NOTICE.txt` and copied into the app.
+No Android application or plugin code is reused.
 
 Remaining external acceptance inputs are a real iPhone, its trusted private
 HTTPS endpoint and network, personal signing, and an authorized TAK peer. They
