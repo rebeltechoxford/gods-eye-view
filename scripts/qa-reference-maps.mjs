@@ -32,6 +32,7 @@ const requests = [],
   errors = [],
   results = [];
 let failId = null;
+let phoneMetrics = null;
 const browser = await puppeteer.launch({
   headless: !args.includes('--headful'),
   executablePath:
@@ -439,17 +440,101 @@ try {
       await page.click('#control-panel-toggle');
       await page.waitForSelector('#map-reference-select', { visible: true });
       await select('esri-topo');
-      const metrics = await page.$eval('#map-reference-select', (node) => ({
-        font: parseFloat(getComputedStyle(node).fontSize),
-        height: node.getBoundingClientRect().height,
-        width: node.getBoundingClientRect().width,
-        viewport: innerWidth,
-        top: node.getBoundingClientRect().top,
-        bottom: node.getBoundingClientRect().bottom,
-        viewportHeight: innerHeight,
-      }));
+      const measure = () =>
+        page.$eval('#map-reference-select', (node) => ({
+          font: parseFloat(getComputedStyle(node).fontSize),
+          minHeight: getComputedStyle(node).minHeight,
+          layoutHeight: node.offsetHeight,
+          height: node.getBoundingClientRect().height,
+          width: node.getBoundingClientRect().width,
+          viewport: innerWidth,
+          top: node.getBoundingClientRect().top,
+          bottom: node.getBoundingClientRect().bottom,
+          viewportHeight: innerHeight,
+          ancestors: [
+            ...(function* () {
+              for (let parent = node; parent; parent = parent.parentElement)
+                yield parent;
+            })(),
+          ]
+            .map((parent) => ({
+              id: parent.id,
+              className: parent.className,
+              transform: getComputedStyle(parent).transform,
+              animations: parent
+                .getAnimations()
+                .filter(
+                  (animation) =>
+                    animation.pending || animation.playState === 'running',
+                )
+                .map((animation) => ({
+                  state: animation.playState,
+                  pending: animation.pending,
+                  currentTime: animation.currentTime,
+                  endTime: animation.effect?.getComputedTiming().endTime,
+                })),
+            }))
+            .filter(
+              (parent) =>
+                parent.transform !== 'none' || parent.animations.length,
+            ),
+        }));
+      phoneMetrics = { before: await measure() };
+      // CSS-visible is true during the tray's 220ms scale(.985)->scale(1)
+      // transition. Measure the actual final target, without disabling motion
+      // or relaxing its 44px touch requirement. Ignore unrelated infinite art.
+      try {
+        await page.evaluate(async () => {
+          const deadline = performance.now() + 5000;
+          for (;;) {
+            const select = document.querySelector('#map-reference-select');
+            if (!select) throw new Error('Phone map selector disappeared');
+            select.getBoundingClientRect();
+            const animations = [];
+            for (let node = select; node; node = node.parentElement)
+              for (const animation of node.getAnimations())
+                if (
+                  (animation.pending || animation.playState === 'running') &&
+                  Number.isFinite(animation.effect?.getComputedTiming().endTime)
+                )
+                  animations.push(animation);
+            if (!animations.length) return;
+            const remaining = deadline - performance.now();
+            if (remaining <= 0)
+              throw new Error('Phone map tray animations did not settle');
+            let timer;
+            try {
+              await Promise.race([
+                // A cancelled transition can be replaced; inspect again after it.
+                Promise.all(
+                  animations.map((animation) =>
+                    animation.finished.catch(() => {}),
+                  ),
+                ),
+                new Promise((_, reject) => {
+                  timer = setTimeout(
+                    () =>
+                      reject(
+                        new Error('Phone map tray animations did not settle'),
+                      ),
+                    remaining,
+                  );
+                }),
+              ]);
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+        });
+      } finally {
+        phoneMetrics.after = await measure().catch(() => null);
+      }
+      const metrics = phoneMetrics.after;
       assert(metrics.font >= 16);
-      assert(metrics.height >= 44);
+      assert(
+        metrics.height >= 44,
+        `Phone touch target below 44px: ${JSON.stringify(phoneMetrics)}`,
+      );
       assert(metrics.width <= metrics.viewport);
       assert(
         metrics.top >= 0 && metrics.bottom <= metrics.viewportHeight,
@@ -476,6 +561,7 @@ try {
         workers,
         workerNetwork,
         fixtureScripts,
+        phoneMetrics,
         console: monitor.console,
         failedRequests: monitor.failed,
       },
@@ -516,6 +602,7 @@ try {
           })),
         ),
         fixtureScripts,
+        phoneMetrics,
         console: monitor.console,
         failedRequests: monitor.failed,
         documentState: await page
