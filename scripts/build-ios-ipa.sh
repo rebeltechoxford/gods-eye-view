@@ -46,7 +46,7 @@ xcrun swiftc -parse-as-library -swift-version 5 \
   -o "$build_root/endpoint-policy-tests"
 "$build_root/endpoint-policy-tests"
 
-xcodebuild -project "$project" -scheme GEVTAK -configuration Release \
+xcodebuild -quiet -project "$project" -scheme GEVTAK -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' \
   -derivedDataPath "$build_root/DerivedData-device" \
   -archivePath "$build_root/GEVTAK.xcarchive" \
@@ -93,7 +93,7 @@ print('PASS: Payload IPA structure, device platform and archive integrity')
 PY
 
 if [[ "$smoke" == 1 ]]; then
-  xcodebuild -project "$project" -scheme GEVTAK -configuration Debug \
+  xcodebuild -quiet -project "$project" -scheme GEVTAK -configuration Debug \
     -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
     -derivedDataPath "$build_root/DerivedData-simulator" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
@@ -113,9 +113,20 @@ PY
   simulator_id="$(xcrun simctl create 'GEV TAK build smoke' "$device_type" "$runtime_id")"
   [[ "$simulator_id" =~ ^[A-Fa-f0-9-]{36}$ ]]
   xcrun simctl boot "$simulator_id"
-  python3 - "$simulator_id" <<'PY'
-import subprocess, sys
-subprocess.run(['xcrun', 'simctl', 'bootstatus', sys.argv[1], '-b'], check=True, timeout=180)
+  developer_root="${DEVELOPER_DIR:-$(xcode-select -p)}"
+  open -a "$developer_root/Applications/Simulator.app" --args -CurrentDeviceUDID "$simulator_id"
+  python3 - "$simulator_id" "$build_root" <<'PY'
+import pathlib, subprocess, sys
+log = pathlib.Path(sys.argv[2])/'simulator-boot.log'
+try:
+    with log.open('w') as output:
+        # A pristine runner can spend several minutes in CoreLocation migration.
+        # This remains a real terminal-boot requirement, never a skipped smoke.
+        subprocess.run(['xcrun', 'simctl', 'bootstatus', sys.argv[1], '-b'], check=True, timeout=600, stdout=output, stderr=subprocess.STDOUT)
+except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+    print('\n'.join(log.read_text().splitlines()[-40:]), file=sys.stderr)
+    raise
+print('PASS: fresh simulator finished boot and system data migration')
 PY
   simulator_app="$build_root/DerivedData-simulator/Build/Products/Debug-iphonesimulator/GEVTAK.app"
   xcrun simctl install "$simulator_id" "$simulator_app"

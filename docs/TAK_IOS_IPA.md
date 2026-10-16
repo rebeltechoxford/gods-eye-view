@@ -1,10 +1,14 @@
 # iPhone IPA and AltStore delivery plan
 
 Status: the Swift/WKWebView shell, Xcode project and unsigned IPA workflow are
-implemented on `feature/tak-ios-ipa`. No Xcode build or iOS workflow run is
-verified yet. Windows cannot compile the app. The IPA must not be described as
-built until CI succeeds, or as ready on an iPhone until personally signed,
-installed and tested on that device.
+implemented on `feature/tak-ios-ipa`. The first real macOS CI run compiled both
+device and simulator apps and validated the unsigned device archive/Payload.
+Its simulator setup smoke stopped at the initial 180-second cold-boot deadline
+during system CoreLocation migration; it did not install or launch the app.
+The follow-up uses a bounded ten-minute boot allowance and retains the real
+install/launch/alive/screenshot requirements. Full workflow/artifact acceptance
+is still pending. Windows cannot compile the app; iPhone readiness still needs
+personal signing, installation and tests on that device.
 
 ## Implemented connected package
 
@@ -16,8 +20,9 @@ navigation pinned to that origin, and open approved external links separately.
 Keep actual internal hostnames, credentials, certificates and map data out of
 the public repository, build inputs, logs and artifacts.
 
-Load `/login` in the web view and retain the current same-origin HTTP/WS cookie
-flow. The wrapper must not collect an Apple ID, embed the operator token or
+Load the origin root in the web view; the server redirects to `/login` when
+needed and resumes valid same-origin HTTP/WS cookie sessions. The wrapper must
+not collect an Apple ID, embed the operator token or
 inject tokens into JavaScript. Use `WKWebsiteDataStore.default()` for normal
 website data; Apple documents that it persists website data to disk. The
 gateway's eight-hour session expiry, logout and restart invalidation still
@@ -58,6 +63,10 @@ checked again. Cross-origin redirects and arbitrary file paths are refused.
 Temporary exports use file protection and backup exclusion and are deleted on
 completion, cancellation, local clearing or next app launch. This is an
 explicit file export, not persistent offline-map storage.
+The native export ceiling is 256 MiB; a web map pack allowed by the separate
+512 MiB pack ceiling can therefore exceed this wrapper's export limit. `data:`
+URL downloads are refused, so any GEV export using that form still needs a
+same-origin blob implementation before claiming parity for that flow.
 [Apple: web dialogs](https://developer.apple.com/documentation/webkit/wkuidelegate),
 [Apple: downloads](https://developer.apple.com/documentation/webkit/wkdownloaddelegate)
 

@@ -131,7 +131,9 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
             console.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             console.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        console.load(URLRequest(url: origin.loginURL, cachePolicy: .reloadIgnoringLocalCacheData))
+        // The server redirects unauthenticated root requests to /login. A valid
+        // cookie resumes the console without forcing another login form.
+        console.load(URLRequest(url: origin.url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
     @objc private func goBack() { if webView?.canGoBack == true { webView?.goBack() } }
