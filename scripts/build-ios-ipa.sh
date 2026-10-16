@@ -100,16 +100,20 @@ if [[ "$smoke" == 1 ]]; then
     DEVELOPMENT_TEAM='' CURRENT_PROJECT_VERSION="$build_number" build
   xcrun simctl list runtimes --json > "$build_root/runtimes.json"
   xcrun simctl list devicetypes --json > "$build_root/devicetypes.json"
-  read -r runtime_id device_type < <(python3 - "$build_root" <<'PY'
+  simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+  read -r runtime_id device_type < <(python3 - "$build_root" "$simulator_sdk" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
-runtimes = [r for r in json.loads((root/'runtimes.json').read_text())['runtimes'] if r.get('isAvailable') and '.iOS-' in r['identifier']]
+sdk_major = int(sys.argv[2].split('.')[0])
+runtimes = [r for r in json.loads((root/'runtimes.json').read_text())['runtimes'] if r.get('isAvailable') and '.iOS-' in r['identifier'] and int(r['version'].split('.')[0]) == sdk_major]
+assert runtimes, f'No available iOS runtime matches selected SDK major {sdk_major}'
 runtime = max(runtimes, key=lambda r: tuple(map(int, r['version'].split('.'))))
 phones = [d for d in json.loads((root/'devicetypes.json').read_text())['devicetypes'] if d['name'].startswith('iPhone')]
 device = next((d for d in phones if d['name'] == 'iPhone 17'), phones[-1])
 print(runtime['identifier'], device['identifier'])
 PY
   )
+  printf 'Selected simulator: %s / %s; SDK %s\n' "$runtime_id" "$device_type" "$simulator_sdk"
   simulator_id="$(xcrun simctl create 'GEV TAK build smoke' "$device_type" "$runtime_id")"
   [[ "$simulator_id" =~ ^[A-Fa-f0-9-]{36}$ ]]
   xcrun simctl boot "$simulator_id"
@@ -126,7 +130,7 @@ try:
 except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
     print('\n'.join(log.read_text().splitlines()[-40:]), file=sys.stderr)
     raise
-print('PASS: fresh simulator finished boot and system data migration')
+print('PASS: simulator finished boot and system data migration')
 PY
   simulator_app="$build_root/DerivedData-simulator/Build/Products/Debug-iphonesimulator/GEVTAK.app"
   xcrun simctl install "$simulator_id" "$simulator_app"
@@ -140,7 +144,7 @@ PY
   printf '%s\n' 'PASS: simulator build, install and running setup-screen smoke (no server configured)'
 fi
 
-python3 - "$task_root" "$ipa" "$architectures" "$smoke" <<'PY'
+python3 - "$task_root" "$ipa" "$architectures" "$smoke" "${runtime_id:-}" "${device_type:-}" <<'PY'
 import datetime, hashlib, json, os, pathlib, subprocess, sys
 root, ipa = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
@@ -157,6 +161,7 @@ provenance = {
     'platform': 'iPhoneOS', 'signing': 'unsigned; personal signing required',
     'deviceArchiveValidated': True, 'payloadValidated': True,
     'endpointPolicyTestsPassed': True, 'simulatorSetupSmokePassed': sys.argv[4] == '1',
+    'simulatorRuntime': sys.argv[5] or None, 'simulatorDeviceType': sys.argv[6] or None,
     'physicalDeviceTested': False, 'privateEndpointConfigured': False,
     'liveTakPeerTested': False, 'offlineMapsImplemented': False,
     'githubRunID': os.environ.get('GITHUB_RUN_ID'),

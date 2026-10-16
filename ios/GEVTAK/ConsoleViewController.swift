@@ -14,6 +14,8 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     private var downloadPending = false
     private var mainNavigationMayDownload = false
     private var activeDownload: WKDownload?
+    private weak var exportPrompt: UIAlertController?
+    private var declineExport: (() -> Void)?
     private var exportFile: URL?
     private var downloadTimer: Timer?
     private let exportRoot = FileManager.default.temporaryDirectory.appendingPathComponent("GEVTAKExports", isDirectory: true)
@@ -185,6 +187,13 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
         if clearingWebsite && url.absoluteString == "about:blank" { decisionHandler(.allow); return }
+        if navigationAction.targetFrame?.isMainFrame == true,
+           endpoint?.contains(url) == true, url.path == "/login" {
+            // Web logout and session expiry return here without a JS/native
+            // bridge. Retire any native export before showing the login page.
+            if presentedViewController is UIDocumentPickerViewController { dismiss(animated: false) }
+            cancelExport()
+        }
         if navigationAction.shouldPerformDownload || url.scheme?.lowercased() == "blob" {
             guard mayPresent(for: webView, frame: navigationAction.sourceFrame),
                   endpoint?.permitsDownload(url) == true, canBeginExport
@@ -316,14 +325,21 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         }
         let filename = ExportPolicy.filename(suggestedFilename)
         let alert = UIAlertController(title: "Save a private export?", message: "\(filename)\n\nThis file may contain private TAK information. Save only to an authorized location. Files up to 256 MiB are supported; the app does not keep a saved copy.", preferredStyle: .alert)
+        exportPrompt = alert
+        declineExport = { completionHandler(nil) }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
-            completionHandler(nil)
-            self?.cancelExport()
+            guard let self else { completionHandler(nil); return }
+            self.cancelExport()
         })
-        alert.addAction(UIAlertAction(title: "Choose save location", style: .default) { [weak self] _ in
-            guard let self, self.activeDownload === download, !self.clearingWebsite,
+        alert.addAction(UIAlertAction(title: "Choose save location", style: .default) { [weak self, weak alert] _ in
+            guard let self else { completionHandler(nil); return }
+            guard self.declineExport != nil else { return }
+            guard let alert else { self.cancelExport(); return }
+            guard self.activeDownload === download, !self.clearingWebsite,
                   UIApplication.shared.applicationState == .active
-            else { completionHandler(nil); return }
+            else { self.cancelExport(); return }
+            self.declineExport = nil
+            self.exportPrompt = nil
             do {
                 let directory = self.exportRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
@@ -333,14 +349,23 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
                 try root.setResourceValues(values)
                 let destination = directory.appendingPathComponent(filename, isDirectory: false)
                 self.exportFile = destination
-                self.downloadTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-                    Task { @MainActor in self?.checkDownloadSize() }
+                // A small blob can finish before an alert's dismiss animation.
+                // Start writing after dismissal so Files can always be shown.
+                alert.dismiss(animated: true) { [weak self] in
+                    guard let self, self.activeDownload === download, !self.clearingWebsite,
+                          UIApplication.shared.applicationState == .active
+                    else { completionHandler(nil); return }
+                    self.downloadTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+                        Task { @MainActor in self?.checkDownloadSize() }
+                    }
+                    completionHandler(destination)
                 }
-                completionHandler(destination)
             } catch {
                 completionHandler(nil)
                 self.cancelExport()
-                self.showMessage("Export unavailable", "The temporary protected file could not be created.")
+                alert.dismiss(animated: true) { [weak self] in
+                    self?.showMessage("Export unavailable", "The temporary protected file could not be created.")
+                }
             }
         })
         present(alert, animated: true)
@@ -391,6 +416,11 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         let download = activeDownload
         activeDownload = nil
         downloadPending = false
+        let decline = declineExport
+        declineExport = nil
+        exportPrompt?.dismiss(animated: false)
+        exportPrompt = nil
+        decline?()
         downloadTimer?.invalidate()
         downloadTimer = nil
         download?.delegate = nil

@@ -1,14 +1,16 @@
 # iPhone IPA and AltStore delivery plan
 
 Status: the Swift/WKWebView shell, Xcode project and unsigned IPA workflow are
-implemented on `feature/tak-ios-ipa`. The first real macOS CI run compiled both
-device and simulator apps and validated the unsigned device archive/Payload.
-Its simulator setup smoke stopped at the initial 180-second cold-boot deadline
-during system CoreLocation migration; it did not install or launch the app.
-The follow-up uses a bounded ten-minute boot allowance and retains the real
-install/launch/alive/screenshot requirements. Full workflow/artifact acceptance
-is still pending. Windows cannot compile the app; iPhone readiness still needs
-personal signing, installation and tests on that device.
+implemented on `feature/tak-ios-ipa`. The [verified CI checkpoint
+86be5fde](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38960254371)
+passed on real macOS/Xcode26.6: policy tests, unsigned arm64 device archive,
+Payload validation, simulator compile/install/launch/process-alive/screenshot,
+and artifact upload. The downloaded IPA's SHA-256 and pristine provenance were
+independently verified on Windows; the setup screenshot is readable. The
+initial 180-second simulator cold-boot limit failed during CoreLocation
+migration; the bounded ten-minute allowance passed. This is build/startup
+evidence, with no configured endpoint or live TAK peer. Physical iPhone
+readiness still needs personal signing, installation and device acceptance.
 
 ## Implemented connected package
 
@@ -61,7 +63,7 @@ system Files save picker. Unknown sizes and advertised sizes above 256 MiB are
 refused; in-progress size checks cancel overruns, and the completed file is
 checked again. Cross-origin redirects and arbitrary file paths are refused.
 Temporary exports use file protection and backup exclusion and are deleted on
-completion, cancellation, local clearing or next app launch. This is an
+completion, cancellation, local clearing, return to login or next app launch. This is an
 explicit file export, not persistent offline-map storage.
 The native export ceiling is 256 MiB; a web map pack allowed by the separate
 512 MiB pack ceiling can therefore exceed this wrapper's export limit. `data:`
@@ -176,9 +178,10 @@ screenshot. No private endpoint, real GPS or TAK peer is used by that smoke.
 The `GEVTAK-unsigned-<commit>` artifact contains `GEVTAK-unsigned.ipa`,
 `provenance.json`, `SHA256SUMS` and the simulator setup screenshot, retained
 seven days. Provenance records actual toolchain/SDK, source commit/dirty state,
-architecture, validation flags and IPA SHA-256. Intermediate build directories
-and the temporary simulator are cleaned up. These commands remain unrun on
-Xcode until CI supplies that evidence; a simulator build is not a device IPA.
+architecture, validation flags and IPA SHA-256. The selected simulator runtime
+is constrained to the Xcode SDK major and recorded separately. Intermediate
+build directories and the temporary simulator are cleaned up. The verified
+checkpoint above produced a real device archive and a separate simulator build.
 The unsigned output cannot be installed directly.
 
 Compare the IPA hash to `SHA256SUMS` before personal signing. On Windows:
