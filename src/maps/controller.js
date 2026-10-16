@@ -2,6 +2,7 @@ import { indexMapSources } from './registry.js';
 import * as Cesium from 'cesium';
 import { createMapCredits } from './credits.js';
 import { acquireImageryComparison } from './imageryComparison.js';
+import { isOfflineSource } from './offline/imagery.js';
 
 /**
  * Private `setStack` option marking a switch the controller issues itself
@@ -54,6 +55,60 @@ export class MapSourceController {
 
   getStack(id) {
     return this._sources.get(id)?.descriptor || null;
+  }
+  /** Only factory-owned immutable local packs may extend a running registry. */
+  registerLocalSource(source) {
+    if (this._destroyed) throw new Error('Map controller is destroyed');
+    const id = source?.descriptor?.id;
+    if (
+      !isOfflineSource(source) ||
+      !/^offline-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+        id,
+      ) ||
+      source.localOnly !== true ||
+      source.terrain?.localOnly !== true ||
+      source.constructionFallback ||
+      source.tileFailureFallback
+    )
+      throw new TypeError(
+        'Only approved local saved-map sources may be registered',
+      );
+    const existing = this._sources.get(id);
+    if (existing) {
+      if (!isOfflineSource(existing))
+        throw new TypeError('Map source ID collision');
+      return id;
+    }
+    this._sources.set(id, source);
+    return id;
+  }
+  /** Removing a local map never silently selects a network-backed source. */
+  removeLocalSource(id) {
+    const source = this._sources.get(id);
+    if (!source || !isOfflineSource(source)) return false;
+    if (this._activeId === id) {
+      this._switchGen++;
+      this._isSwitching = false;
+      this._removeImageryErrorListener?.();
+      this._removeImageryErrorListener = null;
+      this._removeImageryLayer();
+      this._activeImageryProvider = null;
+      this._credits.show(null);
+      this._activeId = null;
+      this._lastError = 'Saved map removed';
+    }
+    this._sources.delete(id);
+    const cached = this._imageryProviders.get(id);
+    this._imageryProviders.delete(id);
+    if (cached)
+      void Promise.resolve(cached).then(
+        (value) => this._dispose(value.provider),
+        () => {},
+      );
+    this._requestRender('saved-map-removed');
+    this._notifySubscribers();
+    this._emitChange('ready');
+    return true;
   }
   getStacks() {
     return [...this._sources.values()].map(({ descriptor }) => {

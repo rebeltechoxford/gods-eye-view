@@ -176,8 +176,10 @@ The production host retains GEV's provider middleware and built globe/layers,
 voice and PWA assets. Existing provider credentials and coverage requirements
 still apply. `/api/setup` and `/mcp` remain unavailable on the private host;
 perform credential administration locally. Production framing stays disabled.
-Optional **Add to Home Screen** uses the authenticated HTTPS manifest; it does
-not provide offline maps, persisted TAK data or reliable background GPS.
+Optional **Add to Home Screen** uses the authenticated HTTPS manifest. Offline
+maps and application storage require the explicit Saved Maps actions below;
+installation alone does not download them. Tactical contacts/chat stay in page
+memory, and reliable background GPS is not supplied by the browser.
 
 `TAK_HTTPS_*` protects browser-to-GEV traffic. The separate `TAK_SERVER_*`
 settings above protect the gateway-to-TAK Server connection. Configure both
@@ -189,6 +191,57 @@ real phone with its issued/trusted certificate, private-network reachability,
 GPS permissions and authorized TAK peer still needs acceptance. No public
 deployment, private LAN listener or device trust-store change was performed
 to produce those local results.
+
+## Retain topographic maps on the server and phone
+
+On the built private HTTPS app, open **TAK → SAVED MAPS / OFFLINE**. Use the
+10 km box around the map center or enter west/south/east/north bounds. Choose
+minimum/maximum zoom; the panel counts tiles before requesting anything. The
+first supported source is USGS Topographic. This downloads raster map images,
+not 3D elevation meshes. Google 3D remains an online base; other imagery and
+charts have separate download permissions and import work.
+
+Leave **Also retain on this device** checked, then choose **Download area**.
+The server retains verified tiles on disk; the browser copies and verifies a
+separate pack in IndexedDB, selects it on the same GEV globe, and saves the
+built app/Cesium workers for disconnected launch. Watch the separate map/app
+results. A partial copy is not ready. Use Cancel, then Refresh and Resume or
+Save to this device to reuse verified retained tiles after interruption.
+
+Limits are 5,000 tiles and 512 MiB per pack, 32 packs and 2 GiB per store, with
+four concurrent upstream requests. Download smaller adjacent areas when the
+area/detail exceeds those limits. The displayed size estimate is approximate;
+actual image sizes, available device quota and server disk space decide whether
+the download completes.
+
+Server files default to `gods-eye-view/offline-maps` under `LOCALAPPDATA`,
+`XDG_DATA_HOME`, or `~/.local/share`. An absolute `TAK_MAP_PACKS_DIR` can select
+another private directory outside the checkout and built public directory.
+One running server owns a cache directory. Keep its manifests and tile files
+together for backup; stop the server before copying the directory.
+
+**Show saved map** uses only the local device pack and flat ellipsoid terrain.
+Coverage/detail misses remain blank rather than silently contacting an online
+map source. A selected saved pack is remembered for startup. Choose an online
+map explicitly to return to the normal GEV sources.
+
+Map copies and the app shell remain after logout/reload until explicitly
+deleted. Anyone with access to this browser profile can open them offline;
+download only on an appropriate device. No operator token, session response,
+TAK contact, message or GPS fix is stored in these map/application caches.
+The OS/browser can still evict website storage or the user can clear it:
+export a **.gevmap backup** and retain the server copy. Restore a backup with
+the file control; its schema, source, bounds, size and every tile hash are
+checked. Delete device/server copies separately; **Remove offline app** removes
+only the cached app. Ordinary browsing does not opt in to application caching.
+
+After downloading, close/reopen the app with the server and all networks
+unreachable and inspect the saved area. Repeat on the actual target phone;
+desktop Chromium evidence does not establish iOS WebKit storage behavior. The
+local development lab can create/copy packs, but saving a launchable offline
+app requires `npm run build` and the production HTTPS host. Read
+[the source/download ledger](docs/TAK_OFFLINE_MAP_PLAN.md) for licensed sources,
+terrain and chart import work that remains.
 
 ## Reproduce verification
 

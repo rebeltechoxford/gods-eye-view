@@ -56,11 +56,17 @@ running.
    altitude datum/uncertainty behavior; add range/bearing, waypoint/route tools,
    precision tests and camera arbitration. Existing coordinate readouts alone
    do not establish the whole ATAK navigation workflow.
-7. **GPS/offline field behavior.** Add explicit retention/cache policy, restart
-   and storage eviction handling, licensed offline map packs, unsent queue
-   reconciliation and device/browser testing. Reliable background location or
-   external GNSS may need a native companion. Map center is operator input,
-   not GPS.
+7. **GPS/offline field behavior.** The first retained-map slice adds bounded
+   USGS raster packs on server and device, verified copy/resume, backups and an
+   explicit app-shell download. Eight synthetic production Chromium scenarios
+   now include actual closed-server, fresh-page saved-map launch and pan; see
+   [offline evidence](docs/TAK_OFFLINE_MAP_PLAN.md). Complete physical-phone
+   storage/restart/eviction acceptance and richer approved chart
+   imports before broad field claims. Add 3D elevation packs separately from
+   rendered topographic maps; NOAA MBTiles and FAA GeoTIFF conversion/import
+   remain planned. Add unsent tactical queue reconciliation with an explicit
+   retention policy. Reliable background location or external GNSS may need a
+   native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs
    and georeferencing metadata with limits/cleanup. Add hardware bridges where
    required. Existing public CCTV/HLS and Local ADS-B do not constitute general
@@ -118,3 +124,15 @@ behavior only. Keep current command results and revision in the implementation
 plan; preserve failed/skipped scenarios and genuine external prerequisites.
 Do not mark full ATAK parity or operational readiness until the relevant feature
 matrix rows have explicit real-peer/device acceptance evidence.
+
+## Local verification housekeeping
+
+An abnormal exit of an earlier offline browser harness left the synthetic
+fixture directory
+`C:\Users\jesse\AppData\Local\Temp\gev-offline-browser-0jKuk9`.
+Its browser/server are closed; it contains synthetic map files outside Git.
+Automatic approval review rejected both verified-path cleanup attempts with
+only `blocked by policy`, so deletion was stopped. The final successful run
+cleaned up its own fixture normally. Remove the orphan through an approved
+local housekeeping action when convenient; this does not block application
+operation or affect private TAK data.

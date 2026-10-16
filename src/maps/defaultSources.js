@@ -15,6 +15,7 @@ export function createDefaultMapSources({
   googleTileset = null,
   cesiumToken = '',
   googleApiKey = '',
+  createGoogleTileset = null,
 } = {}) {
   const ionToken = String(cesiumToken || '').trim();
   const hasIon = Boolean(ionToken);
@@ -41,9 +42,14 @@ export function createDefaultMapSources({
       if (descriptor.kind === 'photoreal')
         return {
           ...common,
-          available: Boolean(googleTileset),
+          available: Boolean(
+            googleTileset || typeof createGoogleTileset === 'function',
+          ),
           unavailableReason: photorealUnavailableReason(hasIon || hasGoogle),
           tileset: googleTileset,
+          ...(typeof createGoogleTileset === 'function'
+            ? { createTileset: createGoogleTileset }
+            : {}),
         };
       const imagery =
         descriptor.kind === 'reference'

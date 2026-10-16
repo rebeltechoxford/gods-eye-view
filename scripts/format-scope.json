@@ -1015,5 +1015,10 @@
   "scripts/qa-tak-stress.mjs",
   "src/tak/storeResources.test.mjs",
   "src/tooling/takHttps.test.mjs",
-  "src/tooling/takPrivateAccess.test.mjs"
+  "src/tooling/takPrivateAccess.test.mjs",
+  "src/maps/offline/offline.test.mjs",
+  "src/tooling/takOfflineMaps.test.mjs",
+  "src/tooling/takOfflineMapsHttp.test.mjs",
+  "src/tooling/takOfflineShell.test.mjs",
+  "scripts/qa-offline-maps.mjs"
 ]

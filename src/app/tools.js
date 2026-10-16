@@ -167,6 +167,7 @@ export function createApplicationTools({
   // same-origin gateway (server/providers/tak) after the operator connects.
   const takClient = initTakWebClient({
     viewer,
+    mapStackController,
     overlays: overlayHost,
     navigate: (fly) => styleManager._runExplicitNavigation('TAK contact', fly),
   });

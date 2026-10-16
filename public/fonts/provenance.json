@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "acquiredAt": "2026-10-16T20:46:35.099Z",
+  "purpose": "Self-host existing GEV fonts for disconnected application launch; no new font families or glyph set.",
+  "fontsRepositoryCommit": "47d54ca1ebb14fd864695f1d39dc734f39017c33",
+  "materialSymbolsRepositoryCommit": "49d4db35df873165d6bd6ba09b063c7dafbac2f4",
+  "cssSources": [
+    {
+      "url": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap",
+      "sha256": "553739238f073dd89be889262fd6e0f13cbf2af4b905338b07bd9a0cc82be634"
+    },
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined%3Aopsz%2Cwght%2CFILL%2CGRAD%4020%2C400%2C0%2C0&icon_names=absent%2Cadjust%2Carrow_drop_down%2Carrow_forward%2Carrow_left%2Carrow_right%2Cbolt%2Cchevron_left%2Cchevron_right%2Cclose%2Cclose_fullscreen%2Cdark_mode%2Cdraw%2Ceast%2Cflare%2Cflight%2Clayers_clear%2Clight_mode%2Clocal_fire_department%2Cmy_location%2Cnavigation%2Cnormal%2Con%2Copen_in_full%2Cpublic%2Cradar%2Cradio%2Cright_panel_close%2Cright_panel_open%2Crocket_launch%2Cskip_next%2Cskip_previous%2Cunavailable%2Cview_in_ar",
+      "sha256": "1e5b12db130e620e13c0d94e65b42a3f8bae187cba58f66609bd0665ce5ffe87"
+    }
+  ],
+  "weights": {
+    "Inter": [300, 400, 500, 600],
+    "JetBrains Mono": [300, 400, 500, 600, 700]
+  },
+  "materialSymbols": {
+    "axes": {
+      "opsz": 20,
+      "wght": 400,
+      "FILL": 0,
+      "GRAD": 0
+    },
+    "requestedIconNames": [
+      "absent",
+      "adjust",
+      "arrow_drop_down",
+      "arrow_forward",
+      "arrow_left",
+      "arrow_right",
+      "bolt",
+      "chevron_left",
+      "chevron_right",
+      "close",
+      "close_fullscreen",
+      "dark_mode",
+      "draw",
+      "east",
+      "flare",
+      "flight",
+      "layers_clear",
+      "light_mode",
+      "local_fire_department",
+      "my_location",
+      "navigation",
+      "normal",
+      "on",
+      "open_in_full",
+      "public",
+      "radar",
+      "radio",
+      "right_panel_close",
+      "right_panel_open",
+      "rocket_launch",
+      "skip_next",
+      "skip_previous",
+      "unavailable",
+      "view_in_ar"
+    ],
+    "inventoryDescription": "Conservative source-scanner request, not a list or count of actual font glyphs. It includes fallback text literals absent/unavailable; the official Google API ignores unsupported names. Adding those literals returned byte-identical WOFF2 to the prior32-name GEV request, preserving every existing real glyph.",
+    "priorGevSubsetSha256": "3152b1e9e317530b8cabefdc4ffcbf68a21e49967284eecab8a4b3f19034e497"
+  },
+  "stylesheet": {
+    "path": "/fonts/gev-fonts.css",
+    "sha256": "002f3b8a83c23dc6c0223d2ec79afbda144400e764c5d97b07648d484ea98282"
+  },
+  "assets": [
+    {
+      "family": "Inter",
+      "subset": "cyrillic-ext",
+      "path": "/fonts/inter-v20-cyrillic-ext.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7SUc.woff2",
+      "license": "OFL-1.1",
+      "bytes": 25960,
+      "sha256": "ca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd"
+    },
+    {
+      "family": "Inter",
+      "subset": "cyrillic",
+      "path": "/fonts/inter-v20-cyrillic.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7SUc.woff2",
+      "license": "OFL-1.1",
+      "bytes": 18748,
+      "sha256": "71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075"
+    },
+    {
+      "family": "Inter",
+      "subset": "greek-ext",
+      "path": "/fonts/inter-v20-greek-ext.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7SUc.woff2",
+      "license": "OFL-1.1",
+      "bytes": 11232,
+      "sha256": "6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190"
+    },
+    {
+      "family": "Inter",
+      "subset": "greek",
+      "path": "/fonts/inter-v20-greek.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7SUc.woff2",
+      "license": "OFL-1.1",
+      "bytes": 18996,
+      "sha256": "1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6"
+    },
+    {
+      "family": "Inter",
+      "subset": "vietnamese",
+      "path": "/fonts/inter-v20-vietnamese.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7SUc.woff2",
+      "license": "OFL-1.1",
+      "bytes": 10252,
+      "sha256": "5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2"
+    },
+    {
+      "family": "Inter",
+      "subset": "latin-ext",
+      "path": "/fonts/inter-v20-latin-ext.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2",
+      "license": "OFL-1.1",
+      "bytes": 85068,
+      "sha256": "34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956"
+    },
+    {
+      "family": "Inter",
+      "subset": "latin",
+      "path": "/fonts/inter-v20-latin.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+      "license": "OFL-1.1",
+      "bytes": 48256,
+      "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
+    },
+    {
+      "family": "JetBrains Mono",
+      "subset": "cyrillic-ext",
+      "path": "/fonts/jetbrains-mono-v24-cyrillic-ext.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbV2o-flEEny0FZhsfKu5WU4xD2OwG_TA.woff2",
+      "license": "OFL-1.1",
+      "bytes": 2028,
+      "sha256": "593ccd6fe36e299e151aeae4521be9bfe83ac487d96d7cdb44f50be4a04041c7"
+    },
+    {
+      "family": "JetBrains Mono",
+      "subset": "cyrillic",
+      "path": "/fonts/jetbrains-mono-v24-cyrillic.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbV2o-flEEny0FZhsfKu5WU4xD_OwG_TA.woff2",
+      "license": "OFL-1.1",
+      "bytes": 12108,
+      "sha256": "d274604c40757f98f07df623a8b8fb5194508a6fa4f5413a7a107f09e3b7452a"
+    },
+    {
+      "family": "JetBrains Mono",
+      "subset": "greek",
+      "path": "/fonts/jetbrains-mono-v24-greek.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbV2o-flEEny0FZhsfKu5WU4xD4OwG_TA.woff2",
+      "license": "OFL-1.1",
+      "bytes": 9004,
+      "sha256": "ee863198077f3093ffa81c072581cc4bd608a04e60a8a9c0b846396ce4f14109"
+    },
+    {
+      "family": "JetBrains Mono",
+      "subset": "vietnamese",
+      "path": "/fonts/jetbrains-mono-v24-vietnamese.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbV2o-flEEny0FZhsfKu5WU4xD0OwG_TA.woff2",
+      "license": "OFL-1.1",
+      "bytes": 7504,
+      "sha256": "2288795da89dd97e648954b96e22b4501bd85dfc453264460b252f888b582ca2"
+    },
+    {
+      "family": "JetBrains Mono",
+      "subset": "latin-ext",
+      "path": "/fonts/jetbrains-mono-v24-latin-ext.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbV2o-flEEny0FZhsfKu5WU4xD1OwG_TA.woff2",
+      "license": "OFL-1.1",
+      "bytes": 15196,
+      "sha256": "79bfdab9ba467e26eea4122e6f2567e188dd8a09a8c730d501fc487c4ab99c6e"
+    },
+    {
+      "family": "JetBrains Mono",
+      "subset": "latin",
+      "path": "/fonts/jetbrains-mono-v24-latin.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbV2o-flEEny0FZhsfKu5WU4xD7OwE.woff2",
+      "license": "OFL-1.1",
+      "bytes": 40404,
+      "sha256": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e"
+    },
+    {
+      "family": "Material Symbols Outlined",
+      "subset": "subset",
+      "path": "/fonts/material-symbols-outlined-v377-subset.woff2",
+      "sourceUrl": "https://fonts.gstatic.com/l/font?kit=kJF1BvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzByHX9rA6RzaxHMPdY43zj-jCxv3fzvRNU22ZXGJpEpjC_1p-p_4MrImHCIJIZrDCvHOejdcMkzUJPvbB--NyU9cW9D-I3cSFCBNDtTy7ky-Y6bMLNaQhBVNRbF_cugDfkhV2_k8hGVE28sHt4FB78CUMp4xblTyedGw&skey=b8dc2088854b122f&v=v377",
+      "license": "Apache-2.0",
+      "bytes": 4652,
+      "sha256": "3152b1e9e317530b8cabefdc4ffcbf68a21e49967284eecab8a4b3f19034e497"
+    }
+  ],
+  "licenses": [
+    {
+      "family": "Inter",
+      "path": "/fonts/licenses/inter-OFL.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/inter/OFL.txt",
+      "bytes": 4377,
+      "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
+    },
+    {
+      "family": "JetBrains Mono",
+      "path": "/fonts/licenses/jetbrains-mono-OFL.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/jetbrainsmono/OFL.txt",
+      "bytes": 4399,
+      "sha256": "b2fe5e8987594e9ffd1d2ca52a2f5d73eb8335243893c5d6254b5ad69269591d"
+    },
+    {
+      "family": "Material Symbols Outlined",
+      "path": "/fonts/licenses/material-symbols-Apache-2.0.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/google/material-design-icons/49d4db35df873165d6bd6ba09b063c7dafbac2f4/LICENSE",
+      "bytes": 11357,
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    }
+  ],
+  "fontBytes": 309408,
+  "materialSymbolsNotice": "No upstream root NOTICE file exists at the recorded source commit (GitHub API HTTP404)."
+}

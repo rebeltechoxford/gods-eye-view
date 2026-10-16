@@ -1363,7 +1363,12 @@
       "src/localRequestGate.mjs",
       "src/maps/imageryHost.js",
       "src/maps/referenceCatalog.js",
-      "src/maps/referenceImagery.js"
+      "src/maps/referenceImagery.js",
+      "src/maps/offline/schema.js",
+      "src/maps/offline/store.js",
+      "src/maps/offline/file.js",
+      "src/maps/offline/imagery.js",
+      "src/maps/offline/boot.js"
     ],
     "external": ["cesium"]
   },
@@ -2237,7 +2242,13 @@
       "src/tak/session.js",
       "src/maps/referenceCatalog.js",
       "src/maps/referenceImagery.js",
-      "src/ui/mapReferenceControls.js"
+      "src/ui/mapReferenceControls.js",
+      "src/maps/offline/schema.js",
+      "src/maps/offline/store.js",
+      "src/maps/offline/file.js",
+      "src/maps/offline/imagery.js",
+      "src/maps/offline/boot.js",
+      "src/maps/offline/ui.js"
     ],
     "external": [
       "hls.js",

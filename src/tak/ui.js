@@ -34,7 +34,7 @@ const PANEL_HTML = `
   <details class="tak-web-section" data-tak-section="phone">
     <summary>PHONE EUD / INSTALL</summary>
     <button type="button" data-tak-install>Install / home screen</button>
-    <p class="tak-web-hint" data-tak-install-state>Private HTTPS is required on a real phone. Keep the app visible for device GPS; offline maps and background tracking are not available.</p>
+    <p class="tak-web-hint" data-tak-install-state>Private HTTPS is required on a real phone. Use Saved Maps to retain approved maps and the app for offline launch. Keep the app visible for device GPS; reliable background tracking requires native support.</p>
   </details>
 
   <details class="tak-web-section" data-tak-section="identity">
