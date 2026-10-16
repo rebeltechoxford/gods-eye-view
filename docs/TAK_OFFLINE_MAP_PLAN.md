@@ -170,8 +170,9 @@ The gate verifies every cached font, stylesheet, license and provenance file
 against those hashes. Its image fixtures establish local rendering and input
 behavior, not real geographic alignment: the disconnected screenshot at
 0°/0° and 50 km altitude shows a nearly uniform pale area from the repeated
-synthetic imagery/view. Actual known-landmark coverage/alignment and readable
-map detail still require real-device/source acceptance.
+synthetic imagery/view. The separate real-tile check below establishes visible
+geographic map detail locally; real-device alignment, editions and navigation
+acceptance remain separate requirements.
 
 This verification caught and repaired a production-host omission: the build
 and worker included fonts, while the authenticated static host initially
@@ -185,9 +186,38 @@ a replacement writer's retained pack or lock after shutdown.
 Physical iOS/Android installation, storage persistence, eviction/restart
 behavior and disconnected field use remain unverified.
 
-## File imports and elevation
+### Real one-tile geographic rendering check
 
-### Supported-runtime regression record
+A separate bounded check passed at 2026-10-16 21:07:33 UTC using the same built
+private HTTPS host and Saved Maps UI. It acquired exactly one actual USGS Topo
+tile over the public National Mall area: XYZ `14/4685/6268`, source endpoint
+`/tile/14/6268/4685`, HTTP 200 JPEG, 34,900 bytes, SHA-256
+`f0f57148ba36ed828cff9d3b8d6f0038fe8b122d0ff1858fc52c3c9f445e6f4c`.
+The small selected box was west −77.0369, east −77.0364, south 38.8852,
+north 38.8857; planning asserted one tile before starting. The Node fetch
+fixture allowed only that fixed USGS URL and one acquisition request.
+
+The UI saved server/device copies and the app, then selected the local map.
+A controlled downward camera at the public Lincoln Memorial coordinates
+(38.88927, −77.0502; 1,300 m) produced actual canvas pixels showing river,
+road/traffic-circle geometry and park labels. After the actual server stopped,
+a fresh cached page rendered the same map while `navigator.onLine` remained
+true, with no online map/terrain/font requests. The central 220-pixel sample
+contained 10,919 distinct colors online and 10,694 offline, with luminance
+ranges of 227 and 201. Raw Cesium canvas captures and full UI screenshots were
+visually inspected; the empty area north of the retained tile remained blank
+rather than fetching an online fallback.
+
+Evidence is local under `qa-artifacts/offline-national-mall/`: `results.json`,
+`online-national-mall-canvas.png`, `offline-national-mall-canvas.png`, and the
+corresponding `-ui.png` captures. This was Windows Chromium at a 390 × 844
+phone viewport with a synthetic operator and generated local TLS fixture;
+it was not a physical phone, operational TAK test or bulk download. The
+one-off runner stayed in ignored `.gev-cache`; it changed no shipped runtime
+or browser harness. Real-device alignment, edition and navigation acceptance
+remain separate work.
+
+## Supported-runtime regression record
 
 The combined offline/foundation source at `49aaf7de` passed the complete local
 Node 24.19.0 suite with Git 2.53: 6,554 ordinary tests, 6,544 passes, ten existing
@@ -201,6 +231,8 @@ published layer tokens passed. Production and portable panel builds passed
 (10.73 and 11.30 seconds), with existing chunk-size warnings retained.
 `npm audit --omit=dev` reported zero production vulnerabilities. Complete final
 CI evidence is linked from [PR #5](https://github.com/rebeltechoxford/gods-eye-view/pull/5).
+
+## File imports and elevation
 
 Raster MBTiles and raster PMTiles are appropriate portable inputs. MBTiles is
 SQLite and uses TMS tile rows: convert to XYZ with `y = 2^z - 1 - tile_row`.
