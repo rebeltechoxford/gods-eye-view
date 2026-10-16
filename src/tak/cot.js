@@ -8,7 +8,8 @@ function safeText(value, maxLength = 128) {
 }
 
 function finiteCoordinate(value, min, max) {
-  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= min && number <= max
     ? number
@@ -35,10 +36,11 @@ export function cotAffiliation(type) {
 /** Normalize only geographic CoT events. Unusable records are rejected. */
 export function normalizeCotRecord(input, receivedAtMs = Date.now()) {
   if (!input || typeof input !== 'object') return null;
-  const uid = safeText(input.uid, 160);
+  // Never truncate an identity: distinct long UIDs must not become one contact.
+  const uid = String(input.uid ?? '').trim();
   const lat = finiteCoordinate(input.lat, -90, 90);
   const lon = finiteCoordinate(input.lon, -180, 180);
-  if (!uid || lat === null || lon === null) return null;
+  if (!uid || uid.length > 160 || lat === null || lon === null) return null;
   const type = safeText(input.type || 'b-m-p-s-p-i');
   const altitudeM = finiteCoordinate(input.hae, -10000, 1000000);
   const eventTimeMs = parseTimestamp(input.time);
