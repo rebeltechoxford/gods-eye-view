@@ -287,8 +287,8 @@ browser gate and evidence. Verification used Windows, Node 24.19.0 and Git
 - PR #3 targets `dev/tak-web-foundation`. Its first CI run passed both Node
   matrix jobs, Windows onboarding and Street Level/panel gates; its TAK job
   passed the 12 HTTPS scenarios before the old screenshot fixture timed out.
-  Integration still requires the corrected browser job and curated-map gate
-  to pass. `main` has not been modified.
+  The corrected foundation gates later passed at `81b50adb`, and PR #3
+  merged into `dev/tak-web-foundation` as `9edd6148`. `main` remains unchanged.
 
 The curated-map browser gate subsequently passed all 13 scenarios on
 2026-10-16 (Chrome 152), including all 30 layer registrations, the five original
@@ -310,7 +310,36 @@ teardown. Linux CI also passed the 12 HTTPS scenarios, then exposed a phone
 resize measurement race in the TAK gate. The repair clamps to the real dynamic
 viewport, listens to window resize with teardown, and tests stale visual
 viewport and keyboard changes. Five mobile tests pass; the strict phone bounds
-assertion remains. Final CI for that repair is required before integration.
+assertion remains. The final foundation CI passed before PR #3 was integrated.
+
+### Final preservation checks, 2026-10-16
+
+Locked development dependencies received compatible patches: `sharp` 0.35.4 →
+0.35.5 with matching platform binaries and `@img/sharp-libvips-*` 1.3.4 packages,
+and `source-map-js` 1.2.1 → 1.2.2, addressing the
+[sharp advisory](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) and
+[source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+Full `npm audit` after the update reported zero vulnerabilities on 2026-10-16
+(`.gev-cache/security-patch-audit.json`). No major-version or declared-range
+changes were made, and existing license fields and notices were retained.
+
+- The combined offline app served at `http://127.0.0.1:4175` passed the existing
+  GEV tracking harness: `node scripts/track-regression.mjs --url
+http://127.0.0.1:4175` reported 109 passed, zero failed and zero skipped, with
+  all 30 layer registrations retained. Log: `.gev-cache/offline-final-tracking.log`.
+- A fresh synthetic 2,000-contact stress run against merged foundation
+  `9edd6148` completed at `2026-10-16T21:20:36Z`, using Windows, Node 24.19.0 and
+  Chrome 152 with headless SwiftShader. Updating one contact changed one entity
+  in 6.2 ms; frame intervals had a 16.4 ms median and 234.8 ms p95. The roster
+  stayed bounded at 150 rows, all 30 GEV layer registrations remained, clear
+  removed all contacts/entities/overlay entries, and repeated destroy removed
+  the TAK roots and overlay source without errors. Evidence:
+  `qa-artifacts/tak/stress.json` and `.gev-cache/final-stress.log` in the original
+  checkout.
+
+These checks establish the tested preservation and cleanup behavior. Synthetic
+providers and desktop SwiftShader timings do not establish physical-phone frame
+performance, live public-layer behavior or real TAK-peer interoperability.
 
 For each accepted slice, append a compact record with:
 

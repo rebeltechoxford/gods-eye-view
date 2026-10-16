@@ -313,10 +313,11 @@ also asserts the lab-specific synthetic replies. Other options: `--headful`,
 `--timeout <milliseconds>` and
 `--artifact-dir <directory>`. Evidence goes to gitignored `qa-artifacts/tak/`.
 The harness stubs public HTTP data and imagery and uses synthetic TAK fixtures;
-it does not test a real TAK peer. Add `--fonts` for visual review with the app's
-Google-hosted fonts; only Google font stylesheet/font requests are allowed
-through that mode, while TAK and public data stay synthetic. The repeated map
-texture is a bundled image fixture, not geographic imagery acceptance.
+it does not test a real TAK peer. App fonts and icons are self-hosted by default.
+`--fonts` permits optional external Google font stylesheet/font requests when
+present; the default app has no Google-font network dependency. TAK and public
+data stay synthetic in either mode. The repeated map texture is a bundled image
+fixture, not geographic imagery acceptance.
 Existing GEV browser gates and acceptance
 scope are documented in [the implementation plan](docs/TAK_IMPLEMENTATION_PLAN.md).
 
