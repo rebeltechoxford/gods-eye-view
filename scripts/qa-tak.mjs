@@ -790,6 +790,20 @@ try {
     'phone-sized TAK controls remain inside the viewport',
     async () => {
       await page.setViewport({ width: 390, height: 844 });
+      await page.waitForFunction(() => {
+        const root = document.querySelector('.tak-web-root');
+        const measured = Number.parseFloat(
+          root?.style.getPropertyValue('--tak-viewport-height'),
+        );
+        return (
+          innerWidth === 390 &&
+          innerHeight === 844 &&
+          Math.abs(
+            measured -
+              Math.min(innerHeight, visualViewport?.height || innerHeight),
+          ) <= 1
+        );
+      });
       const box = await page.$eval('#tak-web-panel', (el) => {
         const r = el.getBoundingClientRect();
         return {

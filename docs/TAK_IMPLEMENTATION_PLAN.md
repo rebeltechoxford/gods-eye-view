@@ -304,7 +304,13 @@ failure retention and explicitly owned browser teardown; they are included in
 ordinary unit-test discovery. The corrected local TAK rerun passed its first
 11 functional scenarios, then caught pending fixture requests after an
 intentionally closed embedded page. Explicit helper disposal now precedes
-that close; the complete final browser rerun and remote CI remain required.
+that close. The final local reruns passed all 12 TAK scenarios and all 12
+production HTTPS/session scenarios, with real globe meshes and expected fixture
+teardown. Linux CI also passed the 12 HTTPS scenarios, then exposed a phone
+resize measurement race in the TAK gate. The repair clamps to the real dynamic
+viewport, listens to window resize with teardown, and tests stale visual
+viewport and keyboard changes. Five mobile tests pass; the strict phone bounds
+assertion remains. Final CI for that repair is required before integration.
 
 For each accepted slice, append a compact record with:
 

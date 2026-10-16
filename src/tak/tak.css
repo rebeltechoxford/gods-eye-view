@@ -371,9 +371,12 @@ body.recording-mode .tak-web-root {
         100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)
       )
     );
-    max-height: calc(
-      var(--tak-viewport-height, 100dvh) - 140px - env(safe-area-inset-top) -
-        env(safe-area-inset-bottom)
+    max-height: max(
+      0px,
+      calc(
+        min(100dvh, var(--tak-viewport-height, 100dvh)) - 140px -
+          env(safe-area-inset-top) - env(safe-area-inset-bottom)
+      )
     );
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;

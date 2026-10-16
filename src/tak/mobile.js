@@ -16,6 +16,8 @@ export function createMobileSession({
     navigatorRef?.standalone === true ||
     windowRef?.matchMedia?.('(display-mode: standalone)')?.matches === true;
   function state() {
+    const layoutHeight = windowRef?.innerHeight || 0;
+    const visualHeight = windowRef?.visualViewport?.height || layoutHeight;
     return {
       online: navigatorRef?.onLine !== false,
       foreground: documentRef?.hidden !== true,
@@ -23,13 +25,14 @@ export function createMobileSession({
       standalone: standalone(),
       installAvailable: !!installPrompt,
       worker,
+      // visualViewport may still describe the previous desktop frame when the
+      // window resize arrives. Never size controls beyond the current layout.
       viewportHeight:
-        windowRef?.visualViewport?.height || windowRef?.innerHeight || 0,
+        layoutHeight > 0 ? Math.min(layoutHeight, visualHeight) : visualHeight,
       keyboardInset: Math.max(
         0,
-        (windowRef?.innerHeight || 0) -
-          ((windowRef?.visualViewport?.height || windowRef?.innerHeight || 0) +
-            (windowRef?.visualViewport?.offsetTop || 0)),
+        layoutHeight -
+          (visualHeight + (windowRef?.visualViewport?.offsetTop || 0)),
       ),
     };
   }
@@ -51,6 +54,7 @@ export function createMobileSession({
   windowRef?.addEventListener('appinstalled', appInstalled);
   windowRef?.addEventListener('online', notify);
   windowRef?.addEventListener('offline', notify);
+  windowRef?.addEventListener('resize', notify);
   documentRef?.addEventListener('visibilitychange', notify);
   windowRef?.visualViewport?.addEventListener('resize', notify);
   windowRef?.visualViewport?.addEventListener('scroll', notify);
@@ -108,6 +112,7 @@ export function createMobileSession({
       windowRef?.removeEventListener('appinstalled', appInstalled);
       windowRef?.removeEventListener('online', notify);
       windowRef?.removeEventListener('offline', notify);
+      windowRef?.removeEventListener('resize', notify);
       documentRef?.removeEventListener('visibilitychange', notify);
       windowRef?.visualViewport?.removeEventListener('resize', notify);
       windowRef?.visualViewport?.removeEventListener('scroll', notify);
