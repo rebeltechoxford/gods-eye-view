@@ -222,6 +222,10 @@ async function connect(page) {
     () => window.__godsEyeView.takClient.client.link().state === 'open',
     { timeout },
   );
+  await page.waitForFunction(
+    () => document.querySelector('.tak-web-root').dataset.link === 'open',
+    { timeout },
+  );
 }
 async function stateSnapshot(page) {
   return page.evaluate(() => {

@@ -238,6 +238,23 @@ http://127.0.0.1:4176 --lab --fonts` passed all 12 scenarios at
   imagery, and keyed rows plus an explicit 2000 m focus range repair the product
   interaction/camera defects. Final full suite/build results are recorded when
   their runs finish.
+- Private production HTTPS/PWA acceptance at runtime checkpoint `5de0d82c`:
+  `npm run qa:tak:private` passed all 12 scenarios at
+  `2026-10-16T19:37:31Z`, Windows, Node 24.19.0, Chrome 152.0.7977.75. It checked
+  native form login, credentialed manifest/worker, cookie-only identity ACK,
+  phone controls and measured GPS freshness, explicit per-marker sharing,
+  aggregate-capacity notices, a real loopback outage/same-port restart, logout
+  revocation of an independent authenticated WSS connection, real connected and
+  disconnected session expiry, and a labelled simulated initial-status401.
+  Tactical state, consent, GPS and inputs were cleared before redirect; no app
+  errors, tactical caches or fixture/credential persistence were found. The
+  native-form run exposed and repaired the login document's no-referrer
+  `Origin:null` incompatibility; strict Origin validation remains enabled.
+  Evidence: `qa-artifacts/tak-private/results.json` and three numbered synthetic
+  screenshots. Certificates were temporary, Chromium trust was pinned only to
+  the synthetic leaf key, and public/provider requests were intercepted. This
+  establishes neither real phone trust/GPS/background behavior nor real TAK
+  peer interoperability.
 
 For each accepted slice, append a compact record with:
 
