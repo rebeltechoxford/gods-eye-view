@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import puppeteer from 'puppeteer';
+import { interceptFixtures } from './qa-fixtureInterception.mjs';
 import { LAYER_STATE_REGISTRY } from '../src/data/layerState.js';
 import {
   hookRenderErrors,
@@ -45,6 +46,7 @@ const browser = await puppeteer.launch({
 const errors = [];
 let intercepted = 0;
 let page;
+let interception;
 let stage = 'browser startup';
 try {
   page = await browser.newPage();
@@ -59,83 +61,86 @@ try {
       ),
     );
   });
-  await page.setRequestInterception(true);
-  page.on('request', (request) => {
-    const url = new URL(request.url());
-    const respond = (payload) => void request.respond(payload).catch(() => {});
-    // Exercise the existing flat-terrain fallback instead of supplying bogus
-    // successful terrain JSON to a quantized-mesh decoder.
-    if (url.origin === 'https://terrain.reearth.land') {
-      intercepted++;
-      return respond({
-        status: 400,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: '',
-      });
-    }
-    const tileRequest =
-      request.method() === 'GET' &&
-      ((url.origin === 'https://tile.openstreetmap.org' &&
-        /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) ||
-        (url.origin === 'https://services.arcgisonline.com' &&
-          /\/World_Imagery\/MapServer\/tile\//.test(url.pathname)));
-    if (tileRequest) {
-      intercepted++;
-      return respond({
-        status: 200,
-        contentType: 'image/jpeg',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: tile,
-      });
-    }
-    if (
-      url.origin === 'https://services.arcgisonline.com' &&
-      url.pathname.endsWith('/World_Imagery/MapServer')
-    )
-      return respond({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({
-          currentVersion: 10.81,
-          fullExtent: {
-            xmin: -20037508.342787,
-            ymin: -20037508.342787,
-            xmax: 20037508.342787,
-            ymax: 20037508.342787,
-            spatialReference: { wkid: 102100 },
-          },
-          tileInfo: {
-            rows: 256,
-            cols: 256,
-            origin: { x: -20037508.342787, y: 20037508.342787 },
-            spatialReference: { wkid: 102100 },
-            lods: Array.from({ length: 20 }, (_, level) => ({
-              level,
-              resolution: 156543.033928 / 2 ** level,
-              scale: 591657527.591555 / 2 ** level,
-            })),
-          },
-        }),
-      });
-    if (
-      (url.origin === appUrl.origin &&
-        url.pathname.startsWith('/api/') &&
-        !url.pathname.startsWith('/api/tak/')) ||
-      (url.protocol.startsWith('http') && url.origin !== appUrl.origin)
-    ) {
-      intercepted++;
-      return respond({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: '{}',
-      });
-    }
-    void request.continue().catch(() => {});
+  interception = await interceptFixtures(page, {
+    origin: appUrl.origin,
+    handle: (request) => {
+      const url = new URL(request.url());
+      const respond = (payload) =>
+        void request.respond(payload).catch(() => {});
+      // Exercise the existing flat-terrain fallback instead of supplying bogus
+      // successful terrain JSON to a quantized-mesh decoder.
+      if (url.origin === 'https://terrain.reearth.land') {
+        intercepted++;
+        return respond({
+          status: 400,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: '',
+        });
+      }
+      const tileRequest =
+        request.method() === 'GET' &&
+        ((url.origin === 'https://tile.openstreetmap.org' &&
+          /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) ||
+          (url.origin === 'https://services.arcgisonline.com' &&
+            /\/World_Imagery\/MapServer\/tile\//.test(url.pathname)));
+      if (tileRequest) {
+        intercepted++;
+        return respond({
+          status: 200,
+          contentType: 'image/jpeg',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: tile,
+        });
+      }
+      if (
+        url.origin === 'https://services.arcgisonline.com' &&
+        url.pathname.endsWith('/World_Imagery/MapServer')
+      )
+        return respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: JSON.stringify({
+            currentVersion: 10.81,
+            fullExtent: {
+              xmin: -20037508.342787,
+              ymin: -20037508.342787,
+              xmax: 20037508.342787,
+              ymax: 20037508.342787,
+              spatialReference: { wkid: 102100 },
+            },
+            tileInfo: {
+              rows: 256,
+              cols: 256,
+              origin: { x: -20037508.342787, y: 20037508.342787 },
+              spatialReference: { wkid: 102100 },
+              lods: Array.from({ length: 20 }, (_, level) => ({
+                level,
+                resolution: 156543.033928 / 2 ** level,
+                scale: 591657527.591555 / 2 ** level,
+              })),
+            },
+          }),
+        });
+      if (
+        (url.origin === appUrl.origin &&
+          url.pathname.startsWith('/api/') &&
+          !url.pathname.startsWith('/api/tak/')) ||
+        (url.protocol.startsWith('http') && url.origin !== appUrl.origin)
+      ) {
+        intercepted++;
+        return respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: '{}',
+        });
+      }
+      void request.continue().catch(() => {});
+    },
   });
   appUrl.hash =
-    'lat=34.3665&lon=-89.5192&alt=50000&heading=0&pitch=-70&map=osm';
+    'lat=34.3665&lon=-89.5192&alt=50000&heading=0&pitch=-70&map=osm&b=0';
   stage = 'app startup';
   await page.goto(appUrl.href, { waitUntil: 'domcontentloaded' });
   await page.bringToFront();
@@ -347,6 +352,7 @@ try {
     overlayEntries: 0,
   });
   errors.push(...(await readRenderErrors(page)), ...measurements.unhandled);
+  errors.push(...interception.errors);
   assert.deepEqual(errors, []);
   const sorted = measurements.frameIntervalsMs.slice().sort((a, b) => a - b);
   const output = {
