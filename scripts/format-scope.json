@@ -979,5 +979,21 @@
   "src/tools/views.test.mjs",
   "src/app/embed.test.mjs",
   "src/tools/globePanel.test.mjs",
-  "src/costEndpointThrottle.test.mjs"
+  "src/costEndpointThrottle.test.mjs",
+  "src/tak/cotOverlay.test.mjs",
+  "src/tak/geolocation.test.mjs",
+  "src/tak/privacy.test.mjs",
+  "src/tak/protocol/regressions.test.mjs",
+  "src/tak/transport.test.mjs",
+  "src/tooling/takTlsSecurity.test.mjs",
+  "src/tak/client.test.mjs",
+  "src/tak/cot.test.mjs",
+  "src/tak/importValidation.test.mjs",
+  "src/tak/protocol/cot.test.mjs",
+  "src/tak/protocol/router.test.mjs",
+  "src/tak/protocol/stream.test.mjs",
+  "src/tak/protocol/xml.test.mjs",
+  "src/tooling/takGateway.test.mjs",
+  "scripts/qa-tak.mjs",
+  "scripts/tak-lab.mjs"
 ]

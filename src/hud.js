@@ -1,3 +1,8 @@
+import {
+  isTakPrivacyBlocked,
+  takDisclosureTicket,
+  canDiscloseTakData,
+} from './tak/privacy.js';
 import { applicationServices } from './services/application.js';
 /**
  * @module hud
@@ -696,6 +701,12 @@ export class IntelHUD {
    */
   async _updateSummary(animate = false, force = false) {
     const fallbackText = this._composeSummary();
+    if (isTakPrivacyBlocked(this.viewer)) {
+      this._summaryRequest?.abort();
+      this._setSummaryText(fallbackText, false);
+      return;
+    }
+    const privacy = takDisclosureTicket(this.viewer);
     if (!this._latestMetrics) {
       this._setSummaryText(fallbackText, animate);
       return;
@@ -720,7 +731,8 @@ export class IntelHUD {
       this._setSummaryText(fallbackText, animate);
       return;
     }
-    if (revision !== this._summaryRevision) return;
+    if (revision !== this._summaryRevision || !canDiscloseTakData(privacy))
+      return;
     const signature = JSON.stringify(context);
     if (!force && signature === this._lastSummarySignature) {
       this._summaryDirty = false;

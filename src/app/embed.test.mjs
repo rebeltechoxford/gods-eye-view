@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { markTakDataPrivate } from '../tak/privacy.js';
 import test from 'node:test';
 import {
   applyView,
@@ -167,6 +168,49 @@ test('an embedded page takes views only from its parent and answers it', async (
     'https://host.example',
     'https://host.example',
   ]);
+  remove();
+});
+
+test('protected embedded views return operation statuses without derived provider errors', async () => {
+  const viewer = fakeViewer();
+  markTakDataPrivate(viewer);
+  const posted = [];
+  const parent = { postMessage: (message) => posted.push(message) };
+  const windowRef = new EventTarget();
+  windowRef.parent = parent;
+  windowRef.document = { body: { classList: { add() {} } } };
+  const remove = installViews({
+    shell: { initialRestorePromise: Promise.resolve(), setCleanView() {} },
+    viewer,
+    dataManager: fakeLayers(new Set()),
+    run: async () => ({ ok: false, error: 'PRIVATE DERIVED LOCATION' }),
+    location: { search: '?embed=1', hash: '' },
+    windowRef,
+  });
+  const event = new Event('message');
+  Object.assign(event, {
+    source: parent,
+    origin: 'https://host.example',
+    data: {
+      type: 'gev:view',
+      id: 5,
+      view: { camera: { lat: 1, lon: 2 }, layers: ['flights'] },
+    },
+  });
+  windowRef.dispatchEvent(event);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const reply = posted.find((message) => message.id === 5);
+  assert.equal(reply.ok, false);
+  assert.ok(reply.steps.length);
+  assert.ok(
+    reply.steps.every((step) =>
+      Object.keys(step).every((key) => ['step', 'ok'].includes(key)),
+    ),
+  );
+  assert.equal(
+    JSON.stringify(reply).includes('PRIVATE DERIVED LOCATION'),
+    false,
+  );
   remove();
 });
 

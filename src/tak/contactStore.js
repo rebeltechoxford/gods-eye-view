@@ -6,8 +6,10 @@ export function createCotStore({ limit = 1000, now = Date.now } = {}) {
     for (const listener of listeners) listener();
   }
   function list() {
-    return Array.from(records.values()).sort((a, b) =>
-      a.callsign.localeCompare(b.callsign) || a.uid.localeCompare(b.uid));
+    return Array.from(records.values()).sort(
+      (a, b) =>
+        a.callsign.localeCompare(b.callsign) || a.uid.localeCompare(b.uid),
+    );
   }
   return Object.freeze({
     list,
@@ -17,15 +19,21 @@ export function createCotStore({ limit = 1000, now = Date.now } = {}) {
       let accepted = 0;
       let ignored = 0;
       for (const contact of incoming) {
-        if (!contact?.uid || !Number.isFinite(contact.lat) ||
-            !Number.isFinite(contact.lon)) {
+        if (
+          !contact?.uid ||
+          !Number.isFinite(contact.lat) ||
+          !Number.isFinite(contact.lon)
+        ) {
           ignored++;
           continue;
         }
         const prior = records.get(contact.uid);
-        if (prior && prior.eventTimeMs !== null &&
-            contact.eventTimeMs !== null &&
-            contact.eventTimeMs < prior.eventTimeMs) {
+        if (
+          prior &&
+          prior.eventTimeMs !== null &&
+          contact.eventTimeMs !== null &&
+          contact.eventTimeMs < prior.eventTimeMs
+        ) {
           ignored++;
           continue;
         }

@@ -49,7 +49,8 @@ async function fixture(t) {
   const origin = path.join(scratch, 'origin');
   const clone = path.join(scratch, 'clone');
 
-  git(scratch, ['init', '--quiet', '--initial-branch=main', origin]);
+  git(scratch, ['init', '--quiet', origin]);
+  git(origin, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
   git(origin, ['config', 'user.email', 'fixture@example.invalid']);
   git(origin, ['config', 'user.name', 'Fixture']);
   await writeFile(path.join(origin, 'README.md'), 'first\n');

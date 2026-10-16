@@ -5,9 +5,26 @@ import { createVoiceCommands } from './commands.js';
 import { cameraPoseKey, createPointerTracker } from './pointerContext.js';
 import { createPointerPicker } from './pointerPick.js';
 import { createReferentRegistry } from './referents.js';
+import {
+  isTakPrivacyBlocked,
+  subscribeTakPrivacy,
+  takDisclosureTicket,
+  canDiscloseTakData,
+  TAK_PRIVACY_MESSAGE,
+} from '../tak/privacy.js';
 export * from './realtimeController.js';
 
 const ACTION_NAMES = new Set(GEV_ACTION_SCHEMAS.map((schema) => schema.name));
+const LOCAL_VIEW_ACTIONS = new Set([
+  'set_visual_style',
+  'set_map_stack',
+  'set_layer_visibility',
+  'stop_tracking',
+  'clear_annotations',
+  'annotate_map',
+  'track_entity',
+  'control_cockpit',
+]);
 
 /**
  * Run app actions through `runner` and every other tool the catalog has
@@ -50,20 +67,44 @@ export function initGevVoiceCommands(options) {
   const referents = createReferentRegistry();
   // The controller exists only after the runner, so its hooks bind late.
   const deixis = { pointer, referents, cameraKey };
+  const baseRunner = withToolCatalog(
+    createGevActionRunner({ ...options, deixis }),
+    options.toolCatalog,
+  );
+  const runner = async (name, args, callOptions = {}) => {
+    if (callOptions.localOnly && LOCAL_VIEW_ACTIONS.has(name))
+      return baseRunner(name, args, callOptions);
+    if (isTakPrivacyBlocked(options.viewer))
+      return { ok: false, error: TAK_PRIVACY_MESSAGE };
+    const privacy = takDisclosureTicket(options.viewer);
+    const result = await baseRunner(name, args, callOptions);
+    return canDiscloseTakData(privacy)
+      ? result
+      : { ok: false, error: TAK_PRIVACY_MESSAGE };
+  };
+  runner.resetConversation = (...args) =>
+    baseRunner.resetConversation?.(...args);
+  runner.dispose = (...args) => baseRunner.dispose?.(...args);
   const commands = createVoiceCommands({
     ...options,
     pointer,
     referents,
-    runner: withToolCatalog(
-      createGevActionRunner({ ...options, deixis }),
-      options.toolCatalog,
-    ),
+    runner,
+  });
+  const removePrivacyListener = subscribeTakPrivacy(options.viewer, () => {
+    if (!isTakPrivacyBlocked(options.viewer)) return;
+    commands.stop();
+    pointer?.clear();
+    referents.clear();
   });
   deixis.imageFrame = () => commands.retainedImageFrame?.() || null;
   deixis.onPointerUsed = () => commands.announcePointer?.();
   commands.session?.signal?.addEventListener(
     'abort',
-    () => pointer?.destroy(),
+    () => {
+      removePrivacyListener();
+      pointer?.destroy();
+    },
     { once: true },
   );
   return commands;

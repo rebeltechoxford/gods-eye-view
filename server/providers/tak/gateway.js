@@ -1,0 +1,574 @@
+import { randomUUID } from 'node:crypto';
+import {
+  createCotRouter,
+  createRateLimiter,
+} from '../../../src/tak/protocol/router.js';
+import {
+  ALL_CHAT_ROOMS,
+  buildPing,
+  normalizeIdentity,
+} from '../../../src/tak/protocol/builders.js';
+import {
+  cotKind,
+  parseCotEvent,
+  serializeCotEvent,
+} from '../../../src/tak/protocol/cot.js';
+import { authorizeLocalRequest, matchesToken } from './access.js';
+import { createMeshLink } from './meshLink.js';
+import { createServerLink } from './serverLink.js';
+
+export const TAK_WS_ROUTE = '/api/tak/ws';
+export const TAK_STATUS_ROUTE = '/api/tak/status';
+export const TAK_SESSION_ROUTE = '/api/tak/session';
+export const TAK_WS_PROTOCOL = 'tak.v1';
+export const TAK_TOKEN_PROTOCOL_PREFIX = 'tak.token.';
+export const MAX_BROWSER_FRAME_BYTES = 64 * 1024;
+export const MAX_BROWSER_BUFFER_BYTES = 512 * 1024;
+export const MAX_BROWSERS = 16;
+export const REPLAY_LIMIT = 2000;
+export const REPLAY_BYTES_LIMIT = 8 * 1024 * 1024;
+export const SERVER_PING_INTERVAL_MS = 30_000;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEVICE_UID =
+  /^GEV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** One shared secret represents one local operator, never a public multiuser service. */
+export function authorizeUpgrade(req, { token }) {
+  const local = authorizeLocalRequest(req);
+  if (!local.ok) return local;
+  const offered = String(req.headers?.['sec-websocket-protocol'] || '')
+    .split(',')
+    .map((p) => p.trim());
+  if (!offered.includes(TAK_WS_PROTOCOL))
+    return { ok: false, status: 400, reason: 'protocol' };
+  const supplied = offered.find((p) => p.startsWith(TAK_TOKEN_PROTOCOL_PREFIX));
+  if (!matchesToken(supplied?.slice(TAK_TOKEN_PROTOCOL_PREFIX.length), token))
+    return { ok: false, status: 401, reason: 'token' };
+  return { ok: true };
+}
+
+/** Directed rooms and receipts require separate recipient authorization. */
+export function isBroadcastChat(event) {
+  return (
+    event.type === 'b-t-f' &&
+    event.detail.chat?.chatroom === ALL_CHAT_ROOMS &&
+    (!event.detail.chat.id || event.detail.chat.id === ALL_CHAT_ROOMS) &&
+    (!event.detail.remarks?.to || event.detail.remarks.to === ALL_CHAT_ROOMS)
+  );
+}
+
+export function gatewayPolicy({ bridge }, now = Date.now) {
+  return ({ event, from, to }) => {
+    if (event && (event.staleMs <= now() || event.timeMs > now() + 60_000))
+      return false;
+    if (event && cotKind(event.type) === 'chat' && !isBroadcastChat(event))
+      return false;
+    if (to.kind === 'browser') return to.authorized === true;
+    if (from.kind === 'browser' || from.kind === 'local')
+      return to.kind === 'mesh' || to.kind === 'server';
+    return (
+      !!bridge &&
+      ((from.kind === 'mesh' && to.kind === 'server') ||
+        (from.kind === 'server' && to.kind === 'mesh'))
+    );
+  };
+}
+
+export function createTakGateway({
+  config,
+  WebSocketServer,
+  createMesh = createMeshLink,
+  createServer = createServerLink,
+  now = Date.now,
+  log = console,
+  setInterval: every = setInterval,
+  clearInterval: stopEvery = clearInterval,
+}) {
+  if (!config.enabled || !matchesToken(config.token, config.token))
+    throw new Error('An enabled TAK gateway requires an operator token');
+  const replay = new Map();
+  const browsers = new Map();
+  const ownedMarkers = new Map(); // uid -> { owner: device uid, staleMs }
+  const registeredIdentities = new Set();
+  const networkUids = new Set();
+  let replayBytes = 0;
+  let browserSeq = 0;
+  let closed = false;
+  let statusTimer = null;
+  const uplinks = [];
+  const router = createCotRouter({
+    policy: gatewayPolicy(config, now),
+    now,
+    onAudit: (entry) => {
+      if (entry.action === 'send-failed')
+        log.warn?.('[tak-gateway] send failed', entry.link);
+    },
+  });
+  function dropReplay(uid) {
+    const prior = replay.get(uid);
+    if (prior) replayBytes -= prior.bytes;
+    replay.delete(uid);
+  }
+  function prune() {
+    const t = now();
+    for (const [uid, item] of replay) if (item.staleMs <= t) dropReplay(uid);
+    for (const [uid, item] of ownedMarkers)
+      if (item.staleMs <= t) ownedMarkers.delete(uid);
+  }
+  router.subscribe((event, { xml, from }) => {
+    prune();
+    if (
+      (from?.kind === 'mesh' || from?.kind === 'server') &&
+      !registeredIdentities.has(event.uid) &&
+      !ownedMarkers.has(event.uid)
+    ) {
+      networkUids.add(event.uid);
+      while (networkUids.size > 8192)
+        networkUids.delete(networkUids.values().next().value);
+    }
+    const kind = cotKind(event.type);
+    if (kind === 'delete') {
+      dropReplay(event.detail.links[0]?.uid);
+      return;
+    }
+    if (event.type === 'b-a-o-can') {
+      dropReplay(event.uid);
+      return;
+    }
+    if (
+      !['sa', 'marker', 'alert', 'drawing'].includes(kind) ||
+      event.staleMs <= now() ||
+      event.timeMs > now() + 60_000
+    )
+      return;
+    dropReplay(event.uid);
+    const bytes = Buffer.byteLength(xml);
+    replay.set(event.uid, { xml, staleMs: event.staleMs, bytes });
+    replayBytes += bytes;
+    while (replay.size > REPLAY_LIMIT || replayBytes > REPLAY_BYTES_LIMIT)
+      dropReplay(replay.keys().next().value);
+  });
+  function send(ws, payload) {
+    if (closed || ws.readyState !== 1) return false;
+    if (
+      ws.bufferedAmount + Buffer.byteLength(payload) >
+      MAX_BROWSER_BUFFER_BYTES
+    ) {
+      ws.terminate();
+      return false;
+    }
+    try {
+      ws.send(payload, (error) => {
+        if (error) ws.terminate();
+      });
+      return true;
+    } catch {
+      ws.terminate();
+      return false;
+    }
+  }
+  const control = (ws, message) => send(ws, JSON.stringify(message));
+  function broadcastStatus() {
+    statusTimer = null;
+    const message = JSON.stringify({ op: 'status', status: status() });
+    for (const { ws } of browsers.values()) send(ws, message);
+  }
+  function scheduleStatus() {
+    if (!closed && !statusTimer) statusTimer = setTimeout(broadcastStatus, 250);
+  }
+  if (config.mesh) {
+    const mesh = createMesh({
+      config: config.mesh,
+      onXml: (xml) => router.receiveXml(xml, 'mesh'),
+      onStatus: scheduleStatus,
+    });
+    router.addLink(mesh);
+    uplinks.push(mesh);
+  }
+  let pingTimer = null;
+  if (config.server) {
+    const server = createServer({
+      config: config.server,
+      onXml: (xml) => router.receiveXml(xml, 'server'),
+      onStatus: scheduleStatus,
+      now,
+    });
+    router.addLink(server);
+    uplinks.push(server);
+    const identity = normalizeIdentity({
+      uid: `GEV-GATEWAY-${randomUUID()}`,
+      callsign: config.callsign,
+    });
+    pingTimer = every(() => {
+      const event = buildPing(identity, { nowMs: now() });
+      server.send(serializeCotEvent(event), event);
+    }, SERVER_PING_INTERVAL_MS);
+  }
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_BROWSER_FRAME_BYTES,
+    perMessageDeflate: false,
+    handleProtocols: (protocols) =>
+      protocols.has(TAK_WS_PROTOCOL) ? TAK_WS_PROTOCOL : false,
+  });
+
+  function authorizeEvent(event, browser) {
+    const identity = browser.identity;
+    if (!identity) return 'Register your identity before sending CoT';
+    const t = now();
+    if (
+      event.staleMs <= t ||
+      event.staleMs > t + 24 * 60 * 60 * 1000 ||
+      event.timeMs > t + 60_000 ||
+      event.timeMs < t - 5 * 60_000
+    )
+      return 'Event must be fresh and expire within 24 hours';
+    if (event.access || event.qos || event.opex)
+      return 'Unsupported access/routing metadata';
+    const kind = cotKind(event.type);
+    const parent = event.detail.links.find((link) => link.relation === 'p-p');
+    if (
+      (event.detail.extras || []).some(
+        (extra) =>
+          !['archive', '__forcedelete'].includes(extra.name) ||
+          Object.keys(extra.attrs || {}).length ||
+          (extra.children || []).length ||
+          extra.text ||
+          (extra.name === '__forcedelete' && kind !== 'delete'),
+      )
+    )
+      return 'Unsupported browser detail extension';
+    if (
+      (kind !== 'chat' && event.detail.chat) ||
+      (kind !== 'alert' && event.detail.emergency)
+    )
+      return 'Unexpected browser detail';
+    if (kind === 'delete') {
+      const target = event.detail.links[0]?.uid;
+      if (
+        !UUID.test(event.uid) ||
+        event.detail.links.length !== 1 ||
+        ownedMarkers.get(target)?.owner !== identity.uid
+      )
+        return 'Only markers created by this identity may be deleted';
+      ownedMarkers.delete(target);
+      return null;
+    }
+    if (kind === 'chat') {
+      const chat = event.detail.chat;
+      if (
+        !isBroadcastChat(event) ||
+        parent?.uid !== identity.uid ||
+        event.detail.links.length !== 1 ||
+        !UUID.test(chat?.messageId || '') ||
+        event.uid !==
+          `GeoChat.${identity.uid}.${ALL_CHAT_ROOMS}.${chat.messageId}` ||
+        chat.senderCallsign !== identity.callsign ||
+        event.detail.remarks?.source !== `BAO.F.ATAK.${identity.uid}` ||
+        chat.participants?.length !== 2 ||
+        chat.participants[0] !== identity.uid ||
+        chat.participants[1] !== ALL_CHAT_ROOMS
+      )
+        return 'Only identified All Chat Rooms messages are supported';
+      return null;
+    }
+    if (kind === 'sa' && event.uid === identity.uid) {
+      if (
+        parent ||
+        event.detail.callsign !== identity.callsign ||
+        !/^a-[fa]-[A-Z](?:-[A-Za-z0-9]+)*$/.test(event.type)
+      )
+        return 'Self position identity mismatch';
+      return null;
+    }
+    const markerPrefix = `GEV-MARKER-${identity.uid.replace(/^GEV-/, '')}-`;
+    if (
+      (kind === 'marker' || kind === 'sa') &&
+      event.uid.startsWith(markerPrefix) &&
+      UUID.test(event.uid.slice(markerPrefix.length)) &&
+      parent?.uid === identity.uid &&
+      event.detail.links.length === 1
+    ) {
+      if (
+        networkUids.has(event.uid) ||
+        (ownedMarkers.has(event.uid) &&
+          ownedMarkers.get(event.uid).owner !== identity.uid)
+      )
+        return 'Marker uid belongs to another source';
+      if (!ownedMarkers.has(event.uid) && ownedMarkers.size >= REPLAY_LIMIT)
+        return 'Owned marker limit reached';
+      ownedMarkers.set(event.uid, {
+        owner: identity.uid,
+        staleMs: event.staleMs,
+      });
+      return null;
+    }
+    if (
+      kind === 'alert' &&
+      ['b-a-o-tbl', 'b-a-o-pan', 'b-a-o-opn', 'b-a-o-can'].includes(
+        event.type,
+      ) &&
+      event.uid === `${identity.uid}-9-1-1` &&
+      parent?.uid === identity.uid &&
+      event.detail.links.length === 1 &&
+      event.detail.emergency &&
+      event.detail.emergency.cancel === (event.type === 'b-a-o-can')
+    )
+      return null;
+    return 'Unsupported or unowned browser event';
+  }
+
+  function attachBrowser(ws) {
+    const id = `browser:${++browserSeq}`;
+    const limiter = createRateLimiter({ rate: 20, burst: 60, now });
+    const browser = { ws, identity: null, alive: true };
+    let replayTimer = null;
+    const link = {
+      id,
+      kind: 'browser',
+      authorized: false,
+      limits: { rate: 20, burst: 60 },
+      send: (xml) => send(ws, xml),
+    };
+    router.addLink(link);
+    browsers.set(id, browser);
+    control(ws, { op: 'hello', link: id, status: status() });
+    const identityTimeout = setTimeout(() => {
+      if (!browser.identity) ws.close(1008, 'identity required');
+    }, 10_000);
+    function replayContacts() {
+      prune();
+      const backlog = Array.from(replay.values());
+      const deadline = Date.now() + 10_000;
+      let cursor = 0;
+      const drainReplay = () => {
+        replayTimer = null;
+        if (closed || ws.readyState !== 1) return;
+        if (Date.now() > deadline) {
+          ws.close(1008, 'replay timeout');
+          return;
+        }
+        let batch = 0;
+        while (
+          cursor < backlog.length &&
+          batch++ < 16 &&
+          ws.bufferedAmount < MAX_BROWSER_BUFFER_BYTES / 2
+        ) {
+          const item = backlog[cursor++];
+          if (item.staleMs > now() && !send(ws, item.xml)) return;
+        }
+        if (cursor < backlog.length) replayTimer = setTimeout(drainReplay, 5);
+      };
+      drainReplay();
+    }
+    ws.on('pong', () => {
+      browser.alive = true;
+    });
+    ws.on('message', (data, isBinary) => {
+      if (!limiter.take()) {
+        ws.close(1008, 'rate limit');
+        return;
+      }
+      if (isBinary) {
+        control(ws, {
+          op: 'reject',
+          reason: 'binary frames are not supported',
+        });
+        return;
+      }
+      const text = data.toString('utf8');
+      if (text.trimStart().startsWith('{')) {
+        let message;
+        try {
+          message = JSON.parse(text);
+        } catch {
+          /* rejected below */
+        }
+        if (message?.op === 'identity') {
+          const uid = message.uid;
+          const callsign =
+            typeof message.callsign === 'string' ? message.callsign.trim() : '';
+          if (
+            !DEVICE_UID.test(uid || '') ||
+            !callsign ||
+            callsign.length > 40 ||
+            /[\u0000-\u001f\u007f]/.test(callsign) ||
+            networkUids.has(uid) ||
+            (browser.identity && browser.identity.uid !== uid) ||
+            (!registeredIdentities.has(uid) && registeredIdentities.size >= 32)
+          ) {
+            control(ws, {
+              op: 'reject',
+              reason:
+                'Identity invalid, already assigned, or changed; reconnect to update it',
+            });
+            return;
+          }
+          const firstIdentity = !browser.identity;
+          registeredIdentities.add(uid);
+          browser.identity = { uid, callsign };
+          link.authorized = true;
+          clearTimeout(identityTimeout);
+          if (control(ws, { op: 'identity', uid }) && firstIdentity) {
+            replayContacts();
+          }
+        } else if (message?.op === 'status')
+          control(ws, { op: 'status', status: status() });
+        else control(ws, { op: 'reject', reason: 'unknown control message' });
+        return;
+      }
+      let event;
+      try {
+        event = parseCotEvent(text);
+      } catch {
+        control(ws, { op: 'reject', reason: 'Invalid CoT event' });
+        return;
+      }
+      prune();
+      const denied = authorizeEvent(event, browser);
+      if (denied) {
+        control(ws, { op: 'reject', reason: denied });
+        return;
+      }
+      // Parsed network XML preserves extensions for interoperability. Browser
+      // sends deliberately rebuild only this milestone's authorized schema.
+      const sanitized = {
+        ...event,
+        namespaces: undefined,
+        detail: { ...event.detail },
+      };
+      const result = router.receiveXml(serializeCotEvent(sanitized), id);
+      if (!result.ok && result.reason !== 'duplicate')
+        control(ws, { op: 'reject', reason: result.reason });
+    });
+    ws.on('close', () => {
+      clearTimeout(identityTimeout);
+      if (replayTimer) clearTimeout(replayTimer);
+      router.removeLink(id);
+      browsers.delete(id);
+      scheduleStatus();
+    });
+    ws.on('error', () => {});
+    scheduleStatus();
+  }
+  const heartbeat = every(() => {
+    prune();
+    for (const browser of browsers.values()) {
+      if (!browser.alive) {
+        browser.ws.terminate();
+        continue;
+      }
+      browser.alive = false;
+      if (browser.ws.readyState === 1) browser.ws.ping();
+    }
+  }, 30_000);
+
+  function handleUpgrade(req, socket, head) {
+    let path;
+    try {
+      path = new URL(req.url || '/', 'http://localhost').pathname;
+    } catch {
+      return false;
+    }
+    if (path !== TAK_WS_ROUTE) return false;
+    const reject = (code) => {
+      socket.end(
+        `HTTP/1.1 ${code} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+      );
+    };
+    if (closed || browsers.size >= MAX_BROWSERS) {
+      reject(503);
+      return true;
+    }
+    const verdict = authorizeUpgrade(req, config);
+    if (!verdict.ok) {
+      reject(verdict.status);
+      return true;
+    }
+    wss.handleUpgrade(req, socket, head, attachBrowser);
+    return true;
+  }
+  function publicStatus() {
+    return {
+      enabled: true,
+      tokenRequired: true,
+      localOnly: true,
+      principal: 'local-operator',
+      bootstrapAllowed: !!config.localBootstrap,
+    };
+  }
+  function status() {
+    return {
+      ...publicStatus(),
+      bridge: config.bridge,
+      browsers: browsers.size,
+      mesh: uplinks.find((l) => l.kind === 'mesh')?.status() || null,
+      server: uplinks.find((l) => l.kind === 'server')?.status() || null,
+      router: router.stats(),
+      errors: config.errors,
+      replayBytes,
+      replay: replay.size,
+    };
+  }
+  function handleHttpRequest(req, res) {
+    let path;
+    try {
+      path = new URL(req.url || '/', 'http://localhost').pathname;
+    } catch {
+      return false;
+    }
+    if (path !== TAK_SESSION_ROUTE && path !== TAK_STATUS_ROUTE) return false;
+    const session = path === TAK_SESSION_ROUTE;
+    const verdict = authorizeLocalRequest(req, { requireOrigin: session });
+    const respond = (code, value) => {
+      res.writeHead(code, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(JSON.stringify(value));
+    };
+    if (!verdict.ok) {
+      respond(verdict.status, { error: 'Local same-origin access required' });
+      return true;
+    }
+    if (req.method !== (session ? 'POST' : 'GET')) {
+      respond(405, { error: 'Method Not Allowed' });
+      return true;
+    }
+    if (session) {
+      if (
+        !config.localBootstrap ||
+        req.headers['x-tak-session'] !== '1' ||
+        closed
+      )
+        respond(403, { error: 'Local token bootstrap is disabled' });
+      else respond(200, { token: config.token, principal: 'local-operator' });
+    } else respond(200, publicStatus());
+    return true;
+  }
+  return Object.freeze({
+    handleUpgrade,
+    handleHttpRequest,
+    status,
+    publicStatus,
+    router,
+    close() {
+      if (closed) return;
+      closed = true;
+      if (statusTimer) clearTimeout(statusTimer);
+      if (pingTimer) stopEvery(pingTimer);
+      stopEvery(heartbeat);
+      for (const { ws } of browsers.values()) ws.terminate();
+      browsers.clear();
+      for (const link of uplinks) link.close();
+      wss.close();
+      router.destroy();
+      replay.clear();
+      ownedMarkers.clear();
+      networkUids.clear();
+      registeredIdentities.clear();
+    },
+  });
+}

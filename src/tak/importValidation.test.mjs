@@ -6,11 +6,22 @@ import { createCotStore } from './contactStore.js';
 test('rejects overlength UIDs instead of truncating contact identity', () => {
   const prefix = 'a'.repeat(160);
   for (const suffix of ['A', 'B']) {
-    assert.equal(normalizeCotRecord({ uid: prefix + suffix, lat: 1, lon: 2 }), null);
+    assert.equal(
+      normalizeCotRecord({ uid: prefix + suffix, lat: 1, lon: 2 }),
+      null,
+    );
   }
   const store = createCotStore();
-  const first = normalizeCotRecord({ uid: 'a'.repeat(159) + 'A', lat: 1, lon: 2 });
-  const second = normalizeCotRecord({ uid: 'a'.repeat(159) + 'B', lat: 3, lon: 4 });
+  const first = normalizeCotRecord({
+    uid: 'a'.repeat(159) + 'A',
+    lat: 1,
+    lon: 2,
+  });
+  const second = normalizeCotRecord({
+    uid: 'a'.repeat(159) + 'B',
+    lat: 3,
+    lon: 4,
+  });
   assert.equal(first.uid.length, 160);
   assert.equal(second.uid.length, 160);
   store.ingest([first, second]);

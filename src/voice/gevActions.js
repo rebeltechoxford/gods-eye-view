@@ -1,3 +1,4 @@
+import { isTakPrivacyBlocked } from '../tak/privacy.js';
 import {
   layerSnapshot,
   layerSnapshots,
@@ -2571,6 +2572,8 @@ export async function getBasemapLabelContext(
   service = defaultGeospatial,
   { cachedOnly = false } = {},
 ) {
+  if (isTakPrivacyBlocked(viewer))
+    return { placeLabels: [], streetLabels: [], nearbyPlaceLabels: [] };
   const { reverseGeocodeCache, nearbyPlacesCache } = cachesFor(service);
   const samples = sampleViewportCartographics(viewer);
   const cameraHeightM = viewer.camera.positionCartographic.height;
