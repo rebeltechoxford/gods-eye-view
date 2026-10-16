@@ -1013,6 +1013,8 @@
   "scripts/check-reference-map-services.mjs",
   "scripts/qa-reference-live.mjs",
   "scripts/qa-tak-stress.mjs",
+  "scripts/qa-fixtureInterception.mjs",
+  "src/tooling/qaFixtureInterception.test.mjs",
   "src/tak/storeResources.test.mjs",
   "src/tooling/takHttps.test.mjs",
   "src/tooling/takPrivateAccess.test.mjs"

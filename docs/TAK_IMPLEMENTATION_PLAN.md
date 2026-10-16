@@ -256,6 +256,56 @@ http://127.0.0.1:4176 --lab --fonts` passed all 12 scenarios at
   establishes neither real phone trust/GPS/background behavior nor real TAK
   peer interoperability.
 
+### Frozen foundation release sweep, 2026-10-16
+
+The runtime checkpoint is `5de0d82c`; `cc51688e` adds the final production
+browser gate and evidence. Verification used Windows, Node 24.19.0 and Git
+2.53. No operational TAK credentials or physical EUD were involved.
+
+- Full `npm test`: 6,502 ordinary tests, 6,492 passed, 10 existing skips,
+  zero failures; the separate allocation runs passed 1 + 13 tests. A prior
+  loaded run failed the existing 40 ms CCTV idle-timer case; all 21 CCTV tests
+  passed alone, followed by the successful complete rerun. Checks were not
+  relaxed. Log: `.gev-cache/tak-release-tests-quiet.log`.
+- Production build and `build:panel` passed. Existing large-chunk warnings
+  remain visible. Formatting checked 1,381 adopted files; import/package
+  boundaries and all 29 published layer tokens passed. `npm audit --omit=dev`
+  reported zero vulnerabilities.
+- The production HTTPS/PWA gate passed all 12 scenarios locally on Chrome
+  152.0.7977.75 and again in Linux CI. It covers native login, protected
+  manifest/worker, cookie-only identity acknowledgement, phone layout/GPS,
+  explicit marker sharing, capacity notices, actual server outage/restart,
+  independent socket revocation on logout, connected/disconnected expiry,
+  clear-before-redirect and simulated initial HTTP 401 cleanup. Unrequested
+  app/tactical persistence stayed absent.
+- Fresh `qa:tak -- --url http://127.0.0.1:4174 --lab --fonts` passed all 12
+  scenarios on Node 24.19.0, including the two-way synthetic TCP marker/chat
+  path. The fixture explicitly rejects synthetic terrain to select the real
+  ellipsoid fallback and uses the existing `b=0` view option for readable,
+  stable captures. The initial screenshot-readiness timeout is retained in
+  the failed-run logs; no application check was removed.
+- PR #3 targets `dev/tak-web-foundation`. Its first CI run passed both Node
+  matrix jobs, Windows onboarding and Street Level/panel gates; its TAK job
+  passed the 12 HTTPS scenarios before the old screenshot fixture timed out.
+  Integration still requires the corrected browser job and curated-map gate
+  to pass. `main` has not been modified.
+
+The curated-map browser gate subsequently passed all 13 scenarios on
+2026-10-16 (Chrome 152), including all 30 layer registrations, the five original
+quick-map identities, all eight added map/chart choices, real Cesium geometry,
+coverage limits, source failures, credits and the phone selector. Desktop and
+phone screenshots were inspected in `qa-artifacts/reference-maps-final/`.
+The fixture now uses direct CDP Fetch routing: Puppeteer 25's interception
+left Cesium module-worker imports pending despite successful script responses.
+This changes only the test harness; application workers and CSP remain intact.
+Unknown fixture requests still fail closed, and unexpected protocol failures
+remain errors. Five focused tests cover routing, cancellation identity,
+failure retention and explicitly owned browser teardown; they are included in
+ordinary unit-test discovery. The corrected local TAK rerun passed its first
+11 functional scenarios, then caught pending fixture requests after an
+intentionally closed embedded page. Explicit helper disposal now precedes
+that close; the complete final browser rerun and remote CI remain required.
+
 For each accepted slice, append a compact record with:
 
 1. Revision, scope and feature-matrix rows affected.

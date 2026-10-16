@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
+import { interceptFixtures } from './qa-fixtureInterception.mjs';
 import { LAYER_STATE_REGISTRY } from '../src/data/layerState.js';
 import {
   hookRenderErrors,
@@ -90,6 +91,8 @@ const browser = await puppeteer.launch({
 });
 const errors = [];
 const monitors = [];
+const interceptions = [];
+const pageInterceptions = new WeakMap();
 const results = [];
 const visualStates = [];
 let imageryRequests = 0;
@@ -132,104 +135,118 @@ async function newPage(name, embed = false) {
       window.__qaUnhandled.push(String(event.reason?.stack || event.reason)),
     );
   });
-  await page.setRequestInterception(true);
-  page.on('request', (request) => {
-    const address = new URL(request.url());
-    const knownTile =
-      request.method() === 'GET' &&
-      ((address.origin === 'https://services.arcgisonline.com' &&
-        /^\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/\d+\/\d+\/\d+$/.test(
-          address.pathname,
-        )) ||
-        (address.origin === 'https://tile.openstreetmap.org' &&
-          /^\/\d+\/\d+\/\d+\.png$/.test(address.pathname)));
-    const respond = (value) => request.respond(value).catch(() => {});
-    if (
-      fonts &&
-      ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'].includes(
-        address.origin,
-      )
-    ) {
+  const interception = await interceptFixtures(page, {
+    origin: appUrl.origin,
+    handle: (request) => {
+      const address = new URL(request.url());
+      const knownTile =
+        request.method() === 'GET' &&
+        ((address.origin === 'https://services.arcgisonline.com' &&
+          /^\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/\d+\/\d+\/\d+$/.test(
+            address.pathname,
+          )) ||
+          (address.origin === 'https://tile.openstreetmap.org' &&
+            /^\/\d+\/\d+\/\d+\.png$/.test(address.pathname)));
+      const respond = (value) => request.respond(value).catch(() => {});
+      // A fake successful JSON object can be misread as a legacy heightmap
+      // service. Explicit failure selects the real app's ellipsoid fallback.
+      if (address.hostname === 'terrain.reearth.land')
+        return respond({
+          status: 400,
+          contentType: 'text/plain',
+          body: 'Synthetic terrain unavailable',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+        });
+      if (
+        fonts &&
+        ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'].includes(
+          address.origin,
+        )
+      ) {
+        void request.continue().catch(() => {});
+        return;
+      }
+      if (knownTile) {
+        imageryRequests++;
+        return respond({
+          status: 200,
+          contentType: 'image/jpeg',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: tile,
+        });
+      }
+      if (
+        address.origin === 'https://services.arcgisonline.com' &&
+        address.pathname.endsWith('/World_Imagery/MapServer')
+      ) {
+        return respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: JSON.stringify({
+            currentVersion: 10.81,
+            fullExtent: {
+              xmin: -20037508.342787,
+              ymin: -20037508.342787,
+              xmax: 20037508.342787,
+              ymax: 20037508.342787,
+              spatialReference: { wkid: 102100 },
+            },
+            tileInfo: {
+              rows: 256,
+              cols: 256,
+              origin: { x: -20037508.342787, y: 20037508.342787 },
+              spatialReference: { wkid: 102100 },
+              lods: Array.from({ length: 20 }, (_, level) => ({
+                level,
+                resolution: 156543.033928 / 2 ** level,
+                scale: 591657527.591555 / 2 ** level,
+              })),
+            },
+          }),
+        });
+      }
+      if (
+        address.origin === appUrl.origin &&
+        address.pathname.startsWith('/api/') &&
+        !address.pathname.startsWith('/api/tak/')
+      ) {
+        localApiRequests++;
+        const body =
+          address.pathname === '/api/openai/hud-summary'
+            ? { summary: 'Synthetic QA globe ready' }
+            : {};
+        return respond({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(body),
+        });
+      }
+      if (
+        address.protocol.startsWith('http') &&
+        address.origin !== appUrl.origin
+      ) {
+        externalRequests++;
+        // No live providers, model services, fonts or third-party telemetry.
+        return respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: '{}',
+        });
+      }
       void request.continue().catch(() => {});
-      return;
-    }
-    if (knownTile) {
-      imageryRequests++;
-      return respond({
-        status: 200,
-        contentType: 'image/jpeg',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: tile,
-      });
-    }
-    if (
-      address.origin === 'https://services.arcgisonline.com' &&
-      address.pathname.endsWith('/World_Imagery/MapServer')
-    ) {
-      return respond({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({
-          currentVersion: 10.81,
-          fullExtent: {
-            xmin: -20037508.342787,
-            ymin: -20037508.342787,
-            xmax: 20037508.342787,
-            ymax: 20037508.342787,
-            spatialReference: { wkid: 102100 },
-          },
-          tileInfo: {
-            rows: 256,
-            cols: 256,
-            origin: { x: -20037508.342787, y: 20037508.342787 },
-            spatialReference: { wkid: 102100 },
-            lods: Array.from({ length: 20 }, (_, level) => ({
-              level,
-              resolution: 156543.033928 / 2 ** level,
-              scale: 591657527.591555 / 2 ** level,
-            })),
-          },
-        }),
-      });
-    }
-    if (
-      address.origin === appUrl.origin &&
-      address.pathname.startsWith('/api/') &&
-      !address.pathname.startsWith('/api/tak/')
-    ) {
-      localApiRequests++;
-      const body =
-        address.pathname === '/api/openai/hud-summary'
-          ? { summary: 'Synthetic QA globe ready' }
-          : {};
-      return respond({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(body),
-      });
-    }
-    if (
-      address.protocol.startsWith('http') &&
-      address.origin !== appUrl.origin
-    ) {
-      externalRequests++;
-      // No live providers, model services, fonts or third-party telemetry.
-      return respond({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: '{}',
-      });
-    }
-    void request.continue().catch(() => {});
+    },
   });
+  interceptions.push(interception);
+  pageInterceptions.set(page, interception);
   page.on('dialog', (dialog) => void dialog.accept());
   const address = new URL(appUrl);
   if (embed) address.searchParams.set('embed', '1');
   address.hash =
-    'lat=34.3665&lon=-89.5192&alt=50000&heading=0&pitch=-70&map=osm';
+    'lat=34.3665&lon=-89.5192&alt=50000&heading=0&pitch=-70&map=osm&b=0';
   await page.goto(address.href, { waitUntil: 'domcontentloaded', timeout });
+  await page.bringToFront();
   await page.waitForFunction(
     () =>
       !!window.__godsEyeView?.dataManager && !!window.__godsEyeView?.takClient,
@@ -313,10 +330,47 @@ async function captureEvidence(page, name) {
     await document.fonts.ready;
     window.__godsEyeView.viewer.scene.requestRender();
   });
-  await page.waitForFunction(
-    () => window.__godsEyeView.viewer.scene.globe.tilesLoaded,
-    { timeout: 20000 },
-  );
+  try {
+    await page.waitForFunction(
+      () => window.__godsEyeView.viewer.scene.globe.tilesLoaded,
+      { timeout: 20000 },
+    );
+  } catch (error) {
+    console.log(
+      'Synthetic globe readiness:',
+      JSON.stringify(
+        await page.evaluate(() => {
+          const gev = window.__godsEyeView,
+            globe = gev.viewer.scene.globe,
+            surface = globe._surface;
+          return {
+            hidden: document.hidden,
+            loop: gev.viewer.useDefaultRenderLoop,
+            map: gev.mapStackController.getActiveId(),
+            terrain: gev.viewer.terrainProvider?.constructor.name,
+            tilesLoaded: globe.tilesLoaded,
+            renderTiles: surface?._tilesToRender?.length,
+            high: surface?._tileLoadQueueHigh?.length,
+            medium: surface?._tileLoadQueueMedium?.length,
+            low: surface?._tileLoadQueueLow?.length,
+            frames: gev.viewer.scene.frameState?.frameNumber,
+            governor: gev.getRenderGovernorDiagnostics?.(),
+            tiles: surface?._tilesToRender?.slice(0, 4).map((tile) => ({
+              level: tile.level,
+              state: tile.state,
+              renderable: tile.renderable,
+              mesh: !!tile.data?.mesh,
+              imagery: tile.data?.imagery?.slice(0, 3).map((item) => ({
+                loading: item.loadingImagery?.state,
+                ready: item.readyImagery?.state,
+              })),
+            })),
+          };
+        }),
+      ),
+    );
+    throw error;
+  }
   visualStates.push(
     await page.evaluate((label) => {
       const gev = window.__godsEyeView;
@@ -821,6 +875,7 @@ try {
       assert.equal(state.visible, false);
       assert(['idle', 'closed'].includes(state.link));
       assert.equal(state.contacts, 0);
+      await pageInterceptions.get(embedded).dispose();
       await embedded.close();
     },
   );
@@ -859,6 +914,7 @@ try {
         ),
       );
       errors.push(...(await page.evaluate(() => window.__qaUnhandled)));
+      errors.push(...interceptions.flatMap((item) => item.errors));
       assert.deepEqual(errors, []);
     },
   );
@@ -914,5 +970,6 @@ try {
   console.error(redact(error?.stack || error));
   process.exitCode = 1;
 } finally {
+  for (const interception of interceptions) await interception.dispose();
   await browser.close();
 }

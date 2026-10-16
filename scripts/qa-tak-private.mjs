@@ -12,6 +12,7 @@ import { once } from 'node:events';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
+import { interceptFixtures } from './qa-fixtureInterception.mjs';
 import WebSocket from 'ws';
 import {
   SESSION_COOKIE,
@@ -59,6 +60,7 @@ const errors = [];
 const authRequests = [];
 const unloadSnapshots = [];
 const pages = [];
+const interceptions = [];
 let nowMs = Date.now();
 let instance;
 let browser;
@@ -283,6 +285,17 @@ async function finishExpiredNavigation(page, baseline, expectExpired = true) {
     assert.equal((await request('/api/tak/status')).status, 401);
 }
 async function screenshot(page, name) {
+  if (
+    await page.evaluate(
+      () => !!window.__godsEyeView?.viewer?.scene?.globe?.show,
+    )
+  ) {
+    await page.bringToFront();
+    await page.waitForFunction(
+      () => window.__godsEyeView.viewer.scene.globe.tilesLoaded,
+      { timeout },
+    );
+  }
   // Fixtures only; also conceal all credential and generated device UID fields.
   await page.addStyleTag({
     content: 'input[type=password],[data-tak-uid]{visibility:hidden!important}',
@@ -413,118 +426,132 @@ async function preparePage() {
       }
     });
   }
-  await page.setRequestInterception(true);
-  page.on('request', async (req) => {
-    try {
-      const url = new URL(req.url());
-      assert(
-        !url.href.includes(operatorToken),
-        'Operator token in request URL',
-      );
-      if (url.origin === instance.origin) {
-        if (rejectInitialStatus && url.pathname === '/api/tak/status') {
-          rejectInitialStatus = false;
-          await page.waitForFunction(() => !!window.__godsEyeView?.takClient, {
-            timeout,
-          });
-          await page.evaluate(() => {
-            window.__godsEyeView.takClient.client.setFix({
-              lat: 34.3665,
-              lon: -89.5192,
-              source: 'USER',
+  const interception = await interceptFixtures(page, {
+    origin: instance.origin,
+    includePaths: ['/login', '/logout'],
+    handle: async (req) => {
+      try {
+        const url = new URL(req.url());
+        assert(
+          !url.href.includes(operatorToken),
+          'Operator token in request URL',
+        );
+        if (url.origin === instance.origin) {
+          if (rejectInitialStatus && url.pathname === '/api/tak/status') {
+            rejectInitialStatus = false;
+            await page.waitForFunction(
+              () => !!window.__godsEyeView?.takClient,
+              {
+                timeout,
+              },
+            );
+            await page.evaluate(() => {
+              window.__godsEyeView.takClient.client.setFix({
+                lat: 34.3665,
+                lon: -89.5192,
+                source: 'USER',
+              });
+              const consent = document.querySelector('[data-tak-disclosure]');
+              consent.checked = true;
+              consent.dispatchEvent(new Event('change', { bubbles: true }));
+              document.querySelector('[data-tak-xml]').value =
+                'SYNTHETIC INITIAL STATUS INPUT';
             });
-            const consent = document.querySelector('[data-tak-disclosure]');
-            consent.checked = true;
-            consent.dispatchEvent(new Event('change', { bubbles: true }));
-            document.querySelector('[data-tak-xml]').value =
-              'SYNTHETIC INITIAL STATUS INPUT';
-          });
+            return await req.respond({
+              status: 401,
+              contentType: 'application/json',
+              headers: { 'Cache-Control': 'no-store' },
+              body: '{"error":"Operator login required"}',
+            });
+          }
+          if (url.pathname === '/logout') {
+            observedLogoutPost = req.method() === 'POST';
+            logoutSnapshot = await stateSnapshot(page);
+          }
+          if (
+            url.pathname.startsWith('/api/') &&
+            !url.pathname.startsWith('/api/tak/')
+          ) {
+            providerRequests++;
+            return await req.respond({
+              status: 200,
+              contentType: 'application/json',
+              body:
+                url.pathname === '/api/openai/hud-summary'
+                  ? '{"summary":"Synthetic QA globe ready"}'
+                  : '{}',
+            });
+          }
+          return await req.continue();
+        }
+        if (!url.protocol.startsWith('http')) return await req.continue();
+        externalRequests++;
+        // A 404 asks Cesium to probe legacy heightmap metadata; 400 gives the
+        // established flat-terrain fallback promptly in this hermetic fixture.
+        if (url.hostname === 'terrain.reearth.land')
           return await req.respond({
-            status: 401,
+            status: 400,
             contentType: 'application/json',
-            headers: { 'Cache-Control': 'no-store' },
-            body: '{"error":"Operator login required"}',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: '{}',
           });
-        }
-        if (url.pathname === '/logout') {
-          observedLogoutPost = req.method() === 'POST';
-          logoutSnapshot = await stateSnapshot(page);
-        }
-        if (
-          url.pathname.startsWith('/api/') &&
-          !url.pathname.startsWith('/api/tak/')
-        ) {
-          providerRequests++;
+        const knownTile =
+          /\/tile\/\d+\/\d+\/\d+$/.test(url.pathname) ||
+          /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname);
+        if (url.pathname.endsWith('/World_Imagery/MapServer/tile/19/0/0'))
+          return await req.respond({
+            status: 404,
+            contentType: 'text/plain',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: 'Synthetic missing-image sentinel',
+          });
+        if (knownTile)
+          return await req.respond({
+            status: 200,
+            contentType: 'image/jpeg',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: tile,
+          });
+        if (url.pathname.endsWith('/World_Imagery/MapServer'))
           return await req.respond({
             status: 200,
             contentType: 'application/json',
-            body:
-              url.pathname === '/api/openai/hud-summary'
-                ? '{"summary":"Synthetic QA globe ready"}'
-                : '{}',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: JSON.stringify({
+              currentVersion: 10.81,
+              fullExtent: {
+                xmin: -20037508.342787,
+                ymin: -20037508.342787,
+                xmax: 20037508.342787,
+                ymax: 20037508.342787,
+                spatialReference: { wkid: 102100 },
+              },
+              tileInfo: {
+                rows: 256,
+                cols: 256,
+                origin: { x: -20037508.342787, y: 20037508.342787 },
+                spatialReference: { wkid: 102100 },
+                lods: Array.from({ length: 20 }, (_, level) => ({
+                  level,
+                  resolution: 156543.033928 / 2 ** level,
+                  scale: 591657527.591555 / 2 ** level,
+                })),
+              },
+            }),
           });
-        }
-        return await req.continue();
-      }
-      if (!url.protocol.startsWith('http')) return await req.continue();
-      externalRequests++;
-      // A 404 asks Cesium to probe legacy heightmap metadata; 400 gives the
-      // established flat-terrain fallback promptly in this hermetic fixture.
-      if (url.hostname === 'terrain.reearth.land')
         return await req.respond({
-          status: 400,
+          status: 200,
           contentType: 'application/json',
           headers: { 'Access-Control-Allow-Origin': '*' },
           body: '{}',
         });
-      const knownTile =
-        /\/tile\/\d+\/\d+\/\d+$/.test(url.pathname) ||
-        /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname);
-      if (knownTile)
-        return await req.respond({
-          status: 200,
-          contentType: 'image/jpeg',
-          headers: { 'Access-Control-Allow-Origin': '*' },
-          body: tile,
-        });
-      if (url.pathname.endsWith('/World_Imagery/MapServer'))
-        return await req.respond({
-          status: 200,
-          contentType: 'application/json',
-          headers: { 'Access-Control-Allow-Origin': '*' },
-          body: JSON.stringify({
-            currentVersion: 10.81,
-            fullExtent: {
-              xmin: -20037508.342787,
-              ymin: -20037508.342787,
-              xmax: 20037508.342787,
-              ymax: 20037508.342787,
-              spatialReference: { wkid: 102100 },
-            },
-            tileInfo: {
-              rows: 256,
-              cols: 256,
-              origin: { x: -20037508.342787, y: 20037508.342787 },
-              spatialReference: { wkid: 102100 },
-              lods: Array.from({ length: 20 }, (_, level) => ({
-                level,
-                resolution: 156543.033928 / 2 ** level,
-                scale: 591657527.591555 / 2 ** level,
-              })),
-            },
-          }),
-        });
-      return await req.respond({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: '{}',
-      });
-    } catch (error) {
-      errors.push(scrub(error?.message || error));
-      await req.abort().catch(() => {});
-    }
+      } catch (error) {
+        errors.push(scrub(error?.message || error));
+        await req.abort().catch(() => {});
+      }
+    },
   });
+  interceptions.push(interception);
   return { page, cdp };
 }
 async function login(page) {
@@ -823,15 +850,29 @@ try {
     async () => {
       // First verify the browser's own connectivity badge, then use a real
       // server outage so worker fetches fail independently of CDP emulation.
+      await page.waitForFunction(
+        () => window.__godsEyeView.viewer.scene.globe.tilesLoaded,
+        { timeout },
+      );
+      console.log(
+        '  offline: real globe ready; requesting browser offline mode',
+      );
       await page.setOfflineMode(true);
+      console.log(
+        '  offline: browser emulation acknowledged; waiting for device badge',
+      );
       await page.waitForFunction(() =>
         document
           .querySelector('[data-tak-device-state]')
           .textContent.includes('OFFLINE / LOCAL'),
       );
+      console.log(
+        '  offline: device badge confirmed; restoring browser network',
+      );
       await page.setOfflineMode(false);
       const port = Number(new URL(instance.origin).port);
       const origin = instance.origin;
+      console.log('  offline: closing real HTTPS server');
       await instance.close();
       // GEV updates the location hash. Use the second supported shell path to
       // force a real document request rather than only clearing that hash.
@@ -839,6 +880,9 @@ try {
         waitUntil: 'domcontentloaded',
         timeout,
       });
+      console.log(
+        '  offline: outage navigation committed; checking service-worker reconnect page',
+      );
       // Chromium may return no Puppeteer HTTPResponse for a synthetic worker
       // document. Check the committed document and browser navigation timing.
       await page.waitForFunction(() => document.title === 'GEV TAK · Offline');
@@ -876,6 +920,9 @@ try {
         'Try again',
       );
       await screenshot(page, '02-offline-reconnect.png');
+      console.log(
+        '  offline: generic reconnect page verified; restarting HTTPS server',
+      );
       instance = await startFixtureServer(port);
       assert.equal(instance.origin, origin);
       // Server sessions are intentionally memory-only; restart requires login.
@@ -1040,6 +1087,7 @@ try {
         ])
           assert(!JSON.stringify(storage).includes(value));
       }
+      errors.push(...interceptions.flatMap((item) => item.errors));
       assert.deepEqual(errors, []);
     },
   );
@@ -1072,6 +1120,9 @@ try {
           realTakPeerTested: false,
           externalRequestsIntercepted: externalRequests,
           providerRequestsIntercepted: providerRequests,
+          fixtureCancellations: interceptions.flatMap(
+            (item) => item.cancellations,
+          ),
           authRequests,
           results,
           errors,
@@ -1081,6 +1132,7 @@ try {
       ),
     );
   } finally {
+    await Promise.allSettled(interceptions.map((item) => item.dispose()));
     await Promise.allSettled([browser?.close(), instance?.close()]);
     for (const [name, value] of savedProviderEnv) {
       if (value === undefined) delete process.env[name];
