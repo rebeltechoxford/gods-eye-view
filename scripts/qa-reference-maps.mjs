@@ -6,7 +6,12 @@ import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { REFERENCE_MAPS, CORE_MAP_IDS } from '../src/maps/referenceCatalog.js';
 import { LAYER_STATE_REGISTRY } from '../src/data/layerState.js';
-import { hookRenderErrors, readRenderErrors } from './qa-browserEvidence.mjs';
+import {
+  hookRenderErrors,
+  readRenderErrors,
+  watchPage,
+} from './qa-browserEvidence.mjs';
+import { interceptFixtures } from './qa-fixtureInterception.mjs';
 
 const args = process.argv.slice(2);
 const value = (flag, fallback) =>
@@ -41,70 +46,92 @@ const browser = await puppeteer.launch({
   ],
 });
 const page = await browser.newPage();
+const workers = [],
+  workerNetwork = [],
+  fixtureScripts = [];
+const monitor = watchPage(page, { name: 'reference-maps', errors });
+page.on('workercreated', (worker) => {
+  workers.push(worker.url());
+  worker.client.on('Network.responseReceived', ({ response }) =>
+    workerNetwork.push({
+      url: response.url,
+      status: response.status,
+      mime: response.mimeType,
+    }),
+  );
+});
 page.setDefaultTimeout(60000);
 page.on('pageerror', (error) => errors.push(error.message));
 await hookRenderErrors(page);
-await page.setRequestInterception(true);
-page.on('request', (request) => {
-  const url = new URL(request.url());
-  const reply = (status, contentType, body) =>
-    void request
-      .respond({
-        status,
-        contentType,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body,
-      })
-      .catch(() => {});
-  if (
-    args.includes('--fonts') &&
-    ['fonts.googleapis.com', 'fonts.gstatic.com'].includes(url.hostname)
-  )
-    return void request.continue().catch(() => {});
-  // A hard failure exercises the real ellipsoid fallback, rather than
-  // pretending an untyped JSON object is terrain geometry.
-  if (url.hostname === 'terrain.reearth.land')
-    return reply(400, 'text/plain', 'Synthetic terrain unavailable');
-  const source = REFERENCE_MAPS.find((entry) =>
-    request.url().startsWith(entry.url),
-  );
-  if (source) {
-    requests.push({ id: source.id, url: request.url() });
-    if (source.id === failId) return reply(503, 'application/json', '{}');
-    // ArcGIS probes one missing-image sentinel. Giving it our real fixture
-    // texture would teach Cesium to discard every subsequent image as missing.
+const interception = await interceptFixtures(page, {
+  origin: base.origin,
+  handle: (request) => {
+    const url = new URL(request.url());
+    const reply = (status, contentType, body) =>
+      void request
+        .respond({
+          status,
+          contentType,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body,
+        })
+        .catch(() => {});
     if (
-      source.sourceType === 'arcgis' &&
-      source.minimumChartLevel === undefined &&
-      url.pathname.endsWith(`/tile/${source.maximumLevel}/0/0`)
+      args.includes('--fonts') &&
+      ['fonts.googleapis.com', 'fonts.gstatic.com'].includes(url.hostname)
     )
-      return reply(404, 'text/plain', 'Synthetic missing-tile sentinel');
-    if (source.sourceType === 'wms' || url.pathname.includes('/tile/'))
-      return reply(200, 'image/jpeg', tile);
-    return reply(200, 'application/json', JSON.stringify(metadata(source)));
-  }
-  if (url.pathname.endsWith('/World_Imagery/MapServer/tile/19/0/0'))
-    return reply(404, 'text/plain', 'Synthetic missing-tile sentinel');
-  if (
-    url.hostname === 'tile.openstreetmap.org' ||
-    /World_Imagery\/MapServer\/tile\//.test(url.pathname)
-  )
-    return reply(200, 'image/jpeg', tile);
-  if (url.pathname.endsWith('/World_Imagery/MapServer'))
-    return reply(
-      200,
-      'application/json',
-      JSON.stringify(metadata({ maximumLevel: 19 })),
+      return void request.continue().catch(() => {});
+    // A hard failure exercises the real ellipsoid fallback, rather than
+    // pretending an untyped JSON object is terrain geometry.
+    if (url.hostname === 'terrain.reearth.land')
+      return reply(400, 'text/plain', 'Synthetic terrain unavailable');
+    const source = REFERENCE_MAPS.find((entry) =>
+      request.url().startsWith(entry.url),
     );
-  if (
-    url.origin === base.origin &&
-    url.pathname.startsWith('/api/') &&
-    !url.pathname.startsWith('/api/tak/')
-  )
-    return reply(200, 'application/json', '{}');
-  if (url.protocol.startsWith('http') && url.origin !== base.origin)
-    return reply(200, 'application/json', '{}');
-  void request.continue().catch(() => {});
+    if (source) {
+      requests.push({ id: source.id, url: request.url() });
+      if (source.id === failId) return reply(503, 'application/json', '{}');
+      // ArcGIS probes one missing-image sentinel. Giving it our real fixture
+      // texture would teach Cesium to discard every subsequent image as missing.
+      if (
+        source.sourceType === 'arcgis' &&
+        source.minimumChartLevel === undefined &&
+        url.pathname.endsWith(`/tile/${source.maximumLevel}/0/0`)
+      )
+        return reply(404, 'text/plain', 'Synthetic missing-tile sentinel');
+      if (source.sourceType === 'wms' || url.pathname.includes('/tile/'))
+        return reply(200, 'image/jpeg', tile);
+      return reply(200, 'application/json', JSON.stringify(metadata(source)));
+    }
+    if (url.pathname.endsWith('/World_Imagery/MapServer/tile/19/0/0'))
+      return reply(404, 'text/plain', 'Synthetic missing-tile sentinel');
+    if (
+      url.hostname === 'tile.openstreetmap.org' ||
+      /World_Imagery\/MapServer\/tile\//.test(url.pathname)
+    )
+      return reply(200, 'image/jpeg', tile);
+    if (url.pathname.endsWith('/World_Imagery/MapServer'))
+      return reply(
+        200,
+        'application/json',
+        JSON.stringify(metadata({ maximumLevel: 19 })),
+      );
+    if (
+      url.origin === base.origin &&
+      url.pathname.startsWith('/api/') &&
+      !url.pathname.startsWith('/api/tak/')
+    )
+      return reply(200, 'application/json', '{}');
+    if (url.protocol.startsWith('http') && url.origin !== base.origin) {
+      if (
+        request.resourceType() === 'script' ||
+        /\.m?js(?:$|\?)/.test(url.pathname)
+      )
+        fixtureScripts.push(request.url());
+      return reply(200, 'application/json', '{}');
+    }
+    void request.continue().catch(() => {});
+  },
 });
 function metadata(source) {
   return {
@@ -179,14 +206,27 @@ try {
       !!window.__godsEyeView?.takClient &&
       !!window.__godsEyeView?.mapStackController,
   );
-  await page.evaluate(() =>
-    document.querySelector('.first-run-explore')?.click(),
-  );
   await page.waitForFunction(
     () =>
       document.getElementById('loading-screen')?.classList.contains('hidden') ||
       getComputedStyle(document.getElementById('loading-screen')).display ===
         'none',
+  );
+  await page.waitForFunction(() => {
+    const launcher = document.getElementById('first-run-launcher');
+    return !launcher || launcher.dataset.initialized === 'true';
+  });
+  if (await page.$('#first-run-launcher.visible')) {
+    await page.click('#first-run-launcher.visible .first-run-explore');
+    await page.waitForFunction(
+      () => !document.querySelector('#first-run-launcher.visible'),
+    );
+  }
+  // Let the initial globe finish its real terrain/imagery work before rapidly
+  // replacing its imagery layer through all eight factories.
+  await page.waitForFunction(
+    () => window.__godsEyeView.viewer.scene.globe.tilesLoaded,
+    { timeout: 30000 },
   );
   if (
     await page.$eval(
@@ -392,10 +432,11 @@ try {
       if (
         await page.$eval(
           '#control-panel-toggle',
-          (node) => node.getAttribute('aria-expanded') === 'false',
+          (node) => node.getAttribute('aria-expanded') === 'true',
         )
       )
         await page.click('#control-panel-toggle');
+      await page.click('#control-panel-toggle');
       await page.waitForSelector('#map-reference-select', { visible: true });
       await select('esri-topo');
       const metrics = await page.$eval('#map-reference-select', (node) => ({
@@ -403,10 +444,17 @@ try {
         height: node.getBoundingClientRect().height,
         width: node.getBoundingClientRect().width,
         viewport: innerWidth,
+        top: node.getBoundingClientRect().top,
+        bottom: node.getBoundingClientRect().bottom,
+        viewportHeight: innerHeight,
       }));
       assert(metrics.font >= 16);
       assert(metrics.height >= 44);
       assert(metrics.width <= metrics.viewport);
+      assert(
+        metrics.top >= 0 && metrics.bottom <= metrics.viewportHeight,
+        'Phone selector must be inside the visible viewport',
+      );
       await capture('phone-reference-selector');
       return metrics;
     },
@@ -414,6 +462,7 @@ try {
   const renderErrors = await readRenderErrors(page);
   assert.deepEqual(renderErrors, []);
   assert.deepEqual(errors, []);
+  assert.deepEqual(interception.errors, []);
   await fs.writeFile(
     path.join(dir, 'results.json'),
     JSON.stringify(
@@ -424,6 +473,11 @@ try {
         results,
         requests,
         errors,
+        workers,
+        workerNetwork,
+        fixtureScripts,
+        console: monitor.console,
+        failedRequests: monitor.failed,
       },
       null,
       2,
@@ -444,6 +498,26 @@ try {
         results,
         requests,
         errors,
+        workers,
+        workerNetwork,
+        workerState: await Promise.all(
+          page.workers().map(async (worker) => ({
+            url: worker.url(),
+            state: await Promise.race([
+              worker.client.send('Runtime.evaluate', {
+                expression:
+                  'JSON.stringify({url:location.href,onmessage:typeof self.onmessage})',
+                returnByValue: true,
+              }),
+              new Promise((resolve) =>
+                setTimeout(() => resolve('worker evaluation timeout'), 2000),
+              ),
+            ]).catch((error) => String(error)),
+          })),
+        ),
+        fixtureScripts,
+        console: monitor.console,
+        failedRequests: monitor.failed,
         documentState: await page
           .evaluate(() => {
             const gev = window.__godsEyeView,
@@ -458,6 +532,19 @@ try {
               useDefaultRenderLoop: gev?.viewer?.useDefaultRenderLoop,
               globeShow: scene?.globe?.show,
               imageryLayers: gev?.viewer?.imageryLayers?.length,
+              terrain: gev?.viewer?.terrainProvider?.constructor.name,
+              renderLoop: gev?.viewer?._cesiumWidget?._renderLoopRunning,
+              roots: surface?._levelZeroTiles?.map((tile) => ({
+                level: tile.level,
+                state: tile.state,
+                renderable: tile.renderable,
+                terrainState: tile.data?.terrainState,
+                mesh: !!tile.data?.mesh,
+                imagery: tile.data?.imagery?.map((item) => ({
+                  loading: item.loadingImagery?.state,
+                  ready: item.readyImagery?.state,
+                })),
+              })),
               loadQueue:
                 surface &&
                 [

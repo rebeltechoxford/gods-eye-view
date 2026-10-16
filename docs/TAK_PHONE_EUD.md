@@ -119,6 +119,16 @@ Sanitized results and synthetic screenshots are written to
 `qa-artifacts/tak-private/`. This does not establish trusted TLS or operation on
 a physical phone.
 
+Verified at runtime checkpoint `5de0d82c` on 2026-10-16: all **12** production
+HTTPS/PWA browser scenarios passed on Windows, Node 24.19.0 and Chrome
+152.0.7977.75. The run used a real loopback-server outage and restart on the
+same port, verified native form login, and checked cleared tactical state at
+the real redirect boundary for connected/disconnected expiry. An independent
+WSS connection confirmed server-side logout revocation. The initial-status401
+case was explicitly simulated. No uncaught app errors, CacheStorage/IndexedDB
+records or private fixture/credential persistence were found. Evidence is
+`qa-artifacts/tak-private/results.json` and the three numbered screenshots.
+
 Browser installation and HTTPS requirements are described in
 [MDN's installability guide](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable).
 Device location permission and secure-context behavior are specified by the
