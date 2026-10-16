@@ -8,6 +8,14 @@ are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 
 ## First: real peer acceptance
 
+- **iPhone/AltStore acceptance.** A real unsigned arm64 IPA and simulator
+  startup are verified at native revision `f3f65373`; the run guide links the
+  package and hash. Personal signing/install and actual device TLS/login/WSS,
+  touch, GPS/media, Files export and offline WebKit behavior still need testing.
+  Native exports cap at 256 MiB and `data:` downloads are unsupported. The
+  wrapper does not provide reliable background TAK/GPS or a native offline map
+  engine. These are explicit device/implementation gaps, not completed parity.
+
 - Accept the private HTTPS host on a real EUD: use an issued certificate/SAN
   trusted by that device, verify internal DNS/routing, login/Connect, Sign out,
   expiry/restart and denied access. Keep the listener internal; never replace
@@ -110,9 +118,9 @@ running.
   ordered preview middleware, login wall on every app/API path, fixed private
   HTTPS authority, session expiry/logout, bounded login/connections and static
   traversal/source-map/symlink exclusion. Provider settings and MCP are local
-  administration functions and must not be exposed by the private host. Close
-  the disconnected/offline-cookie-expiry and physical-device acceptance cases
-  with explicit results; a connected-socket fixture is narrower evidence.
+  administration functions and must not be exposed by the private host. Keep
+  the passing disconnected-cookie-expiry and cached-app HTTP401 cleanup cases;
+  physical-device acceptance still needs explicit results.
 - Audit each reused library/plugin/data asset. Keep MIT notices and existing
   provider credits. Noncommercial datasets and model/OSM/GPL-related terms have
   separate obligations; a working map is not a license for every deployment.

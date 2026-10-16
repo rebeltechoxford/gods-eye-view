@@ -192,6 +192,36 @@ GPS permissions and authorized TAK peer still needs acceptance. No public
 deployment, private LAN listener or device trust-store change was performed
 to produce those local results.
 
+## Install the iPhone package through AltStore Classic
+
+The unsigned device package was built and validated on real macOS/Xcode and
+started in an iPhone simulator. The verified handoff copy is
+`output/ios/f3f65373/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`provenance.json` and a simulator screenshot. The same package is in the
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38962072944)
+while GitHub retains it. Its SHA-256 is
+`da65e0a67ad3b2adb8ab88f840bda5ac9007a68620f0504eab1768bba51fd61b`.
+
+1. Set up [AltStore Classic/AltServer on Windows](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows)
+   for your own iPhone. Apple authentication and personal signing stay in that
+   tooling; the repository and CI need no Apple credentials.
+2. Import the unsigned IPA through AltStore's **My Apps → +** and complete the
+   device's required signing/trust/Developer Mode steps. Free-account apps
+   require [seven-day refresh](https://faq.altstore.io/altstore-classic/your-altstore).
+3. Open **GEV TAK**, enter your approved private HTTPS origin, such as
+   `https://gev.internal:8443`, then use the web operator login. The phone must
+   reach that private host and trust its matching certificate. System TLS
+   validation remains enabled; the app provides no certificate bypass.
+
+The IPA is a native container for this full private web application. Keep it
+visible for foreground GPS. Downloads require consent before the system Files
+picker; native exports are limited to 256 MiB, so use smaller map packs for
+phone export. `data:` downloads and reliable background TAK/GPS are not
+implemented. Physical-device login/WSS, media/GPS, Files and disconnected
+WebKit acceptance remain open. The desktop offline gate does not establish
+those iOS behaviors. See [TAK_IOS_IPA.md](docs/TAK_IOS_IPA.md) for the source,
+reproducible Mac build and device acceptance checklist.
+
 ## Retain topographic maps on the server and phone
 
 On the built private HTTPS app, open **TAK → SAVED MAPS / OFFLINE**. Use the
@@ -253,6 +283,20 @@ npm test
 npm run build
 npm run build:panel
 ```
+
+After the production build, these two gates start their own temporary
+loopback HTTPS servers and synthetic fixtures; run them sequentially:
+
+```sh
+npm run qa:tak:private
+npm run qa:maps:offline
+```
+
+Their reports and screenshots are written under `qa-artifacts/`. The latest
+integrated CI evidence is linked from the
+[offline-map pull request](https://github.com/rebeltechoxford/gods-eye-view/pull/5).
+These are local/synthetic checks, with separate physical-phone and authorized
+TAK-peer acceptance still required.
 
 With `npm run tak:lab` running on its default port, verify the browser and the
 synthetic peer's marker/chat return path with:
