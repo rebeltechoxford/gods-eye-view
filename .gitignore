@@ -8,6 +8,12 @@ dist
 .env
 .env.*
 !.env.example
+# Local HTTPS/TAK credentials are provisioned outside source control.
+.tak-secrets/
+*.key
+*.pem
+*.p12
+*.pfx
 *.log
 screenshots/
 qa-shots/

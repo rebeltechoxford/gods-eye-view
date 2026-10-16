@@ -3,6 +3,11 @@ import {
   hasStructuredViewIdentity,
 } from './realtimeProtocol.js';
 import { cameraPoseKey } from './pointerContext.js';
+import {
+  isTakPrivacyBlocked,
+  takDisclosureTicket,
+  canDiscloseTakData,
+} from '../tak/privacy.js';
 
 /** The live viewer's camera pose identity (Cesium-free read). */
 export function readViewerCameraKey() {
@@ -19,6 +24,8 @@ export const VIEWPORT_MAX_ENCODED_BYTES = 200 * 1024;
 
 export async function captureViewportImage() {
   const viewer = window.__godsEyeView?.viewer;
+  if (isTakPrivacyBlocked(viewer)) return null;
+  const privacy = takDisclosureTicket(viewer);
   const source =
     viewer?.scene?.canvas ||
     document.querySelector('#cesiumContainer .cesium-widget canvas');
@@ -28,7 +35,7 @@ export async function captureViewportImage() {
   // frame would feed the model old entities as current context. (perf
   // wave 2 fix)
   const fresh = await renderFreshCesiumFrame(viewer);
-  if (!fresh) return null;
+  if (!fresh || !canDiscloseTakData(privacy)) return null;
 
   // Clamp BOTH dimensions by a total-pixel budget so tall portrait windows are
   // downscaled too (the old width-only clamp let them through — M13).
@@ -59,7 +66,7 @@ export async function captureViewportImage() {
       });
       return null;
     }
-    return dataUrl;
+    return canDiscloseTakData(privacy) ? dataUrl : null;
   } catch {
     return null;
   }
@@ -130,10 +137,12 @@ export function pointerCropRect({
  */
 export async function capturePointerCrop(screenPx) {
   const viewer = window.__godsEyeView?.viewer;
+  if (isTakPrivacyBlocked(viewer)) return null;
+  const privacy = takDisclosureTicket(viewer);
   const source = viewer?.scene?.canvas;
   if (!source?.width || !source?.height || !screenPx) return null;
   const fresh = await renderFreshPointerFrame(viewer);
-  if (!fresh) return null;
+  if (!fresh || !canDiscloseTakData(privacy)) return null;
   const rect = pointerCropRect({
     x: screenPx.x,
     y: screenPx.y,
@@ -168,6 +177,7 @@ export async function capturePointerCrop(screenPx) {
     ctx.stroke();
     const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
     if (estimateDataUrlBytes(dataUrl) > VIEWPORT_MAX_ENCODED_BYTES) return null;
+    if (!canDiscloseTakData(privacy)) return null;
     return {
       dataUrl,
       rect: {
@@ -393,6 +403,8 @@ export class RealtimeViewport {
 
   /** Capture one image and make it the single retained image in context. */
   async sendRetainedImage(captureImage, text, label, frame = {}) {
+    if (isTakPrivacyBlocked()) return false;
+    const privacy = takDisclosureTicket();
     if (!this.dc || this.dc.readyState !== 'open') return false;
     const generation = this.generation;
     const request = ++this.captureSeq;
@@ -402,6 +414,7 @@ export class RealtimeViewport {
       typeof captured === 'string' ? captured : captured?.dataUrl || null;
     if (
       !imageUrl ||
+      !canDiscloseTakData(privacy) ||
       generation !== this.generation ||
       request !== this.captureSeq ||
       this.dc !== channel ||

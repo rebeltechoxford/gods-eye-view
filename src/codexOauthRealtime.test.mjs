@@ -151,7 +151,7 @@ test('Codex login resolves an installed executable before PATH and starts browse
       home: '/home/fixture',
       access(candidate) {
         checked.push(candidate);
-        if (candidate.endsWith('/.local/bin/codex')) return;
+        if (candidate.endsWith(path.join('.local', 'bin', 'codex'))) return;
         throw new Error('missing');
       },
     }),

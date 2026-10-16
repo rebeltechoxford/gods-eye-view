@@ -5,6 +5,27 @@ file records the packages added for the browser-local SDR feature and the
 Street Level viewer; the complete resolved dependency inventory remains in
 `package-lock.json`.
 
+## TAK gateway WebSocket transport
+
+- Package: `ws` 8.21.3 (already locked; used only by the Node gateway and tests)
+- Authors: Einar Otto Stangvik, Arnout Kazemier, Luigi Pinca and contributors
+- Source: <https://github.com/websockets/ws>
+- License: MIT; license text is distributed in `node_modules/ws/LICENSE`.
+
+The private HTTPS host also uses `connect` 3.7.0 (MIT, Sencha Labs and
+contributors; [source and license](https://github.com/senchalabs/connect)) to
+retain the established GEV provider middleware order behind its authenticated
+session. Its resolved dependencies and notices remain in `package-lock.json`
+and the installed packages. It does not start a Vite development server.
+
+The TAK protocol modules are independently written project code. No ATAK-CIV
+application source, SDK binaries, plugin binaries, imagery or operational data
+was incorporated. The official TAK wire-format specification is a protocol
+reference, not a license to reuse application or plugin code. Existing imagery,
+datasets and models retain the restrictions in `LICENSE`, `DATA_SOURCES.md`
+and `public/models/README.md`, including the TeleGeography noncommercial data
+carve-out. No new third-party dataset is added by the synthetic local lab.
+
 ## Web RTL-SDR
 
 - Package: `@jtarrio/webrtlsdr` 3.0.6

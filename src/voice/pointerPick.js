@@ -1,4 +1,5 @@
 import * as Cesium from 'cesium';
+import { isTakPrivacyBlocked } from '../tak/privacy.js';
 import { resolvePickedContext } from '../data/pickedContext.js';
 import { cameraPoseKey } from './pointerContext.js';
 import * as defaultAnnotationResolver from '../annotations/annotationResolver.js';
@@ -26,6 +27,7 @@ export function createPointerPicker({
   pickWorldFromScreen = defaultAnnotationResolver.pickWorldFromScreen,
 }) {
   return function pickPointer(x, y) {
+    if (isTakPrivacyBlocked(viewer)) return null;
     const scene = viewer?.scene;
     const canvas = scene?.canvas;
     if (!scene || !canvas) return null;

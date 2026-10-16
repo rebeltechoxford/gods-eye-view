@@ -1,3 +1,5 @@
+import { isTakPrivacyBlocked } from '../tak/privacy.js';
+import { REFERENCE_MAPS } from '../maps/referenceCatalog.js';
 import {
   layerSnapshot,
   layerSnapshots,
@@ -221,6 +223,9 @@ const CITY_ALIASES = new Map([
 // cleanly and then fail at the controller with "Unknown map stack", which reads
 // to the operator as a broken command rather than a retired source.
 const STACK_ALIASES = new Map([
+  ...REFERENCE_MAPS.flatMap(({ id, aliases }) =>
+    [id, ...aliases].map((alias) => [alias, id]),
+  ),
   ['photoreal', 'photoreal'],
   ['google 3d', 'photoreal'],
   ['google', 'photoreal'],
@@ -2571,6 +2576,8 @@ export async function getBasemapLabelContext(
   service = defaultGeospatial,
   { cachedOnly = false } = {},
 ) {
+  if (isTakPrivacyBlocked(viewer))
+    return { placeLabels: [], streetLabels: [], nearbyPlaceLabels: [] };
   const { reverseGeocodeCache, nearbyPlacesCache } = cachesFor(service);
   const samples = sampleViewportCartographics(viewer);
   const cameraHeightM = viewer.camera.positionCartographic.height;

@@ -1,4 +1,5 @@
 import { renderMapStackChips, syncMapStackChips } from '../mapStackChips.js';
+import { createMapReferenceControls } from './mapReferenceControls.js';
 
 /**
  * Own Map Source presentation and selection without constructing map providers.
@@ -15,6 +16,7 @@ export function createMapSourceControls({
 }) {
   let destroyed = false;
   let generation = 0;
+  let referenceControls = null;
   const removers = [];
   const bind = (element, type, listener) => {
     element.addEventListener(type, listener);
@@ -23,6 +25,7 @@ export function createMapSourceControls({
   function render(state) {
     if (destroyed || !state) return;
     syncMapStackChips(container, state.activeId);
+    referenceControls?.render(state.activeId);
     if (statusElement) {
       const stack = state.activeStack;
       statusElement.textContent =
@@ -58,8 +61,17 @@ export function createMapSourceControls({
   function refresh() {
     if (destroyed) return;
     for (const remove of removers.splice(0)) remove();
+    referenceControls?.destroy();
     renderMapStackChips(container, controller.getStacks(), {
       activeId: controller.getActiveId(),
+      onSelect: (id) => {
+        void select(id).catch(() => {});
+      },
+      bind,
+    });
+    referenceControls = createMapReferenceControls({
+      container,
+      stacks: controller.getStacks(),
       onSelect: (id) => {
         void select(id).catch(() => {});
       },
@@ -83,6 +95,7 @@ export function createMapSourceControls({
       generation++;
       unsubscribe?.();
       for (const remove of removers.splice(0)) remove();
+      referenceControls?.destroy();
     },
   };
 }

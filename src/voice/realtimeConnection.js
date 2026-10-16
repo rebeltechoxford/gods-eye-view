@@ -1,3 +1,4 @@
+import { isTakPrivacyBlocked, TAK_PRIVACY_MESSAGE } from '../tak/privacy.js';
 const DISCONNECT_GRACE_MS = 6000;
 
 function releaseStartResources({ localStream = null, localPc = null } = {}) {
@@ -50,6 +51,10 @@ export class RealtimeConnection {
     return this.readStatus();
   }
   async start({ pushToTalk = false } = {}) {
+    if (isTakPrivacyBlocked()) {
+      this.setStatus('error', TAK_PRIVACY_MESSAGE);
+      return;
+    }
     if (this.isActive() || this.lifetimeSignal?.aborted) return;
     this.pauseRadioForVoice();
     const pushToTalkKeyHeld = pushToTalk && this.input.pushToTalkKeyHeld;
@@ -256,7 +261,7 @@ export class RealtimeConnection {
   // attempt has been superseded by a newer start()/stop() — the caller must
   // then `return` immediately without touching shared session state (H7).
   abandonStart(epoch, resources) {
-    if (epoch === this.startEpoch) return false;
+    if (epoch === this.startEpoch && !isTakPrivacyBlocked()) return false;
     // These resources may or may not have been promoted onto `this` yet. If a
     // stop() bumped the epoch it already tore down whatever was promoted; if a
     // *second* start() bumped it, that start owns `this.stream`/`this.pc` now,
@@ -319,6 +324,15 @@ export class RealtimeConnection {
   }
 
   sendRealtimeEvent(message, logEventName = 'client.event') {
+    if (
+      isTakPrivacyBlocked() &&
+      ![
+        'conversation.item.delete',
+        'response.cancel',
+        'output_audio_buffer.clear',
+      ].includes(message?.type)
+    )
+      return false;
     if (!this.dc || this.dc.readyState !== 'open') return false;
     this.debugLog(logEventName, {
       type: message?.type || null,

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MapSourceController } from './controller.js';
 import { createDefaultMapSources } from './defaultSources.js';
+import { REFERENCE_MAPS } from './referenceCatalog.js';
 
 function event() {
   const listeners = new Set();
@@ -86,6 +87,33 @@ function publicFixture() {
   }
   return { ...fixture(registry), registry, providers, tileset };
 }
+
+test('curated references share existing terrain and controller fallback without losing supplied Google3D', async () => {
+  for (const { id, credit } of REFERENCE_MAPS) {
+    const env = publicFixture();
+    await env.controller.setStack(id);
+    assert.equal(env.controller.getActiveId(), id);
+    assert.equal(env.viewer.terrainProvider.id, 'terrain');
+    assert.equal(env.imagery.length, 1);
+    assert.ok([...env.credits].some((entry) => entry.html.includes(credit)));
+    const provider = env.providers.get(id);
+    provider.errorEvent.raise();
+    provider.errorEvent.raise();
+    await settle();
+    assert.equal(env.controller.getActiveId(), id);
+    provider.errorEvent.raise();
+    await settle();
+    assert.equal(env.controller.getActiveId(), 'osm');
+    assert.equal(provider.errorEvent.size, 0);
+    await env.controller.setStack('photoreal');
+    assert.equal(env.controller.getActiveId(), 'photoreal');
+    assert.equal(env.tileset.show, true);
+    provider.errorEvent.raise();
+    await settle();
+    assert.equal(env.controller.getActiveId(), 'photoreal');
+    env.controller.destroy();
+  }
+});
 
 test('an additional imagery source needs no controller branch and owns its cached resources', async () => {
   let reads = 0,

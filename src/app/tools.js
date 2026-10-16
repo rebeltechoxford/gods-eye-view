@@ -1,4 +1,6 @@
 import { initTakWebClient } from '../tak/index.js';
+import { isTakPrivacyBlocked, subscribeTakPrivacy } from '../tak/privacy.js';
+import { overlayHost } from './layers/overlayHost.js';
 import { SceneDirector } from '../scenes/director.js';
 import { initAnnotations } from '../annotations/index.js';
 import { initDrawTool } from '../annotations/drawTool.js';
@@ -161,8 +163,21 @@ export function createApplicationTools({
   defer(() => {
     if (window.__godsEyeView === debug) delete window.__godsEyeView;
   });
-  // Additive web-native TAK preview; independent of existing GEV layers.
-  const takClient = initTakWebClient({ viewer });
+  // TAK client: CoT overlay on top of every GEV layer; network only via the
+  // same-origin gateway (server/providers/tak) after the operator connects.
+  const takClient = initTakWebClient({
+    viewer,
+    overlays: overlayHost,
+    navigate: (fly) => styleManager._runExplicitNavigation('TAK contact', fly),
+  });
+  debug.takClient = takClient;
+  defer(
+    subscribeTakPrivacy(viewer, () => {
+      if (!isTakPrivacyBlocked(viewer)) return;
+      styleManager.hud?._summaryRequest?.abort();
+      styleManager.setRecordingMode(false);
+    }),
+  );
   defer(() => takClient.destroy());
   const voiceCommands = initGevVoiceCommands({
     ...voice,
@@ -188,7 +203,8 @@ export function createApplicationTools({
       shell: styleManager,
       viewer,
       dataManager,
-      run: (name, args) => voiceCommands.runner(name, args, { signal }),
+      run: (name, args) =>
+        voiceCommands.runner(name, args, { signal, localOnly: true }),
       signal,
     }),
   );

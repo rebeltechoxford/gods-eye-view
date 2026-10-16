@@ -1,5 +1,11 @@
 import { withShareSignal } from '../director/sharing/lifetime.js';
 import {
+  isTakPrivacyBlocked,
+  TAK_PRIVACY_MESSAGE,
+  takDisclosureTicket,
+  canDiscloseTakData,
+} from '../tak/privacy.js';
+import {
   readSceneShare,
   createSceneBundle,
   BUNDLE_SOURCE,
@@ -59,6 +65,11 @@ const mimeFor = (file) =>
 
 /** Own staged imports, author drafts and share bytes separately from playback and project state. */
 export function createSceneSharing(director) {
+  const disclosureAllowed = () => {
+    if (!isTakPrivacyBlocked(director.viewer)) return true;
+    director._updateStatus(TAK_PRIVACY_MESSAGE);
+    return false;
+  };
   let dialog,
     controller,
     disposed = false,
@@ -186,6 +197,7 @@ export function createSceneSharing(director) {
       'Capture camera as anchor',
       () =>
         run(owner, async () => {
+          if (!disclosureAllowed()) return;
           const details = JSON.parse(sceneText.value),
             camera = director.styleManager.getCameraState();
           if (!camera) throw new Error('Camera unavailable');
@@ -218,6 +230,7 @@ export function createSceneSharing(director) {
       'Set move start to current camera',
       () =>
         run(owner, async () => {
+          if (!disclosureAllowed()) return;
           const details = JSON.parse(shotText.value),
             camera = director.styleManager.getCameraState();
           if (!camera) throw new Error('Camera unavailable');
@@ -293,6 +306,7 @@ export function createSceneSharing(director) {
     apply.dataset.directorApplyDetails = '';
   }
   function share() {
+    if (!disclosureAllowed()) return;
     let project;
     try {
       project = selectSceneDocument(
@@ -323,7 +337,8 @@ export function createSceneSharing(director) {
       'Scene JSON preserves authored settings and attribution. It does not include asset files. Bundles include only pack files you choose here or previously imported bundle files.',
     );
     dialog.button('Download scene JSON', () => {
-      if (alive(owner)) download(stringifySceneDocument(project), 'scene.json');
+      if (alive(owner) && disclosureAllowed())
+        download(stringifySceneDocument(project), 'scene.json');
     });
     const files = dialog.input('Choose data-pack files', '', { type: 'file' });
     files.multiple = true;
@@ -334,6 +349,8 @@ export function createSceneSharing(director) {
     folder.setAttribute('webkitdirectory', '');
     dialog.button('Download asset bundle', () =>
       run(owner, async () => {
+        if (!disclosureAllowed()) return;
+        const privacy = takDisclosureTicket(director.viewer);
         const selected = [...files.files, ...folder.files];
         const packs = project.scenes.flatMap((s) => s.dataPacks || []);
         const text = await createSceneBundle(
@@ -372,7 +389,7 @@ export function createSceneSharing(director) {
           },
           { signal: owner.signal },
         );
-        if (alive(owner)) {
+        if (alive(owner) && canDiscloseTakData(privacy)) {
           download(text, 'scene.gevbundle.json');
           dialog.status.textContent = 'Asset bundle downloaded';
         }

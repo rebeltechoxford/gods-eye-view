@@ -314,7 +314,8 @@
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
       "server/providers/openai/toolDescriptions.js",
-      "src/sources/rateLimit.js"
+      "src/sources/rateLimit.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   },
@@ -418,7 +419,9 @@
       "src/ui/mapSourceControls.js",
       "src/mapStackChips.js",
       "src/keySetupCore.mjs",
-      "src/localRequestGate.mjs"
+      "src/localRequestGate.mjs",
+      "src/maps/referenceCatalog.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": []
   },
@@ -668,7 +671,10 @@
       "src/ui/localSdrControls.js",
       "src/layers/localAdsb/feedNames.js",
       "src/ui/localSdrPresentation.js",
-      "src/data/cameraArrival.js"
+      "src/data/cameraArrival.js",
+      "src/tak/privacy.js",
+      "src/maps/referenceCatalog.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": ["cesium"]
   },
@@ -774,7 +780,9 @@
       "src/director/authoring.js",
       "src/scenes/sharing.js",
       "src/ui/sceneSharing.js",
-      "src/data/cameraArrival.js"
+      "src/data/cameraArrival.js",
+      "src/tak/privacy.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": ["cesium"]
   },
@@ -1353,7 +1361,9 @@
       "src/maps/terrainRetry.js",
       "src/keySetupCore.mjs",
       "src/localRequestGate.mjs",
-      "src/maps/imageryHost.js"
+      "src/maps/imageryHost.js",
+      "src/maps/referenceCatalog.js",
+      "src/maps/referenceImagery.js"
     ],
     "external": ["cesium"]
   },
@@ -1400,7 +1410,8 @@
       "src/voice/narration.js",
       "src/voice/earcon.js",
       "src/voice/pointerContext.js",
-      "src/voice/pointerReticle.js"
+      "src/voice/pointerReticle.js",
+      "src/tak/privacy.js"
     ],
     "external": []
   },
@@ -1476,6 +1487,16 @@
       "src/app/stateChannel.js",
       "src/app/surfaceServices.js",
       "src/app/tools.js",
+      "src/tak/index.js",
+      "src/tak/tak.css",
+      "src/tak/client.js",
+      "src/tak/cotOverlay.js",
+      "src/tak/store.js",
+      "src/tak/transport.js",
+      "src/tak/ui.js",
+      "src/tak/protocol/builders.js",
+      "src/tak/protocol/cot.js",
+      "src/tak/protocol/xml.js",
       "src/app/viewer.js",
       "src/app/atmosphereCompat.js",
       "src/bloom.js",
@@ -2201,7 +2222,6 @@
       "src/data/cameraArrival.js",
       "src/layers/alpr/floors.js",
       "src/data/militaryNames.js",
-      "src/sources/requestDeadline.js",
       "src/data/local_data/osm_military_names/names.json",
       "src/layers/installations/namedMarkers.js",
       "src/data/infrastructureOverlayEntry.js",
@@ -2209,7 +2229,15 @@
       "src/tools/functions.js",
       "src/voice/actionSchemas.js",
       "src/view/index.js",
-      "src/app/embed.js"
+      "src/app/embed.js",
+      "src/tak/privacy.js",
+      "src/tak/geolocation.js",
+      "src/tak/position.js",
+      "src/tak/mobile.js",
+      "src/tak/session.js",
+      "src/maps/referenceCatalog.js",
+      "src/maps/referenceImagery.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": [
       "hls.js",
@@ -2732,7 +2760,6 @@
       "src/data/cameraArrival.js",
       "src/layers/alpr/floors.js",
       "src/data/militaryNames.js",
-      "src/sources/requestDeadline.js",
       "src/data/local_data/osm_military_names/names.json",
       "src/layers/installations/namedMarkers.js",
       "src/data/infrastructureOverlayEntry.js",
@@ -2988,7 +3015,8 @@
     "modules": [
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
-      "src/hudLayoutPolicy.js"
+      "src/hudLayoutPolicy.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   },
@@ -3381,7 +3409,8 @@
       "src/view/index.js",
       "src/tools/views.js",
       "src/tools/globePanel.js",
-      "src/tools/queries/panelRequest.js"
+      "src/tools/queries/panelRequest.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": ["satellite.js"]
   },
@@ -3477,7 +3506,8 @@
       "src/view/index.js",
       "src/data/idSwitches.js",
       "src/data/layerState.js",
-      "src/data/layerStateTokenReservations.json"
+      "src/data/layerStateTokenReservations.json",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   }
