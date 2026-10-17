@@ -219,6 +219,27 @@ export async function createXhrAbortProof(
   });
   return {
     observeNetwork,
+    diagnostic(networkId, { frameId, request }) {
+      const owner = requests.get(networkId);
+      return [...records.values()]
+        .filter(
+          (record) =>
+            record.frameId === frameId &&
+            record.loaderId === owner?.loaderId &&
+            record.url === request.url &&
+            record.method === request.method,
+        )
+        .slice(-4)
+        .map((record) => ({
+          executionContextId: record.executionContextId,
+          rendererRequestId: record.id,
+          networkId: record.networkId,
+          sentAt: record.sentAt,
+          finishedAt: record.finishedAt,
+          abortedAt: record.abortedAt,
+          ambiguous: record.ambiguous === true,
+        }));
+    },
     evidence(networkId, { frameId, resourceType, request }) {
       if (disposed || resourceType !== 'XHR' || request.method !== 'GET')
         return null;

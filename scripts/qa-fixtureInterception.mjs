@@ -184,6 +184,7 @@ export async function interceptFixtures(
           pausedAt,
           at: Date.now(),
           request: requests.get(networkId),
+          xhrAbortCandidates: xhrProof?.diagnostic(networkId, event),
           failure: failures.get(networkId),
           frame: frames.get(frameId),
         });
