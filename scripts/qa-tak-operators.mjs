@@ -110,6 +110,7 @@ async function tap(page, selector) {
   await page.bringToFront();
   assert.equal(await page.evaluate(() => document.visibilityState), 'visible');
   const node = await page.waitForSelector(selector, { visible: true });
+  let observer, listener, timer;
   try {
     await node.evaluate(async (el) => {
       el.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -126,6 +127,12 @@ async function tap(page, selector) {
         );
       await Promise.all(animations.map((a) => a.finished.catch(() => {})));
     });
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
     const point = await node.evaluate((el) => {
       const r = el.getBoundingClientRect(),
         x = r.x + r.width / 2,
@@ -151,9 +158,32 @@ async function tap(page, selector) {
       `Short touch target ${selector}`,
     );
     touches.push({ selector, ...point });
-    await page.touchscreen.tap(point.x, point.y);
+    const marker = `QA operator touch ${Date.now()} ${selector}`;
+    const delivered = new Promise((resolve, reject) => {
+      listener = (message) => {
+        if (message.text() === marker) resolve();
+      };
+      page.on('console', listener);
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(`Physical touch did not deliver a click: ${selector}`),
+          ),
+        10000,
+      );
+    });
+    void delivered.catch(() => {});
+    observer = await node.evaluateHandle((el, marker) => {
+      const clicked = () => console.debug(marker);
+      el.addEventListener('click', clicked, { once: true });
+      return { dispose: () => el.removeEventListener('click', clicked) };
+    }, marker);
+    await Promise.all([page.touchscreen.tap(point.x, point.y), delivered]);
   } finally {
-    await node.dispose();
+    clearTimeout(timer);
+    if (listener) page.off('console', listener);
+    await observer?.evaluate((value) => value.dispose()).catch(() => {});
+    await Promise.allSettled([observer?.dispose(), node.dispose()]);
   }
 }
 async function fill(page, selector, value) {
@@ -497,6 +527,13 @@ async function peerUpdate(id) {
 }
 async function saveAlphaMap(page) {
   await section(page, 'maps');
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-offline-status]')
+        .textContent.includes('No saved maps'),
+    { timeout },
+  );
   await fill(page, '[data-offline-name]', 'PRIVATE ALPHA AREA');
   for (const [key, value] of Object.entries({
     west: '-1',

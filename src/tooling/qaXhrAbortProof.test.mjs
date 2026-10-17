@@ -61,6 +61,8 @@ async function fixture() {
     frameId: 'frame-1',
     loaderId: 'loader-1',
     startedAt: at,
+    url: 'https://tiles.invalid/1.png',
+    method: 'GET',
   });
   return {
     client,
@@ -243,8 +245,31 @@ test('an old completed abort cannot authorize a later same-URL network request w
       frameId: 'frame-1',
       loaderId: 'loader-1',
       startedAt: f.at + delay,
+      url: 'https://tiles.invalid/1.png',
+      method: 'GET',
     });
     assert.equal(f.proof.evidence('later-network', f.pause), null);
+    await f.proof.dispose();
+  }
+});
+
+test('one renderer send cannot prove a second concurrent or replacement Network ID without a new send', async () => {
+  for (const evictOriginal of [false, true]) {
+    const f = await fixture();
+    f.send();
+    if (evictOriginal) f.requests.delete('network-1');
+    f.requests.set('network-2', {
+      frameId: 'frame-1',
+      loaderId: 'loader-1',
+      startedAt: f.at,
+      url: 'https://tiles.invalid/1.png',
+      method: 'GET',
+    });
+    f.proof.observeNetwork();
+    f.abort();
+    assert.equal(f.proof.evidence('network-2', f.pause), null);
+    if (!evictOriginal)
+      assert.equal(f.proof.evidence('network-1', f.pause), null);
     await f.proof.dispose();
   }
 });
@@ -256,6 +281,7 @@ test('proof buffers are bounded; an evicted old send cannot qualify', async () =
   f.abort(1);
   assert.equal(f.proof.evidence('network-1', f.pause), null);
   f.abort(513);
+  f.requests.get('network-1').url = 'https://tiles.invalid/513.png';
   assert(
     f.proof.evidence('network-1', {
       ...f.pause,

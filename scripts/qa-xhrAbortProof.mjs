@@ -105,6 +105,30 @@ export async function createXhrAbortProof(
     map.set(key, value);
     if (map.size > 512) map.delete(map.keys().next().value);
   };
+  const matches = (record, owner) =>
+    owner.frameId === record.frameId &&
+    owner.loaderId === record.loaderId &&
+    owner.url === record.url &&
+    owner.method === record.method &&
+    Number.isFinite(owner.startedAt) &&
+    record.sentAt <= owner.startedAt &&
+    owner.startedAt <= record.sentAt + 1000 &&
+    (!record.finishedAt || owner.startedAt <= record.finishedAt);
+  function bindNetwork(record) {
+    const candidates = [...requests].filter(([, owner]) =>
+      matches(record, owner),
+    );
+    if (candidates.length > 1) record.ambiguous = true;
+    if (candidates.length === 1) {
+      const [networkId] = candidates[0];
+      if (record.networkId && record.networkId !== networkId)
+        record.ambiguous = true;
+      else record.networkId = networkId;
+    }
+  }
+  const observeNetwork = () => {
+    for (const record of records.values()) bindNetwork(record);
+  };
   const onContext = ({ context }) => {
     const frameId = context.auxData?.frameId;
     if (!context.auxData?.isDefault || !frameId) return;
@@ -177,6 +201,7 @@ export async function createXhrAbortProof(
         }
       }
       boundedSet(records, key, record);
+      bindNetwork(record);
     } else {
       const record = records.get(key);
       if (!record || value.at < record.sentAt) return;
@@ -193,6 +218,7 @@ export async function createXhrAbortProof(
     source: `(${installXhrAbortObserver.toString()})(${JSON.stringify(bindingName)},${JSON.stringify(origin)})`,
   });
   return {
+    observeNetwork,
     evidence(networkId, { frameId, resourceType, request }) {
       if (disposed || resourceType !== 'XHR' || request.method !== 'GET')
         return null;
@@ -200,23 +226,19 @@ export async function createXhrAbortProof(
       if (
         !owner?.loaderId ||
         owner.frameId !== frameId ||
+        owner.url !== request.url ||
+        owner.method !== request.method ||
         !Number.isFinite(owner.startedAt)
       )
         return null;
-      const candidates = [...records.values()].filter(
-        (record) =>
-          record.frameId === frameId &&
-          record.loaderId === owner.loaderId &&
-          record.url === request.url &&
-          record.method === request.method &&
-          // Both clocks are renderer epoch timestamps. Do not let an old
-          // completed request's abort authorize a later same-URL request.
-          record.sentAt <= owner.startedAt &&
-          owner.startedAt <= record.sentAt + 1000 &&
-          (!record.finishedAt || record.finishedAt >= owner.startedAt),
+      const candidates = [...records.values()].filter((record) =>
+        // Both clocks use renderer epoch time. The strict active interval
+        // rejects an old completed abort for a later same-URL request.
+        matches(record, owner),
       );
       if (candidates.length !== 1) return null;
       const record = candidates[0];
+      bindNetwork(record);
       if (
         record.ambiguous ||
         !record.abortedAt ||

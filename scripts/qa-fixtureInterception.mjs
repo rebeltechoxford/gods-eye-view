@@ -38,13 +38,22 @@ export async function interceptFixtures(
     map.set(key, value);
     if (map.size > 512) map.delete(map.keys().next().value);
   }
-  const onRequest = (event) =>
-    boundedSet(requests, event.requestId, {
+  let xhrProof = null;
+  const onRequest = (event) => {
+    const owner = {
       loaderId: event.loaderId,
       frameId: event.frameId,
       startedAt: Number.isFinite(event.wallTime) ? event.wallTime * 1000 : null,
       at: Date.now(),
+    };
+    // Match in memory only. Never serialize query strings or authentication URLs.
+    Object.defineProperties(owner, {
+      url: { value: event.request?.url },
+      method: { value: event.request?.method },
     });
+    boundedSet(requests, event.requestId, owner);
+    xhrProof?.observeNetwork();
+  };
   const onFrame = ({ frame }) =>
     boundedSet(frames, frame.id, { loaderId: frame.loaderId, at: Date.now() });
   const cancelled = new Map(),
@@ -100,7 +109,7 @@ export async function interceptFixtures(
   client.on('Page.frameNavigated', onFrame);
   await client.send('Page.enable');
   await client.send('Network.enable');
-  const xhrProof = observeXhrAborts
+  xhrProof = observeXhrAborts
     ? await createXhrAbortProof(client, { origin, frames, requests })
     : null;
   const onPaused = async (event) => {

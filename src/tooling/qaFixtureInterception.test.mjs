@@ -299,6 +299,7 @@ test('optional renderer abort proof excuses only the exact invalid ID, never oth
       frameId: 'frame-1',
       loaderId: 'loader-1',
       wallTime: at / 1000,
+      request: pause().request,
     });
     f.client.emit('Fetch.requestPaused', {
       ...pause(),
