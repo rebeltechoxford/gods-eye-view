@@ -1017,6 +1017,8 @@
   "scripts/qa-reference-live.mjs",
   "scripts/qa-tak-stress.mjs",
   "scripts/qa-fixtureInterception.mjs",
+  "scripts/qa-xhrAbortProof.mjs",
+  "src/tooling/qaXhrAbortProof.test.mjs",
   "src/tooling/qaFixtureInterception.test.mjs",
   "src/tak/storeResources.test.mjs",
   "src/tooling/takHttps.test.mjs",

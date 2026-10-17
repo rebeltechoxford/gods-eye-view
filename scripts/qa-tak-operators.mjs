@@ -381,6 +381,7 @@ async function prepare(context, label) {
   const interception = await interceptFixtures(page, {
     origin,
     includePaths: ['/logout'],
+    observeXhrAborts: true,
     handle: async (req) => {
       const url = new URL(req.url());
       assert(

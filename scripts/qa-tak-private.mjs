@@ -595,6 +595,7 @@ async function preparePage() {
     });
   }
   const interception = await interceptFixtures(page, {
+    observeXhrAborts: true,
     origin: instance.origin,
     includePaths: ['/login', '/logout'],
     handle: async (req) => {
