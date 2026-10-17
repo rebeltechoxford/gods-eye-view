@@ -1,7 +1,9 @@
 # Retained offline maps and terrain
 
-Source audit: 2026-10-16. The first bounded USGS raster-pack implementation is
-on `feature/tak-offline-iphone`; eight production browser scenarios passed with
+Source audit: 2026-10-16. Bounded USGS raster packs, server/device retention,
+local-only rendering and the explicitly saved offline application shell are
+implemented in `dev/tak-web-foundation`. Their original implementation branch
+was `feature/tak-offline-iphone`; eight production browser scenarios passed with
 synthetic tiles and a real closed-server outage on desktop Chromium at a phone
 viewport. This evidence is separate from focused tests and physical-phone
 acceptance. The broader chart/3D-terrain inputs below remain
@@ -57,27 +59,26 @@ it is not itself a substitute for the source's license. ArcGIS export jobs
 produce TPK/TPKX/cache datasets, which require a supported import/conversion
 path rather than being called MBTiles.
 
-## Focused first slice
+## Implemented first slice and retained requirements
 
-1. Add a Saved Maps workflow to the existing full GEV workspace. Choose an
+1. The Saved Maps workflow is part of the existing full GEV workspace. Choose an
    area and minimum/maximum detail, show tile count and estimated size, and
    select server, this device, or both. Start with USGS Topographic and a
    normalized raster tile pack. Do not change the original map defaults or
    expose arbitrary upstream URL fetching.
-2. Store completed server packs in a private operator-controlled directory
+2. Completed server packs live in a private operator-controlled directory
    outside Git and public assets. Store device packs in IndexedDB or OPFS,
    separately from service-worker application caches. Use a manifest plus
    bounded tile blobs keyed by pack ID and z/x/y. Jobs need progress,
    interruption/resume, cancellation, quota failure handling and atomic
    completion. A partial pack must not be labeled ready.
-3. Render a selected saved pack through a Cesium imagery provider and the
+3. A selected saved pack renders through a Cesium imagery provider and the
    existing map controller. Local reads must not construct an online ArcGIS
    provider or fetch metadata. Missing area/zoom tiles show a clear coverage
    state and neutral globe, without silently fetching a public fallback.
-4. Add an actual offline application shell. `public/gev-sw.js` at the foundation checkpoint
-   deliberately stores nothing and serves a reconnect screen; changing only
-   map storage would still leave a disconnected phone unable to open GEV.
-   Cache versioned static code, styles, required local fonts, Cesium assets and
+4. The explicit Save app action retains the actual offline application shell.
+   `public/gev-sw.js` originally stored nothing at the earlier foundation
+   checkpoint; it now caches versioned static code, styles, required local fonts, Cesium assets and
    geometry workers. Keep API, login, gateway, CoT, AI and credential responses
    out of every cache. An offline map viewer must not pretend its expired
    server login authorizes gateway access. Reconnect uses normal server auth.
@@ -87,11 +88,10 @@ path rather than being called MBTiles.
    logout policy. Mark old editions and unavailable online functions honestly.
    Keep map names/bounds out of AI, analytics and public share URLs.
 
-The source registry is currently composed at controller construction and
-share/voice maps use a fixed portable ID list. The implementation needs an
-explicit local-pack registration/selection seam with owned provider cleanup;
-changing the selected pack must not reuse the previous pack's cached imagery.
-Local pack IDs should not become invented public share links.
+The controller now has explicit branded local-pack registration/selection and
+owned provider cleanup. Changing the selected pack does not reuse the previous
+pack's cached imagery. Share/voice maps retain their portable public ID list;
+local pack IDs do not become invented public share links.
 
 Each manifest should retain source ID, title, coverage, CRS/tiling scheme,
 tile format/size, zoom limits, tile count, bytes, hashes, acquisition time,
@@ -242,8 +242,11 @@ map: it requires a style, glyphs/sprites and a rendering path. Validate format,
 size, coordinates, metadata and image dimensions; reject unsupported content
 with a useful reason.
 
-An initial server-side MBTiles import can normalize raster tiles for transfer
-to the phone, avoiding a new mandatory SQLite/WASM browser runtime. A raster
+The focused server-side raster MBTiles implementation normalizes exact sparse
+tile keys for the existing device transfer/backups, avoiding a new mandatory
+SQLite/WASM browser runtime. Its backend/portable contract and pending frontend
+acceptance are documented in [TAK_MBTILES_IMPORT.md](TAK_MBTILES_IMPORT.md).
+A raster
 PMTiles reader can use a local Blob/OPFS source. GeoTIFF imports need geographic
 metadata, reprojection and overview/tile creation; merely decoding TIFF pixels
 with an image library is insufficient. Narrow supported CRS/format choices or

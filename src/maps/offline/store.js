@@ -283,9 +283,14 @@ export async function createOfflinePackStore({
       let local = await readManifest(source.id);
       if (
         local &&
-        (local.sourceId !== source.sourceId ||
+        (local.schemaVersion !== source.schemaVersion ||
+          local.sourceId !== source.sourceId ||
           local.createdAt !== source.createdAt ||
           JSON.stringify(local.bounds) !== JSON.stringify(source.bounds) ||
+          JSON.stringify(local.plannedKeys) !==
+            JSON.stringify(source.plannedKeys) ||
+          JSON.stringify(local.provenance) !==
+            JSON.stringify(source.provenance) ||
           local.minZoom !== source.minZoom ||
           local.maxZoom !== source.maxZoom)
       )

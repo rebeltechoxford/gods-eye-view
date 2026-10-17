@@ -43,8 +43,10 @@ export function takGatewayProxy({ env, offlineMaps } = {}) {
   let offlineStorePromise;
   let offlineHandler;
   let offlineClose = Promise.resolve();
+  let installationGeneration = 0;
 
   const dispose = () => {
+    installationGeneration++;
     if (installedHttpServer && upgradeListener)
       installedHttpServer.off('upgrade', upgradeListener);
     installedHttpServer = null;
@@ -63,6 +65,7 @@ export function takGatewayProxy({ env, offlineMaps } = {}) {
   const install = (server) => {
     dispose();
     const config = readTakGatewayConfig(env || process.env);
+    const generation = installationGeneration;
     for (const error of config.errors) console.warn(`${LOG_PREFIX} ${error}`);
     const WebSocketServer = config.enabled ? loadWebSocketServer() : null;
     if (config.enabled && WebSocketServer && server.httpServer) {
@@ -134,7 +137,19 @@ export function takGatewayProxy({ env, offlineMaps } = {}) {
         );
         void offlineStorePromise
           .then((store) => {
-            offlineHandler ||= createOfflineMapsHandler({ store, authorize });
+            offlineHandler ||= createOfflineMapsHandler({
+              store,
+              authorize,
+              createContinuationAuthorization: (request) => {
+                const authorization = request.headers.authorization;
+                return () =>
+                  installationGeneration === generation &&
+                  config.enabled &&
+                  typeof authorization === 'string' &&
+                  authorization.startsWith('Bearer ') &&
+                  matchesToken(authorization.slice(7), config.token);
+              },
+            });
             return offlineHandler(req, res);
           })
           .catch(() => {

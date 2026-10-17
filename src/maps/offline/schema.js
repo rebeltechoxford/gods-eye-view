@@ -1,4 +1,4 @@
-/** Portable, deliberately closed contract for retained USGS raster packs. */
+/** Portable, closed contracts for fixed-source downloads and local raster imports. */
 export const OFFLINE_LIMITS = Object.freeze({
   maxTiles: 5000,
   maxPackBytes: 512 * 1024 * 1024,
@@ -20,6 +20,12 @@ export const OFFLINE_SOURCE = Object.freeze({
   tileSize: 256,
 });
 export const MERCATOR_LATITUDE = 85.0511287798066;
+export const OFFLINE_IMPORT_LIMITS = Object.freeze({
+  maxMetadataBytes: 64 * 1024,
+  maxMetadataEntries: 64,
+  maxMetadataValueBytes: 16 * 1024,
+});
+export const OFFLINE_IMPORTED_SOURCE = 'operator-mbtiles';
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATES = new Set([
@@ -50,6 +56,7 @@ const fields = new Set([
   'tiles',
   'error',
 ]);
+const importedFields = new Set([...fields, 'plannedKeys', 'provenance']);
 function fail(message) {
   throw new TypeError(`Offline map: ${message}`);
 }
@@ -115,6 +122,178 @@ function boundsOf(bounds) {
   if (west === east || south >= north) fail('bounds must have positive area');
   return { west, south, east, north };
 }
+function plainText(value, maximum, label, { empty = false } = {}) {
+  if (
+    typeof value !== 'string' ||
+    (!empty && !value.trim()) ||
+    new TextEncoder().encode(value).byteLength > maximum ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
+  )
+    fail(`invalid ${label}`);
+  return value;
+}
+function sourceUrl(value) {
+  plainText(value, 2048, 'source URL', { empty: true });
+  if (/[\u0000-\u0020\u007f]/.test(value)) fail('invalid source URL');
+  if (value) {
+    let url;
+    try {
+      url = new URL(value);
+    } catch {
+      fail('invalid source URL');
+    }
+    if (
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password
+    )
+      fail('invalid source URL');
+  }
+  return value;
+}
+/** An operator assertion of permission is recorded, not treated as a verified license. */
+export function validateMbtilesImportRequest(value) {
+  record(value, 'MBTiles import request');
+  const allowed = new Set([
+    'name',
+    'fileBytes',
+    'sourceTitle',
+    'sourceUrl',
+    'license',
+    'edition',
+    'authorized',
+  ]);
+  if (
+    Object.keys(value).some((key) => !allowed.has(key)) ||
+    value.authorized !== true
+  )
+    fail('an explicit permission-to-copy assertion is required');
+  plainText(value.name, 80, 'pack name');
+  if (
+    value.name !== value.name.trim() ||
+    /[\u0000-\u001f\u007f]/.test(value.name)
+  )
+    fail('invalid pack name');
+  integer(
+    value.fileBytes,
+    100,
+    OFFLINE_LIMITS.maxPackBytes,
+    'original file bytes',
+  );
+  return {
+    name: value.name,
+    fileBytes: value.fileBytes,
+    sourceTitle: plainText(value.sourceTitle, 512, 'source title'),
+    sourceUrl: sourceUrl(value.sourceUrl ?? ''),
+    license: plainText(value.license, 8192, 'license or permission notice'),
+    edition: plainText(value.edition ?? '', 512, 'edition', { empty: true }),
+    authorized: true,
+  };
+}
+export function validateImportProvenance(value) {
+  record(value, 'import provenance');
+  const allowed = new Set([
+    'format',
+    'sha256',
+    'fileBytes',
+    'importedAt',
+    'sourceTitle',
+    'license',
+    'edition',
+    'metadata',
+    'crs',
+    'tileScheme',
+    'tileSize',
+    'permission',
+  ]);
+  if (
+    Object.keys(value).some((key) => !allowed.has(key)) ||
+    value.format !== 'mbtiles'
+  )
+    fail('unsupported import provenance');
+  if (
+    value.crs !== 'EPSG:3857' ||
+    value.tileScheme !== 'tms' ||
+    value.tileSize !== 256 ||
+    value.permission !== 'operator-asserted'
+  )
+    fail('unsupported original raster scheme or permission record');
+  if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256))
+    fail('invalid original file hash');
+  integer(
+    value.fileBytes,
+    100,
+    OFFLINE_LIMITS.maxPackBytes,
+    'original file bytes',
+  );
+  iso(value.importedAt, 'import time');
+  plainText(value.sourceTitle, 512, 'source title');
+  plainText(value.license, 8192, 'license or permission notice');
+  plainText(value.edition, 512, 'edition', { empty: true });
+  if (
+    !Array.isArray(value.metadata) ||
+    value.metadata.length > OFFLINE_IMPORT_LIMITS.maxMetadataEntries
+  )
+    fail('metadata entry limit');
+  const seen = new Set();
+  const metadata = value.metadata.map((entry) => {
+    record(entry, 'original metadata');
+    if (Object.keys(entry).some((key) => !['name', 'value'].includes(key)))
+      fail('unknown original metadata field');
+    plainText(entry.name, 128, 'metadata name');
+    plainText(
+      entry.value,
+      OFFLINE_IMPORT_LIMITS.maxMetadataValueBytes,
+      'metadata value',
+      { empty: true },
+    );
+    if (seen.has(entry.name)) fail('duplicate original metadata name');
+    seen.add(entry.name);
+    return { name: entry.name, value: entry.value };
+  });
+  if (
+    new TextEncoder().encode(JSON.stringify(metadata)).byteLength >
+    OFFLINE_IMPORT_LIMITS.maxMetadataBytes
+  )
+    fail('original metadata byte limit');
+  return {
+    format: 'mbtiles',
+    sha256: value.sha256,
+    fileBytes: value.fileBytes,
+    crs: 'EPSG:3857',
+    tileScheme: 'tms',
+    tileSize: 256,
+    permission: 'operator-asserted',
+    importedAt: value.importedAt,
+    sourceTitle: value.sourceTitle,
+    license: value.license,
+    edition: value.edition,
+    metadata,
+  };
+}
+function importedPlan(value) {
+  if (
+    !Array.isArray(value.plannedKeys) ||
+    !value.plannedKeys.length ||
+    value.plannedKeys.length > OFFLINE_LIMITS.maxTiles
+  )
+    fail('invalid imported tile plan');
+  let previous = null;
+  const plan = value.plannedKeys.map((key) => {
+    const tile = parseTileKey(key);
+    if (previous !== null && key <= previous)
+      fail('imported tile keys must be unique and sorted');
+    previous = key;
+    return tile;
+  });
+  const zooms = plan.map((tile) => tile.z);
+  if (
+    Math.min(...zooms) !== value.minZoom ||
+    Math.max(...zooms) !== value.maxZoom
+  )
+    fail('imported zoom range differs from tile keys');
+  return plan;
+}
 export function tileKey(z, x, y) {
   integer(z, 0, OFFLINE_SOURCE.maxZoom, 'tile zoom');
   integer(x, 0, 2 ** z - 1, 'tile x');
@@ -145,7 +324,9 @@ const latitudeY = (latitude, n) =>
     ),
   );
 /** Counts before enumeration, including antimeridian areas, to prevent huge plans. */
-export function planOfflineTiles({ bounds, minZoom, maxZoom }) {
+export function planOfflineTiles(value) {
+  if (value?.schemaVersion === 2) return importedPlan(value);
+  const { bounds, minZoom, maxZoom } = value;
   const area = boundsOf(bounds);
   integer(
     minZoom,
@@ -198,6 +379,41 @@ export function planOfflineTiles({ bounds, minZoom, maxZoom }) {
   if (!tiles.length) fail('empty tile plan');
   return tiles;
 }
+/** Sparse imports retain their exact keys; missing coverage never means an online fallback. */
+export function createImportedManifest({
+  id,
+  name,
+  bounds,
+  minZoom,
+  maxZoom,
+  plannedKeys,
+  provenance,
+  sourceUrl: url = '',
+  credit,
+  createdAt = new Date().toISOString(),
+}) {
+  return validateOfflineManifest({
+    schemaVersion: 2,
+    id,
+    name,
+    sourceId: OFFLINE_IMPORTED_SOURCE,
+    sourceUrl: url,
+    bounds,
+    minZoom,
+    maxZoom,
+    plannedKeys,
+    provenance,
+    credit,
+    plannedTiles: plannedKeys.length,
+    completedTiles: 0,
+    downloadedBytes: 0,
+    state: 'partial',
+    createdAt,
+    updatedAt: createdAt,
+    acquiredAt: null,
+    tiles: {},
+  });
+}
 export function createOfflineManifest({
   id,
   name,
@@ -229,15 +445,29 @@ export function createOfflineManifest({
 }
 export function validateOfflineManifest(value, { requireReady = false } = {}) {
   record(value, 'manifest');
-  if (Object.keys(value).some((key) => !fields.has(key)))
+  const imported = value.schemaVersion === 2;
+  if (
+    Object.keys(value).some(
+      (key) => !(imported ? importedFields : fields).has(key),
+    )
+  )
     fail('unknown manifest field');
   if (
-    value.schemaVersion !== 1 ||
-    value.sourceId !== OFFLINE_SOURCE.id ||
-    value.sourceUrl !== OFFLINE_SOURCE.url ||
-    value.credit !== OFFLINE_SOURCE.credit
+    imported
+      ? value.sourceId !== OFFLINE_IMPORTED_SOURCE
+      : value.schemaVersion !== 1 ||
+        value.sourceId !== OFFLINE_SOURCE.id ||
+        value.sourceUrl !== OFFLINE_SOURCE.url ||
+        value.credit !== OFFLINE_SOURCE.credit
   )
     fail('unsupported schema or source');
+  const provenance = imported
+    ? validateImportProvenance(value.provenance)
+    : null;
+  if (imported) {
+    sourceUrl(value.sourceUrl);
+    plainText(value.credit, 24 * 1024, 'source credit');
+  }
   const id = validatePackId(value.id);
   if (
     typeof value.name !== 'string' ||
@@ -248,11 +478,15 @@ export function validateOfflineManifest(value, { requireReady = false } = {}) {
   )
     fail('invalid pack name');
   const bounds = boundsOf(value.bounds),
-    plan = planOfflineTiles({
-      bounds,
-      minZoom: value.minZoom,
-      maxZoom: value.maxZoom,
-    });
+    plan = planOfflineTiles(
+      imported
+        ? value
+        : {
+            bounds,
+            minZoom: value.minZoom,
+            maxZoom: value.maxZoom,
+          },
+    );
   if (value.plannedTiles !== plan.length) fail('tile plan count differs');
   if (!STATES.has(value.state) || (requireReady && value.state !== 'ready'))
     fail('pack is not ready or has invalid state');
@@ -306,11 +540,11 @@ export function validateOfflineManifest(value, { requireReady = false } = {}) {
   )
     fail('invalid error text');
   const result = {
-    schemaVersion: 1,
+    schemaVersion: imported ? 2 : 1,
     id,
     name: value.name,
-    sourceId: OFFLINE_SOURCE.id,
-    sourceUrl: OFFLINE_SOURCE.url,
+    sourceId: imported ? OFFLINE_IMPORTED_SOURCE : OFFLINE_SOURCE.id,
+    sourceUrl: imported ? value.sourceUrl : OFFLINE_SOURCE.url,
     bounds,
     minZoom: value.minZoom,
     maxZoom: value.maxZoom,
@@ -321,8 +555,11 @@ export function validateOfflineManifest(value, { requireReady = false } = {}) {
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     acquiredAt: value.acquiredAt,
-    credit: OFFLINE_SOURCE.credit,
+    credit: imported ? value.credit : OFFLINE_SOURCE.credit,
     tiles,
+    ...(imported
+      ? { plannedKeys: plan.map((tile) => tile.key), provenance }
+      : {}),
     ...(value.error === undefined ? {} : { error: value.error }),
   };
   const metadataBytes = new TextEncoder().encode(

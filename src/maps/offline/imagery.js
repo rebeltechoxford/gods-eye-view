@@ -17,6 +17,10 @@ const escape = (value) =>
   );
 const localSources = new WeakSet();
 export const isOfflineSource = (source) => localSources.has(source);
+const acquisitionCredit = (pack) =>
+  pack.schemaVersion === 2
+    ? `Imported ${escape(pack.provenance.importedAt)}${pack.provenance.edition ? ` · Edition ${escape(pack.provenance.edition)}` : ''}`
+    : `Downloaded ${escape(pack.acquiredAt)}`;
 
 /** A local-only imagery source. Coverage misses never become online requests. */
 export function createOfflineImageryProvider(
@@ -47,7 +51,7 @@ export function createOfflineImageryProvider(
     tileDiscardPolicy: undefined,
     errorEvent: new sdk.Event(),
     credit: new sdk.Credit(
-      `${escape(pack.credit)} · Saved map: ${escape(pack.name)} · Downloaded ${escape(pack.acquiredAt)} · Flat ellipsoid terrain`,
+      `${escape(pack.credit)} · Saved map: ${escape(pack.name)} · ${acquisitionCredit(pack)} · Flat ellipsoid terrain`,
       true,
     ),
     getTileCredits() {
@@ -110,7 +114,7 @@ export function offlineSource(manifest, store, sdk = Cesium) {
       requiresIon: false,
     }),
     available: true,
-    credit: `${escape(pack.credit)} · Downloaded ${escape(pack.acquiredAt)} · Flat ellipsoid terrain`,
+    credit: `${escape(pack.credit)} · ${acquisitionCredit(pack)} · Flat ellipsoid terrain`,
     imagery: () => createOfflineImageryProvider({ manifest: pack, store }, sdk),
     terrain: Object.freeze({
       id: 'offline-ellipsoid',

@@ -28,7 +28,10 @@ Public tile/WMS providers observe the requested tile or bounding-box area,
 including when the camera follows a tactical location. No CoT/contact payload,
 gateway credentials or private key is sent to these providers. Strict location
 privacy requires an approved private map source or separately licensed offline
-maps; neither is implemented by this public-source catalog. Existing Google,
+maps. The separate Saved Maps workflow already retains bounded USGS packs on
+server/device and reopens the saved application offline; local raster MBTiles
+import is the next focused extension described in [TAK_MBTILES_IMPORT.md](TAK_MBTILES_IMPORT.md).
+This public-source catalog itself remains online. Existing Google,
 Esri and OSM basemaps have the same network-location property.
 
 ## Curated service inventory
@@ -217,7 +220,8 @@ These checks establish their specific endpoints and rendering paths at the
 recorded time. They do not establish all-region coverage, edition correctness
 for a journey, service uptime, offline rights or certified navigation.
 
-The eight curated sources are implemented. Operator-defined WMS/WMTS/XYZ
-configuration and offline acquisition remain future work. Service metadata
+The eight curated sources and separate bounded USGS offline acquisition are
+implemented. Operator-defined WMS/WMTS/XYZ configuration, other approved-source
+acquisition and offline elevation remain future work. Service metadata
 alone is not an acceptance pass; the bounded live and deterministic browser
 checks above cover their stated scope.
