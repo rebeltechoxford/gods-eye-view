@@ -91,10 +91,13 @@ running.
    explicit app-shell download. Eight synthetic production Chromium scenarios
    now include actual closed-server, fresh-page saved-map launch and pan; see
    [offline evidence](docs/TAK_OFFLINE_MAP_PLAN.md). Complete physical-phone
-   storage/restart/eviction acceptance and richer approved chart
-   imports before broad field claims. Add 3D elevation packs separately from
-   rendered topographic maps; NOAA MBTiles and FAA GeoTIFF conversion/import
-   remain planned. Add unsent tactical queue reconciliation with an explicit
+   storage/restart/eviction acceptance before broad field claims. Local authorized
+   MBTiles import now has a phone file form, source/license notices, bounded raw
+   upload, cancel/reselect, server/device copies and saved-app integration; see
+   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Broader chart
+   acceptance remains: a real NOAA bundle exceeded the unchanged 5,000-tile cap,
+   and FAA GeoTIFF conversion/import is unsupported. Add 3D elevation packs
+   separately from rendered topographic maps. Add unsent tactical queue reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs

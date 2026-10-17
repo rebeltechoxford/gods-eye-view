@@ -295,7 +295,7 @@ On the built private HTTPS app, open **TAK → SAVED MAPS / OFFLINE**. Use the
 minimum/maximum zoom; the panel counts tiles before requesting anything. The
 first supported source is USGS Topographic. This downloads raster map images,
 not 3D elevation meshes. Google 3D remains an online base; other imagery and
-charts have separate download permissions and import work.
+charts have separate download permissions. Authorized local MBTiles raster imports are available below.
 
 Leave **Also retain on this device** checked, then choose **Download area**.
 The server retains verified tiles on disk; the browser copies and verifies a
@@ -303,6 +303,30 @@ separate pack in IndexedDB, selects it on the same GEV globe, and saves the
 built app/Cesium workers for disconnected launch. Watch the separate map/app
 results. A partial copy is not ready. Use Cancel, then Refresh and Resume or
 Save to this device to reuse verified retained tiles after interruption.
+
+For a local raster package, use **IMPORT LOCAL MBTILES** in the same panel.
+Select the original `.mbtiles` file, enter a map name, source/publisher and the
+license or permission notice; supply its edition/effective date when known.
+An optional source URL is retained as text and never fetched. Explicitly check
+permission to copy and retain this particular file, then choose **Import
+MBTiles**. The default creates server and device copies and saves the offline
+app. **Source / license / edition** shows the retained notices and original
+file SHA-256. These notices survive `.gevmap` backups.
+
+Named accounts default to 128 MiB per pack and 256 MiB per account. During
+import the original SQLite file and normalized output both need reserved space.
+
+Only standalone, checkpointed SQLite MBTiles with 256 px PNG/JPEG Web Mercator
+raster tiles are supported. Limits remain 5,000 tiles, plus account/file/space
+budgets; vectors, 512 px tiles, terrain and GeoTIFF are unsupported. The server
+has a 15-second upload deadline and five-second inactivity limit. Cancelled or
+failed uploads require reselecting the original file and permission checkbox;
+there is no byte-upload resume. A completed server copy remains usable if a
+later device copy fails: use **Save to this device** or **Verify / refresh device
+copy**. Incomplete imported packs require the original file again; the USGS
+resume action does not repair them. Whole NOAA chart bundles can exceed the
+5,000-tile limit and are not automatically cropped or accepted. Read the
+[MBTiles format, permissions and limits](docs/TAK_MBTILES_IMPORT.md).
 
 Limits are 5,000 tiles and 512 MiB per pack, 32 packs and 2 GiB per store, with
 four concurrent upstream requests. Download smaller adjacent areas when the
@@ -356,6 +380,7 @@ loopback HTTPS servers and synthetic fixtures; run them sequentially:
 ```sh
 npm run qa:tak:private
 npm run qa:maps:offline
+npm run qa:maps:mbtiles
 ```
 
 Their reports and screenshots are written under `qa-artifacts/`. The latest
