@@ -293,6 +293,20 @@ export function createGatewayTransport({
       if (state !== 'open') return false;
       return write(xml);
     },
+    /** Correlated, bounded submission. Raw XML send remains available to legacy clients. */
+    submit(id, xml) {
+      if (
+        state !== 'open' ||
+        typeof id !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,64}$/.test(id) ||
+        typeof xml !== 'string'
+      )
+        return false;
+      return write(JSON.stringify({ op: 'cot', id, xml }));
+    },
+    cancelSubmissions() {
+      if (state === 'open') write(JSON.stringify({ op: 'cancel-submissions' }));
+    },
     identify(next) {
       if (next?.uid !== identity?.uid) return false;
       identity = next;

@@ -60,11 +60,81 @@ function fakeTransport() {
         t.sent.push(xml);
         return true;
       },
+      submit: (id, xml) => {
+        if (!t.open) return false;
+        t.lastSubmissionId = id;
+        t.sent.push(xml);
+        return true;
+      },
+      cancelSubmissions: () => {
+        t.cancelled = (t.cancelled || 0) + 1;
+      },
       requestStatus: () => {},
     };
   };
   return t;
 }
+
+test('client correlates submission outcomes without republishing imports or local markers across reconnects', () => {
+  const { client, transport, timers: t, now } = setup();
+  client.importXml(ATAK_SA);
+  client.addMarker({ callsign: 'LOCAL', lat: 1, lon: 2, broadcast: false });
+  assert.deepEqual(client.submissions(), []);
+  client.connect();
+  assert.equal(transport.sent.length, 0);
+  const attempt = client.sendChat('private test body');
+  assert.equal(attempt.sent, true);
+  assert.equal(client.submissions().at(-1).state, 'pending');
+  transport.handlers.onControl({
+    op: 'submission',
+    id: attempt.submissionId,
+    state: 'queued',
+    routes: [{ id: 'server', state: 'queued' }],
+  });
+  assert.equal(client.submissions().at(-1).state, 'queued');
+  transport.handlers.onControl({
+    op: 'submission',
+    id: attempt.submissionId,
+    state: 'submitted',
+    routes: [{ id: 'server', state: 'submitted' }],
+  });
+  assert.equal(client.submissions().at(-1).state, 'submitted');
+  assert.equal(
+    JSON.stringify(client.submissions()).includes('private test body'),
+    false,
+  );
+  const rejected = client.addMarker({ callsign: 'TRY', lat: 1, lon: 2 });
+  transport.handlers.onControl({
+    op: 'submission',
+    id: rejected.submissionId,
+    state: 'rejected',
+    reason: 'No authorized TAK uplink configured',
+    routes: [],
+  });
+  assert.equal(client.submissions().at(-1).state, 'rejected');
+  client.disconnect();
+  client.connect();
+  assert.equal(transport.sent.length, 2, 'no replay from contacts/history');
+  client.sendChat('expires');
+  now.advance(30_001);
+  t.fire(5000);
+  assert.equal(client.submissions().at(-1).state, 'expired');
+  client.sendChat('disconnect');
+  client.disconnect();
+  assert.equal(client.submissions().at(-1).state, 'rejected');
+  client.clearPrivateState();
+  assert.equal(transport.cancelled, 1);
+  assert.deepEqual(client.submissions(), []);
+  client.destroy();
+  transport.handlers.onControl({
+    op: 'submission',
+    id: attempt.submissionId,
+    state: 'queued',
+    routes: [],
+  });
+  assert.deepEqual(client.submissions(), []);
+  assert.equal(t.count(), 0);
+});
 
 function memoryStorage(initial = {}) {
   const data = { ...initial };
@@ -269,7 +339,10 @@ test('removing an own shared marker sends a delete; foreign contacts are removed
   const { client, transport } = setup();
   client.connect();
   const { uid } = client.addMarker({ callsign: 'OP', lat: 1, lon: 2 });
-  assert.deepEqual(client.removeContact(uid), { removed: true, sent: true });
+  const removed = client.removeContact(uid);
+  assert.equal(removed.removed, true);
+  assert.equal(removed.sent, true);
+  assert.equal(typeof removed.submissionId, 'string');
   const del = parseCotEvent(transport.sent.at(-1));
   assert.equal(del.type, 't-x-d-d');
   assert.equal(del.detail.links[0].uid, uid);

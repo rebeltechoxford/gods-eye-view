@@ -236,6 +236,20 @@ export function createCotRouter({
     return deliver(event, state);
   }
 
+  /** A parsed/authorized ingress event still consumes the originating link's budget. */
+  function publishValidated(event, fromId) {
+    const state = links.get(fromId);
+    if (!state) return { ok: false, reason: 'unknown-link' };
+    counters.received++;
+    state.rx++;
+    if (!state.limiter.take()) {
+      counters.limited++;
+      state.dropped++;
+      return { ok: false, reason: 'rate-limited' };
+    }
+    return deliver(event, state);
+  }
+
   function deliver(event, state) {
     let xml;
     try {
@@ -268,6 +282,7 @@ export function createCotRouter({
     removeLink,
     receiveXml,
     publish,
+    publishValidated,
     /** Subscribe to every accepted event. Returns an unsubscribe function. */
     subscribe(listener) {
       listeners.add(listener);

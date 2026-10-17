@@ -1,4 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  SUBMISSION_ID,
+  SUBMISSION_WINDOW_MS,
+  summarizeSubmission,
+} from '../../../src/tak/delivery.js';
 import {
   createCotRouter,
   createRateLimiter,
@@ -33,6 +38,7 @@ export const MAX_BROWSERS = 16;
 export const REPLAY_LIMIT = 2000;
 export const REPLAY_BYTES_LIMIT = 8 * 1024 * 1024;
 export const SERVER_PING_INTERVAL_MS = 30_000;
+export const GATEWAY_SUBMISSION_LIMIT = 256;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEVICE_UID =
@@ -127,6 +133,97 @@ export function createTakGateway({
   let closed = false;
   let statusTimer = null;
   const uplinks = [];
+  const routedSubmission = new WeakMap();
+  function submissionState(record) {
+    const routes = Array.from(record.routes.values());
+    const state = summarizeSubmission(routes);
+    record.state = state;
+    if (record.legacy) {
+      if (state !== 'queued') record.browser.legacySubmissions.delete(record);
+      return;
+    }
+    control(record.browser.ws, {
+      op: 'submission',
+      id: record.id,
+      state,
+      routes,
+      ...(record.reason ? { reason: record.reason } : {}),
+    });
+  }
+  function cancelRecord(record) {
+    record.inactive = true;
+    for (const link of uplinks) link.cancel?.(record);
+  }
+  function expireSubmissions(browser) {
+    for (const record of browser.legacySubmissions)
+      if (record.deadline <= now()) {
+        cancelRecord(record);
+        browser.legacySubmissions.delete(record);
+      }
+    for (const [id, record] of browser.submissions) {
+      if (record.state === 'queued' && record.deadline <= now()) {
+        cancelRecord(record);
+        for (const route of record.routes.values())
+          if (route.state === 'queued')
+            Object.assign(route, {
+              state: 'expired',
+              reason: 'Fresh submission window expired',
+            });
+        submissionState(record);
+      }
+      if (record.state !== 'queued' && record.createdAt + 60_000 <= now())
+        browser.submissions.delete(id);
+    }
+  }
+  function addUplink(link) {
+    uplinks.push(link);
+    router.addLink({
+      ...link,
+      send(xml, event) {
+        const record = routedSubmission.get(event);
+        if (!record) return link.send(xml, event);
+        const onState = (outcome) => {
+          if (
+            record.inactive ||
+            (record.legacy
+              ? !record.browser.legacySubmissions.has(record)
+              : record.browser.submissions.get(record.id) !== record)
+          )
+            return;
+          record.routes.set(link.id, {
+            id: link.id,
+            state: outcome.state,
+            ...(outcome.reason ? { reason: outcome.reason } : {}),
+          });
+          submissionState(record);
+        };
+        let accepted = false;
+        try {
+          accepted =
+            link.send(xml, event, {
+              owner: record,
+              onState,
+              canWrite: () =>
+                !record.inactive &&
+                record.browser.ws.readyState === 1 &&
+                (!record.browser.sessionBased ||
+                  hasAuthenticatedSession(
+                    record.browser.request,
+                    authenticateSession,
+                  )),
+            }) !== false;
+        } catch {
+          /* correlated rejection below */
+        }
+        if (!accepted)
+          onState({
+            state: 'rejected',
+            reason: 'Uplink refused this submission',
+          });
+        return accepted;
+      },
+    });
+  }
   const router = createCotRouter({
     policy: gatewayPolicy(config, now),
     now,
@@ -230,8 +327,7 @@ export function createTakGateway({
       onXml: (xml) => router.receiveXml(xml, 'mesh'),
       onStatus: scheduleStatus,
     });
-    router.addLink(mesh);
-    uplinks.push(mesh);
+    addUplink(mesh);
   }
   let pingTimer = null;
   if (config.server) {
@@ -241,8 +337,7 @@ export function createTakGateway({
       onStatus: scheduleStatus,
       now,
     });
-    router.addLink(server);
-    uplinks.push(server);
+    addUplink(server);
     const identity = normalizeIdentity({
       uid: `GEV-GATEWAY-${randomUUID()}`,
       callsign: config.callsign,
@@ -380,6 +475,8 @@ export function createTakGateway({
       identity: null,
       alive: true,
       request,
+      submissions: new Map(),
+      legacySubmissions: new Set(),
       sessionBased:
         config.accessPolicy?.mode === 'private-https' ||
         (!!request &&
@@ -390,6 +487,113 @@ export function createTakGateway({
     };
     browserContexts.set(ws, browser);
     let replayTimer = null;
+    function receiveEvent(text, submissionId) {
+      let record;
+      if (submissionId) {
+        expireSubmissions(browser);
+        const digest = createHash('sha256').update(text).digest('hex');
+        const prior = browser.submissions.get(submissionId);
+        if (prior) {
+          if (prior.digest !== digest) {
+            ws.close(1008, 'submission id reused');
+            return;
+          }
+          submissionState(prior);
+          return;
+        }
+        record = {
+          id: submissionId,
+          digest,
+          browser,
+          state: 'queued',
+          createdAt: now(),
+          deadline: now() + SUBMISSION_WINDOW_MS,
+          routes: new Map(),
+          reason: '',
+        };
+        if (browser.submissions.size >= GATEWAY_SUBMISSION_LIMIT) {
+          control(ws, {
+            op: 'submission',
+            id: submissionId,
+            state: 'rejected',
+            routes: [],
+            reason: 'Submission history capacity reached; wait before sending',
+          });
+          return;
+        }
+        browser.submissions.set(submissionId, record);
+      }
+      const rejectEvent = (reason) => {
+        if (record) {
+          record.reason = String(reason).slice(0, 240);
+          for (const route of record.routes.values())
+            if (route.state === 'queued') route.state = 'rejected';
+          submissionState(record);
+        } else if (reason !== 'duplicate')
+          control(ws, { op: 'reject', reason });
+      };
+      let event;
+      try {
+        event = parseCotEvent(text);
+      } catch {
+        rejectEvent('Invalid CoT event');
+        return;
+      }
+      prune();
+      const denied = authorizeEvent(event, browser);
+      if (denied) {
+        rejectEvent(denied);
+        return;
+      }
+      // Browser sends rebuild only the authorized schema; parsed peer XML retains extensions.
+      let sanitized;
+      try {
+        sanitized = parseCotEvent(
+          serializeCotEvent({
+            ...event,
+            namespaces: undefined,
+            detail: { ...event.detail },
+          }),
+        );
+      } catch {
+        rejectEvent('CoT normalization exceeds protocol bounds');
+        return;
+      }
+      if (!record && uplinks.length) {
+        if (browser.legacySubmissions.size >= GATEWAY_SUBMISSION_LIMIT) {
+          rejectEvent('Unwritten legacy submission capacity reached');
+          return;
+        }
+        record = {
+          legacy: true,
+          browser,
+          state: 'queued',
+          deadline: now() + SUBMISSION_WINDOW_MS,
+          routes: new Map(),
+        };
+        browser.legacySubmissions.add(record);
+      }
+      if (record) {
+        record.deadline = Math.min(record.deadline, event.staleMs);
+        for (const link of uplinks)
+          record.routes.set(link.id, { id: link.id, state: 'queued' });
+        routedSubmission.set(sanitized, record);
+      }
+      const result = router.publishValidated(sanitized, id);
+      routedSubmission.delete(sanitized);
+      if (!result.ok) {
+        if (record?.legacy) {
+          cancelRecord(record);
+          browser.legacySubmissions.delete(record);
+          record = null;
+        }
+        rejectEvent(result.reason);
+      } else if (record) {
+        if (!record.routes.size)
+          record.reason = 'No authorized TAK uplink configured';
+        submissionState(record);
+      }
+    }
     const link = {
       id,
       kind: 'browser',
@@ -486,36 +690,44 @@ export function createTakGateway({
           if (control(ws, { op: 'identity', uid }) && firstIdentity) {
             replayContacts();
           }
+        } else if (
+          message?.op === 'cot' &&
+          typeof message.id === 'string' &&
+          SUBMISSION_ID.test(message.id) &&
+          typeof message.xml === 'string' &&
+          Object.keys(message).length === 3
+        ) {
+          receiveEvent(message.xml, message.id);
+        } else if (
+          message?.op === 'cancel-submissions' &&
+          Object.keys(message).length === 1
+        ) {
+          for (const record of browser.submissions.values())
+            if (record.state === 'queued') {
+              cancelRecord(record);
+              for (const route of record.routes.values())
+                if (route.state === 'queued')
+                  Object.assign(route, {
+                    state: 'rejected',
+                    reason: 'Cancelled by originating browser',
+                  });
+              record.reason = 'Cancelled by originating browser';
+              submissionState(record);
+            }
+          for (const record of browser.legacySubmissions) cancelRecord(record);
+          browser.legacySubmissions.clear();
         } else if (message?.op === 'status')
           control(ws, { op: 'status', status: status() });
         else control(ws, { op: 'reject', reason: 'unknown control message' });
         return;
       }
-      let event;
-      try {
-        event = parseCotEvent(text);
-      } catch {
-        control(ws, { op: 'reject', reason: 'Invalid CoT event' });
-        return;
-      }
-      prune();
-      const denied = authorizeEvent(event, browser);
-      if (denied) {
-        control(ws, { op: 'reject', reason: denied });
-        return;
-      }
-      // Parsed network XML preserves extensions for interoperability. Browser
-      // sends deliberately rebuild only this milestone's authorized schema.
-      const sanitized = {
-        ...event,
-        namespaces: undefined,
-        detail: { ...event.detail },
-      };
-      const result = router.receiveXml(serializeCotEvent(sanitized), id);
-      if (!result.ok && result.reason !== 'duplicate')
-        control(ws, { op: 'reject', reason: result.reason });
+      receiveEvent(text);
     });
     ws.on('close', () => {
+      for (const record of browser.submissions.values()) cancelRecord(record);
+      for (const record of browser.legacySubmissions) cancelRecord(record);
+      browser.submissions.clear();
+      browser.legacySubmissions.clear();
       clearTimeout(identityTimeout);
       if (replayTimer) clearTimeout(replayTimer);
       router.removeLink(id);
@@ -528,6 +740,7 @@ export function createTakGateway({
   const heartbeat = every(() => {
     prune();
     for (const browser of browsers.values()) {
+      expireSubmissions(browser);
       if (
         browser.sessionBased &&
         !hasAuthenticatedSession(browser.request, authenticateSession)

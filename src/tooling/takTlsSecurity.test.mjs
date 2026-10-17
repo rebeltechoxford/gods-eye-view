@@ -7,6 +7,7 @@ import { createTakTlsFixtures } from './takTlsFixtures.mjs';
 import {
   createServerLink,
   encodeTakStreamEvent,
+  SERVER_QUEUE_MAX_AGE_MS,
 } from '../../server/providers/tak/serverLink.js';
 import { buildMarker } from '../tak/protocol/builders.js';
 import { parseCotEvent } from '../tak/protocol/cot.js';
@@ -158,10 +159,18 @@ for (const scenario of [
     assert.equal(peer.incoming.join(''), '');
     if (scenario.name === 'untrusted client certificate')
       assert.equal(peer.accepted.length, 0);
-    assert.equal(client.reconnects.length, 1);
-    assert.equal(client.reconnects[0].ms, 1000);
+    assert.equal(
+      client.reconnects.filter((timer) => timer.ms === 1000).length,
+      1,
+    );
+    assert.equal(
+      client.reconnects.filter((timer) => timer.ms === SERVER_QUEUE_MAX_AGE_MS)
+        .length,
+      1,
+      'unwritten data has its own freshness deadline',
+    );
     client.link.close();
-    client.reconnects[0].fn();
+    for (const timer of client.reconnects) timer.fn();
     assert.equal(client.link.status().state, 'closed');
   });
 }
