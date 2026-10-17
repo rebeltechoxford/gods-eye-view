@@ -257,11 +257,14 @@ to produce those local results.
 
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is
-`output/ios/f3f65373/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`output/ios/3afdc368/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
 `provenance.json` and a simulator screenshot. The same package is in the
-[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38962072944)
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38996827171)
 while GitHub retains it. Its SHA-256 is
-`da65e0a67ad3b2adb8ab88f840bda5ac9007a68620f0504eab1768bba51fd61b`.
+`a2521bd41b339872bfcd4810b60dd9e22e6e17a90ee3f82dc3dcafe9c2733fe0`.
+This development revision passed all six review checks. The archive was built
+with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
+establish a physical-phone or configured-private-endpoint result.
 
 1. Set up [AltStore Classic/AltServer on Windows](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows)
    for your own iPhone. Apple authentication and personal signing stay in that

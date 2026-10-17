@@ -432,6 +432,12 @@ expanded privacy reset check for real draft geometry and pending inputs.
 Native-peer geometry acceptance, turn guidance and broader native shape types
 remain open; see [drawing evidence](TAK_DRAWINGS_ROUTES.md).
 
+The drawings milestone merged through PR #9 as development `3afdc368` after all
+five repository jobs passed. All six checks on the development-to-main review
+PR #6 subsequently passed, including the macOS iPhone archive/simulator job.
+The review test-merge `cb65b392` has the same file tree as development; main
+remains unchanged. The run guide links the independently hash-verified IPA.
+
 ## Named operator isolation
 
 The private HTTPS host adds an optional closed-schema account file with up to
@@ -455,10 +461,24 @@ Focused verification covers 59 server HTTPS/gateway/TLS cases and 116 browser
 context/client/transport/session/PWA/offline/font cases using synthetic
 identities. The dedicated production browser gate exercises actual loopback
 HTTPS/WSS, separate mTLS connections, saved maps, account switching, receive-only
-rights, real server outage and rejected access; its run evidence is recorded
-separately once complete. Actual TAK Server IN/OUT membership and revocation,
+rights, real server outage and rejected access; its final run evidence and CI
+results are tracked in [PR #10](https://github.com/rebeltechoxford/gods-eye-view/pull/10).
+Actual TAK Server IN/OUT membership and revocation,
 native directed-reply routing and physical EUD acceptance remain open. See
 [account setup and security contract](TAK_MULTIOPERATOR.md).
+
+The integrated application at `f3e7e773` passed the full local Node 24.19 Windows
+runner: **6,721 ordinary passes**, ten existing skips, zero failures, then all
+**14 allocation checks** (`.gev-cache/operators-unit-full.log`). Review also
+fixed queued historical storage events retiring a newly authenticated matching
+account, an expected expired-session redirect reported as a startup crash, and
+undersized native login controls. The account-context regression file now has
+35 passing tests, including genuine account changes and delayed old responses.
+Production and panel builds, formatting, import/package boundaries and published
+layer tokens passed. The production browser gate remains a separate acceptance
+requirement. Its fixture handling requires exact Chrome request/document or
+renderer-abort evidence before classifying a canceled request; unmatched IDs,
+other frames and unrelated protocol failures still fail the gate.
 
 ## Current external prerequisites
 

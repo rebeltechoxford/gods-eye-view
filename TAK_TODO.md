@@ -9,7 +9,7 @@ are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 ## First: real peer acceptance
 
 - **iPhone/AltStore acceptance.** A real unsigned arm64 IPA and simulator
-  startup are verified at native revision `f3f65373`; the run guide links the
+  startup are verified for development revision `3afdc368`; the run guide links the
   package and hash. Personal signing/install and actual device TLS/login/WSS,
   touch, GPS/media, Files export and offline WebKit behavior still need testing.
   Native exports cap at 256 MiB and `data:` downloads are unsupported. The
