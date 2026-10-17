@@ -1039,5 +1039,17 @@
   "src/tak/fixtures/README.md",
   "scripts/qa-tak-packages.mjs",
   "docs/TAK_MISSION_PACKAGES.md",
-  "scripts/qa-tak-navigation.mjs"
+  "scripts/qa-tak-navigation.mjs",
+  "src/tak/geometry.js",
+  "src/tak/geometryCot.js",
+  "src/tak/geometryGraphics.js",
+  "src/tak/geometry.test.mjs",
+  "src/tak/drawingsWorkflow.js",
+  "src/tak/drawingsUi.js",
+  "src/tak/drawings.css",
+  "src/tak/drawings.test.mjs",
+  "server/providers/tak/browserGeometry.js",
+  "src/tooling/takBrowserGeometry.test.mjs",
+  "scripts/qa-tak-drawings.mjs",
+  "docs/TAK_DRAWINGS_ROUTES.md"
 ]

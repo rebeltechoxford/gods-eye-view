@@ -56,18 +56,23 @@ running.
 3. **Chat.** Current scope is broadcast GeoChat. Add directed/group recipients,
    authorization, receipts and explicit durable-history policy. Validate with
    each supported peer. Unsupported directed/group chat must remain refused.
-4. **Shared drawings and routes.** Implement supported TAK object types,
-   editing/ownership/conflict/delete behavior and roundtrips. Existing GEV
+4. **Shared drawings and routes.** Lines, simple regional polygons and ordered
+   routes now have real globe geometry, phone editing, stable waypoint IDs,
+   ownership/conflict/delete handling and explicit gateway sharing. Complete
+   actual native-peer roundtrips, circles/rectangles/holes, route cues and richer
+   object types. Existing GEV
    annotations and public directions remain independent capabilities to preserve.
 5. **Mission/data packages and attachments.** Bounded local ZIP/manifest import,
    contact application, selected export and attachment downloads are implemented,
    with path/type/CRC/hash checks and explicit per-export consent. Add authorized
    server file transfer, scoped durable storage, mission sync/conflicts and
    real-client acceptance. Unsupported archive/attachment forms remain refused;
-   geometry-bearing contacts currently render their position only.
+   supported `u-d-f` / `b-m-r` geometry renders its actual vertices; unsupported
+   geometry is labeled instead of substituted with a marker.
 6. **Coordinate/navigation tools.** DD/DMS/MGRS/UTM entry, validation, shared
    camera focus, local markers and WGS84 horizontal range/true bearing are
-   implemented. Add waypoint/route workflows, UPS polar grids, altitude datum
+   implemented, alongside entered-route editing and leg measurements. Add turn
+   guidance, UPS polar grids, altitude datum
    conversion, magnetic bearings and appropriate uncertainty/sensor support.
    Preserve the distinction between operator position, fresh GPS and map center.
 7. **GPS/offline field behavior.** The first retained-map slice adds bounded

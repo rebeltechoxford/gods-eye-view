@@ -389,7 +389,21 @@ async function pageForRun() {
             ...document.querySelectorAll(
               '.tak-web-root input:not([type="checkbox"]),.tak-web-root textarea',
             ),
-          ].some((el) => el.value !== ''),
+          ].some((el) =>
+            el.matches('[data-drawing-color],[data-drawing-fill]')
+              ? el.value !== '#ffffff'
+              : el.value !== '',
+          ),
+          drawing: {
+            share: document.querySelector('[data-drawing-broadcast]').checked,
+            editorDisabled: document.querySelector('[data-drawing-editor]')
+              .disabled,
+            vertexRows: document.querySelector('[data-drawing-vertices]')
+              .children.length,
+            preview: !!window.__godsEyeView.viewer.dataSources
+              .getByName('TAK contacts')[0]
+              ?.entities.getById('tak-draft:editor'),
+          },
           disclosure: [
             ...document.querySelectorAll('[data-tak-disclosure]'),
           ].some((input) => input.checked),
@@ -1268,6 +1282,24 @@ try {
         }
         document.querySelector('[data-tak-xml]').value = sentinel;
         document.querySelector('[data-tak-marker-broadcast]').checked = true;
+        const $ = (selector) => document.querySelector(selector);
+        $('[data-drawing-kind]').value = 'route';
+        $('[data-drawing-new]').click();
+        $('[data-drawing-name]').value = sentinel;
+        $('[data-drawing-notes]').value = sentinel;
+        $('[data-drawing-color]').value = '#123456';
+        $('[data-drawing-fill]').value = '#654321';
+        $('[data-drawing-width]').value = '17';
+        for (const coordinate of ['0, 0', '0.01, 0.01']) {
+          $('[data-drawing-coordinate]').value = coordinate;
+          $('[data-drawing-hae]').value = '25';
+          $('[data-drawing-waypoint-name]').value = sentinel.slice(0, 64);
+          $('[data-drawing-vertex-form]').requestSubmit();
+        }
+        $('[data-drawing-coordinate]').value = '0.02, 0.02';
+        $('[data-drawing-hae]').value = '31';
+        $('[data-drawing-waypoint-name]').value = 'SYNTHETIC UNSAVED WAYPOINT';
+        $('[data-drawing-broadcast]').checked = true;
       }, secretSentinel);
       const loaded = await page.evaluate(() => {
         const tak = window.__godsEyeView.takClient;
@@ -1276,6 +1308,11 @@ try {
           chats: tak.client.store.chats().length,
           fix: !!tak.client.fix(),
           authorized: tak.privacy().authorized,
+          draftVertices: document.querySelector('[data-drawing-vertices]')
+            .children.length,
+          draftPreview: !!window.__godsEyeView.viewer.dataSources
+            .getByName('TAK contacts')[0]
+            ?.entities.getById('tak-draft:editor'),
         };
       });
       assert(
@@ -1284,6 +1321,8 @@ try {
           loaded.fix &&
           loaded.authorized,
       );
+      assert.equal(loaded.draftVertices, 2);
+      assert.equal(loaded.draftPreview, true);
       const baseline = unloadSnapshots.length;
       const responseBaseline = expiredShellResponses.length;
       nowMs += SESSION_TTL_MS + 1;
@@ -1313,6 +1352,12 @@ try {
       assert.equal(snapshot.sa, false);
       assert.equal(snapshot.authorized, false);
       assert.equal(snapshot.privateInputs, false);
+      assert.deepEqual(snapshot.drawing, {
+        share: false,
+        editorDisabled: true,
+        vertexRows: 0,
+        preview: false,
+      });
       assert.equal(snapshot.disclosure, false);
       assert.deepEqual(snapshot.disclosureScopes, {
         ai: false,

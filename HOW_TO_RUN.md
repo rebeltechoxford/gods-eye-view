@@ -52,8 +52,19 @@ and unshared markers are never automatically resent. See
 **NAVIGATION** accepts DD, DMS, MGRS and UTM coordinates. Validate a coordinate,
 focus the globe or create a local marker, and measure horizontal WGS84 range and
 true bearing from the map center or a fresh position. The origin is labeled;
-map center is not GPS. Routes, magnetic bearings and terrain clearance are not
+map center is not GPS. Turn guidance, magnetic bearings and terrain clearance are not
 part of this workflow. See [formats and limits](docs/TAK_FIELD_NAVIGATION.md).
+
+**DRAWINGS / ROUTES** creates lines, filled areas and ordered routes on the
+same globe. Choose a kind, name it, then add coordinates or map-center vertices.
+You can edit, reorder, reverse or remove vertices and inspect leg distances and
+true bearings. Blank altitudes follow the ground; supplied altitudes must cover
+every vertex and are ellipsoidal HAE metres. Save locally, or explicitly check
+the sharing box for that save. Existing drawings made in this session can be
+edited; received drawings can be copied. A newer update blocks a stale edit
+until you reload or make a copy. Use the roster to remove an object, and mission
+packages for explicit file retention. These are entered paths, with no road
+routing or turn guidance. See [formats and limits](docs/TAK_DRAWINGS_ROUTES.md).
 
 **MISSION PACKAGES** inspects a local TAK manifest ZIP before you apply contacts
 or save attachments. Importing does not transmit anything. Export only the

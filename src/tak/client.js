@@ -22,6 +22,7 @@ import {
 import { createTakStore } from './store.js';
 import { isGpsFixFresh } from './position.js';
 import { createSubmissionStore } from './delivery.js';
+import { buildGeometry, GEOMETRY_STALE_MS } from './geometryCot.js';
 
 export const IDENTITY_STORAGE_KEY = 'gev.tak.identity.v1';
 export const SA_INTERVAL_MS = 10_000;
@@ -50,6 +51,7 @@ export function createTakClient({
   const counters = { rx: 0, rxRejected: 0, tx: 0, txLocalOnly: 0 };
   const ownMarkers = new Set();
   const sharedMarkers = new Set();
+  const ownGeometries = new Set();
   let linkState = 'idle';
   let linkDetail = '';
   let gateway = null; // last status from the gateway
@@ -225,6 +227,7 @@ export function createTakClient({
     gateway = null;
     ownMarkers.clear();
     sharedMarkers.clear();
+    ownGeometries.clear();
     store.clear();
     notify();
   }
@@ -317,6 +320,7 @@ export function createTakClient({
       for (const uid of ownMarkers) {
         if (!store.get(uid)) {
           ownMarkers.delete(uid);
+          ownGeometries.delete(uid);
           sharedMarkers.delete(uid);
         }
       }
@@ -327,18 +331,79 @@ export function createTakClient({
       const contact = store.get(uid);
       if (!contact || contact.origin === 'self')
         return { removed: false, sent: false };
+      let deletion = null;
+      if (broadcast && sharedMarkers.has(uid)) {
+        const currentTime = now();
+        const revision = Math.max(currentTime, contact.event.timeMs + 1);
+        if (revision > currentTime + 60_000)
+          throw new CotValidationError(
+            'Object has a future timestamp. Remove locally without broadcasting, or wait for its revision.',
+          );
+        deletion = buildDelete(identity, uid, contact.type, {
+          nowMs: revision,
+        });
+      }
       store.remove(uid);
       const wasShared = sharedMarkers.delete(uid);
       ownMarkers.delete(uid);
+      ownGeometries.delete(uid);
       if (broadcast && wasShared) {
         return {
           removed: true,
-          ...submit(buildDelete(identity, uid, contact.type, { nowMs: now() })),
+          ...submit(deletion),
         };
       }
       return { removed: true, sent: false };
     },
     isOwnMarker: (uid) => ownMarkers.has(uid),
+    isOwnGeometry: (uid) =>
+      ownGeometries.has(uid) && store.get(uid)?.geometryResult?.status === 'ok',
+    /** Save a complete drawing; updates require the exact snapshot being edited. */
+    saveGeometry(input, { broadcast = false, expectedEvent = null } = {}) {
+      if (destroyed) throw new CotValidationError('TAK client is closed');
+      const prior = input.uid ? store.get(input.uid) : null;
+      if (
+        input.uid &&
+        (!ownGeometries.has(input.uid) ||
+          !prior ||
+          prior.event !== expectedEvent)
+      )
+        throw new CotValidationError(
+          'Drawing changed, was removed, or belongs to another session. Reload or copy it.',
+        );
+      const currentTime = now();
+      const revision = Math.max(
+        currentTime,
+        (prior?.event.timeMs ?? -Infinity) + 1,
+      );
+      if (revision > currentTime + 60_000)
+        throw new CotValidationError(
+          'Drawing has a future timestamp. Copy it into a new drawing instead.',
+        );
+      const event = buildGeometry(identity, input, {
+        nowMs: revision,
+        staleMs: GEOMETRY_STALE_MS - (revision - currentTime),
+        ...(prior ? { expectedRevision: prior.event.timeMs } : {}),
+      });
+      if (store.apply(event, 'local') !== 'contact')
+        throw new CotValidationError(
+          'Drawing exceeds the session resource budget or is older than its stored version.',
+        );
+      ownMarkers.add(event.uid);
+      ownGeometries.add(event.uid);
+      const result = broadcast ? submit(event) : { sent: false };
+      if (!broadcast) counters.txLocalOnly++;
+      if (result.sent) sharedMarkers.add(event.uid);
+      for (const uid of ownMarkers) {
+        if (!store.get(uid)) {
+          ownMarkers.delete(uid);
+          ownGeometries.delete(uid);
+          sharedMarkers.delete(uid);
+        }
+      }
+      notify();
+      return { uid: event.uid, ...result };
+    },
 
     sendChat(message, chatroom = ALL_CHAT_ROOMS) {
       const event = buildChat(
@@ -405,6 +470,7 @@ export function createTakClient({
       delivery.clear();
       ownMarkers.clear();
       sharedMarkers.clear();
+      ownGeometries.clear();
       fix = null;
       saEnabled = false;
       emergencyActive = false;
