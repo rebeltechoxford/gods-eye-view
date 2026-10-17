@@ -42,7 +42,14 @@ function timers() {
 }
 
 function fakeTransport() {
-  const t = { sent: [], handlers: null, open: false, connects: [] };
+  const t = {
+    sent: [],
+    handlers: null,
+    open: false,
+    connects: [],
+    presenceStops: [],
+    lifecycle: [],
+  };
   t.factory = (handlers) => {
     t.handlers = handlers;
     return {
@@ -52,6 +59,7 @@ function fakeTransport() {
         handlers.onState('open');
       },
       disconnect: () => {
+        t.lifecycle.push('disconnect');
         t.open = false;
         handlers.onState('closed');
       },
@@ -66,7 +74,15 @@ function fakeTransport() {
         t.sent.push(xml);
         return true;
       },
+      stopPresence: () => {
+        t.lifecycle.push('presence-stop');
+        if (t.stopFails) return null;
+        const id = `stop-${t.presenceStops.length + 1}`;
+        t.presenceStops.push(id);
+        return id;
+      },
       cancelSubmissions: () => {
+        t.lifecycle.push('cancel-submissions');
         t.cancelled = (t.cancelled || 0) + 1;
       },
       requestStatus: () => {},
@@ -644,4 +660,135 @@ test('retirement forgets in-memory identity without overwriting its account reco
   assert.notEqual(client.identity().callsign, 'PRIVATE OLD ACCOUNT');
   assert.equal(values.get(key), saved);
   assert.equal(client.canShare(), false);
+});
+
+function publishingDevice(options = {}) {
+  const s = setup(options);
+  s.client.connect();
+  s.transport.handlers.onControl({
+    op: 'status',
+    status: { enabled: true, server: { deviceStreams: true } },
+  });
+  s.client.setFix({ lat: 1, lon: 2, source: 'USER' });
+  s.client.setSaEnabled(true);
+  return s;
+}
+test('SA off, clear fix, private clear, disconnect and destroy stop only an opted-in publishing route first', () => {
+  for (const action of [
+    (c) => c.setSaEnabled(false),
+    (c) => c.setFix(null),
+    (c) => c.clearPrivateState(),
+    (c) => c.disconnect(),
+    (c) => c.destroy(),
+  ]) {
+    const s = publishingDevice();
+    s.transport.lifecycle.length = 0;
+    action(s.client);
+    assert.equal(s.transport.presenceStops.length, 1);
+    assert.equal(s.transport.lifecycle[0], 'presence-stop');
+    s.client.destroy();
+  }
+  const legacy = setup();
+  legacy.client.connect();
+  legacy.client.setFix({ lat: 1, lon: 2 });
+  legacy.client.setSaEnabled(true);
+  legacy.client.setSaEnabled(false);
+  legacy.client.clearPrivateState();
+  legacy.client.destroy();
+  assert.equal(legacy.transport.presenceStops.length, 0);
+  const mirror = setup();
+  mirror.client.connect();
+  mirror.transport.handlers.onControl({
+    op: 'status',
+    status: {
+      server: {
+        deviceStreams: true,
+        presence: { active: true, uid: mirror.client.identity().uid },
+      },
+    },
+  });
+  mirror.client.setSaEnabled(false);
+  mirror.client.setFix(null);
+  mirror.client.destroy();
+  assert.equal(
+    mirror.transport.presenceStops.length,
+    0,
+    'A receive-only mirror must not claim another tab ownership',
+  );
+});
+
+test('new self position waits behind correlated STOP while explicit alerts do not claim a new endpoint', () => {
+  const s = publishingDevice();
+  s.client.setSaEnabled(false);
+  const id = s.transport.presenceStops[0],
+    sent = s.transport.sent.length;
+  s.client.setSaEnabled(true);
+  s.client.setFix({ lat: 3, lon: 4, source: 'USER' });
+  assert.equal(s.client.setEmergency(true).sent, true);
+  assert.equal(s.transport.sent.length, sent + 1);
+  assert.equal(s.client.link().presenceStop.state, 'requested');
+  for (const ack of [
+    { uid: 'other', id },
+    { uid: s.client.identity().uid, id: 'wrong' },
+  ])
+    s.transport.handlers.onControl({ op: 'presence', enabled: false, ...ack });
+  assert.equal(s.transport.sent.length, sent + 1);
+  s.transport.handlers.onControl({
+    op: 'presence',
+    enabled: false,
+    uid: s.client.identity().uid,
+    id,
+  });
+  assert.equal(s.transport.sent.length, sent + 2);
+  assert.equal(s.client.link().presenceStop, null);
+  s.client.setSaEnabled(false);
+  const second = s.transport.presenceStops[1];
+  s.transport.handlers.onControl({
+    op: 'presence',
+    enabled: false,
+    uid: s.client.identity().uid,
+    id,
+  });
+  assert.equal(s.client.link().presenceStop.id, second);
+  assert.equal(s.client.link().presenceStop.state, 'requested');
+  s.client.destroy();
+});
+
+test('unavailable, stale and hidden GPS stop owned routing without minting fresh location reports', () => {
+  for (const reason of ['stale', 'unavailable']) {
+    let allowed = true;
+    const s = publishingDevice({ canReportPosition: () => allowed });
+    s.client.setFix({ lat: 1, lon: 2, source: 'GPS', observedAtMs: s.now() });
+    const reports = s.transport.sent.length;
+    if (reason === 'stale') s.now.advance(GPS_FIX_MAX_AGE_MS + 1);
+    else allowed = false;
+    s.client.refreshPositionAvailability();
+    assert.equal(s.transport.presenceStops.length, 1);
+    assert.equal(s.transport.sent.length, reports);
+    s.client.refreshPositionAvailability();
+    assert.equal(s.transport.presenceStops.length, 1);
+    s.client.destroy();
+  }
+});
+
+test('presence refusal and unavailable STOP transport remain explicitly unconfirmed and close the link', () => {
+  const s = publishingDevice();
+  s.client.setSaEnabled(false);
+  const id = s.transport.presenceStops[0];
+  s.transport.handlers.onState('closed', 'Stop refused; connection closed');
+  s.transport.handlers.onControl({
+    op: 'reject',
+    command: 'presence',
+    id,
+    reason: 'Only active publisher may stop',
+  });
+  assert.equal(s.client.link().presenceStop.state, 'refused');
+  assert.match(s.client.link().lastReject.reason, /active publisher/);
+  s.client.destroy();
+  const failed = publishingDevice();
+  failed.transport.stopFails = true;
+  failed.client.setSaEnabled(false);
+  assert.equal(failed.client.link().state, 'closed');
+  assert.equal(failed.client.link().presenceStop.state, 'unconfirmed');
+  failed.client.destroy();
 });
