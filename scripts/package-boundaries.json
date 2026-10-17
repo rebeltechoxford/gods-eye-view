@@ -2248,7 +2248,12 @@
       "src/maps/offline/file.js",
       "src/maps/offline/imagery.js",
       "src/maps/offline/boot.js",
-      "src/maps/offline/ui.js"
+      "src/maps/offline/ui.js",
+      "src/tak/navigation.js",
+      "src/tak/navigationWorkflow.js",
+      "src/tak/navigationUi.js",
+      "src/tak/navigationCamera.js",
+      "src/tak/navigation.css"
     ],
     "external": [
       "hls.js",
