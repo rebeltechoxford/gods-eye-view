@@ -170,6 +170,9 @@ jobs:
       - name: Phone mission package file and download gate
         run: node scripts/qa-tak-packages.mjs --url http://127.0.0.1:4174
 
+      - name: Phone drawing and route geometry gate
+        run: node scripts/qa-tak-drawings.mjs --url http://127.0.0.1:4174
+
       - name: Curated maps and chart switching gate
         run: node scripts/qa-reference-maps.mjs --url http://127.0.0.1:4174
 

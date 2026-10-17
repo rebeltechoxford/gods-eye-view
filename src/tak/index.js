@@ -14,6 +14,7 @@ import { createMobileSession } from './mobile.js';
 import { logoutOperatorSession } from './session.js';
 import { createSavedMaps } from '../maps/offline/ui.js';
 import { createNavigationPanel } from './navigationUi.js';
+import { createDrawingsPanel } from './drawingsUi.js';
 import { createNavigationFocus } from './navigationCamera.js';
 import {
   authorizeTakDisclosure,
@@ -79,6 +80,7 @@ export function initTakWebClient({
   let expiredRedirected = false;
   let navigation = null;
   let packages = null;
+  let drawings = null;
   const mobile = createMobileSession();
   const geolocation = createGeolocation();
 
@@ -100,6 +102,7 @@ export function initTakWebClient({
     async logout() {
       navigation?.clearPrivateInputs();
       packages?.clearPrivateInputs();
+      drawings?.clearPrivateInputs();
       await logoutOperatorSession(globalThis.fetch, controller.signal);
       window.location.replace('/login');
     },
@@ -139,6 +142,14 @@ export function initTakWebClient({
   packages = createMissionPackagePanel({
     container: document.getElementById('tak-web-panel'),
     client,
+    markPrivate: () => markTakDataPrivate(viewer),
+  });
+  drawings = createDrawingsPanel({
+    container: document.getElementById('tak-web-panel'),
+    client,
+    overlay,
+    getMapCenter: () => mapCenter(viewer),
+    focusTarget: createNavigationFocus(viewer, navigate),
     markPrivate: () => markTakDataPrivate(viewer),
   });
   let mapBootstrap = null;
@@ -199,6 +210,7 @@ export function initTakWebClient({
       panel.clearPrivateInputs();
       navigation.clearPrivateInputs();
       packages.clearPrivateInputs();
+      drawings.clearPrivateInputs();
       window.location.replace('/login');
     }
     if (client.store.count() || client.store.chats().length || client.fix())
@@ -236,6 +248,7 @@ export function initTakWebClient({
     savedMaps,
     navigation,
     packages,
+    drawings,
     privacy: () => takPrivacyState(viewer),
     destroy() {
       controller.abort();
@@ -249,6 +262,7 @@ export function initTakWebClient({
       savedMaps?.destroy();
       navigation.destroy();
       packages.destroy();
+      drawings.destroy();
       mapBootstrap = null;
       panel.destroy();
       overlay.destroy();

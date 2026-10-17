@@ -26,6 +26,7 @@ import {
 } from './access.js';
 import { createMeshLink } from './meshLink.js';
 import { createServerLink } from './serverLink.js';
+import { canonicalBrowserGeometry } from './browserGeometry.js';
 
 export const TAK_WS_ROUTE = '/api/tak/ws';
 export const TAK_STATUS_ROUTE = '/api/tak/status';
@@ -126,6 +127,7 @@ export function createTakGateway({
   const browsers = new Map();
   const browserContexts = new WeakMap();
   const ownedMarkers = new Map(); // uid -> { owner: device uid, staleMs }
+  const browserGeometryEvents = new WeakMap();
   const registeredIdentities = new Set();
   const networkUids = new Set();
   let replayBytes = 0;
@@ -370,6 +372,31 @@ export function createTakGateway({
       return 'Unsupported access/routing metadata';
     const kind = cotKind(event.type);
     const parent = event.detail.links.find((link) => link.relation === 'p-p');
+    if (kind === 'drawing') {
+      let canonical;
+      try {
+        canonical = canonicalBrowserGeometry(event, identity);
+      } catch (error) {
+        return error.message || 'Invalid browser drawing';
+      }
+      if (
+        networkUids.has(event.uid) ||
+        (ownedMarkers.has(event.uid) &&
+          ownedMarkers.get(event.uid).owner !== identity.uid)
+      )
+        return 'Drawing uid belongs to another source';
+      if (event.timeMs < (ownedMarkers.get(event.uid)?.timeMs ?? -Infinity))
+        return 'Drawing update is older than its accepted revision';
+      if (!ownedMarkers.has(event.uid) && ownedMarkers.size >= REPLAY_LIMIT)
+        return 'Owned drawing/marker limit reached';
+      ownedMarkers.set(event.uid, {
+        owner: identity.uid,
+        staleMs: event.staleMs,
+        timeMs: event.timeMs,
+      });
+      browserGeometryEvents.set(event, canonical);
+      return null;
+    }
     if (
       (event.detail.extras || []).some(
         (extra) =>
@@ -394,6 +421,8 @@ export function createTakGateway({
         ownedMarkers.get(target)?.owner !== identity.uid
       )
         return 'Only markers created by this identity may be deleted';
+      if (event.timeMs < (ownedMarkers.get(target)?.timeMs ?? -Infinity))
+        return 'Delete is older than the accepted object revision';
       ownedMarkers.delete(target);
       return null;
     }
@@ -443,6 +472,7 @@ export function createTakGateway({
       ownedMarkers.set(event.uid, {
         owner: identity.uid,
         staleMs: event.staleMs,
+        timeMs: event.timeMs,
       });
       return null;
     }
@@ -548,13 +578,15 @@ export function createTakGateway({
       // Browser sends rebuild only the authorized schema; parsed peer XML retains extensions.
       let sanitized;
       try {
-        sanitized = parseCotEvent(
-          serializeCotEvent({
-            ...event,
-            namespaces: undefined,
-            detail: { ...event.detail },
-          }),
-        );
+        sanitized =
+          browserGeometryEvents.get(event) ||
+          parseCotEvent(
+            serializeCotEvent({
+              ...event,
+              namespaces: undefined,
+              detail: { ...event.detail },
+            }),
+          );
       } catch {
         rejectEvent('CoT normalization exceeds protocol bounds');
         return;

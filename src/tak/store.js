@@ -11,12 +11,14 @@ import {
   serializeCotEvent,
   byteLength,
 } from './protocol/cot.js';
+import { parseTakGeometry } from './geometry.js';
 
 export const DEFAULT_CONTACT_LIMIT = 2000;
 export const DEFAULT_CHAT_LIMIT = 500;
 export const DEFAULT_TRAIL_POINTS = 32;
 export const DEFAULT_CONTACT_BYTES_LIMIT = 8 * 1024 * 1024;
 export const DEFAULT_XML_NODE_LIMIT = 100_000;
+export const DEFAULT_GEOMETRY_VERTEX_LIMIT = 16_384;
 /** How long a stale contact stays (greyed) before the sweep removes it. */
 export const DEFAULT_STALE_RETAIN_MS = 10 * 60 * 1000;
 
@@ -78,6 +80,7 @@ export function createTakStore({
   trailPoints = DEFAULT_TRAIL_POINTS,
   byteLimit = DEFAULT_CONTACT_BYTES_LIMIT,
   xmlNodeLimit = DEFAULT_XML_NODE_LIMIT,
+  geometryVertexLimit = DEFAULT_GEOMETRY_VERTEX_LIMIT,
   staleRetainMs = DEFAULT_STALE_RETAIN_MS,
   now = Date.now,
 } = {}) {
@@ -86,6 +89,7 @@ export function createTakStore({
   const contactResources = new Map();
   let serializedBytes = 0;
   let xmlNodes = 0;
+  let geometryVertices = 0;
   let evictedContacts = 0;
   let rejectedContacts = 0;
   /** @type {TakChatMessage[]} */
@@ -117,6 +121,7 @@ export function createTakStore({
     const cost = contactResources.get(uid);
     serializedBytes -= cost.bytes;
     xmlNodes -= cost.nodes;
+    geometryVertices -= cost.vertices;
     contactResources.delete(uid);
     return true;
   }
@@ -142,20 +147,33 @@ export function createTakStore({
       xml === serializeCotEvent(prior.event)
     )
       return false;
+    const geometryResult = parseTakGeometry(event);
     const cost = {
       bytes: byteLength(xml),
       nodes: retainedXmlNodes(event, xmlNodeLimit),
+      vertices:
+        geometryResult.status === 'ok'
+          ? geometryResult.geometry.vertices.length
+          : 0,
     };
-    if (cost.bytes > byteLimit || cost.nodes > xmlNodeLimit || limit < 1)
+    if (
+      cost.bytes > byteLimit ||
+      cost.nodes > xmlNodeLimit ||
+      cost.vertices > geometryVertexLimit ||
+      limit < 1
+    )
       return rejectHeavyContact();
     const priorCost = contactResources.get(event.uid);
     let proposedBytes = serializedBytes - (priorCost?.bytes || 0) + cost.bytes;
     let proposedNodes = xmlNodes - (priorCost?.nodes || 0) + cost.nodes;
+    let proposedVertices =
+      geometryVertices - (priorCost?.vertices || 0) + cost.vertices;
     let proposedCount = contacts.size + (prior ? 0 : 1);
     const exceeds = () =>
       proposedCount > limit ||
       proposedBytes > byteLimit ||
-      proposedNodes > xmlNodeLimit;
+      proposedNodes > xmlNodeLimit ||
+      proposedVertices > geometryVertexLimit;
     const victims = [];
     for (const uid of contacts.keys()) {
       if (!exceeds()) break;
@@ -163,6 +181,7 @@ export function createTakStore({
       const removed = contactResources.get(uid);
       proposedBytes -= removed.bytes;
       proposedNodes -= removed.nodes;
+      proposedVertices -= removed.vertices;
       proposedCount--;
       victims.push(uid);
     }
@@ -197,6 +216,7 @@ export function createTakStore({
       affiliation: cotAffiliation(event.type),
       point,
       event,
+      geometryResult,
       origin: event.uid === selfUid ? 'self' : origin,
       receivedAtMs: now(),
       trail,
@@ -211,6 +231,7 @@ export function createTakStore({
     contactResources.set(event.uid, cost);
     serializedBytes += cost.bytes;
     xmlNodes += cost.nodes;
+    geometryVertices += cost.vertices;
     return true;
   }
 
@@ -312,9 +333,11 @@ export function createTakStore({
       contacts: contacts.size,
       serializedBytes,
       xmlNodes,
+      geometryVertices,
       contactLimit: limit,
       byteLimit,
       xmlNodeLimit,
+      geometryVertexLimit,
       evictedContacts,
       rejectedContacts,
     }),
@@ -358,6 +381,7 @@ export function createTakStore({
       contactResources.clear();
       serializedBytes = 0;
       xmlNodes = 0;
+      geometryVertices = 0;
       chats.length = 0;
       chatIds.clear();
       publish();
@@ -374,6 +398,7 @@ export function createTakStore({
       contactResources.clear();
       serializedBytes = 0;
       xmlNodes = 0;
+      geometryVertices = 0;
       chats.length = 0;
       chatIds.clear();
       selfUid = null;

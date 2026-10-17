@@ -1,4 +1,5 @@
 import * as Cesium from 'cesium';
+import { geometryGraphics } from './geometryGraphics.js';
 import {
   registerPickOwner,
   unregisterPickOwner,
@@ -120,6 +121,14 @@ export function isAirborne(contact) {
   );
 }
 
+function absoluteHeight(contact) {
+  return (
+    isAirborne(contact) ||
+    (contact.geometryResult?.status === 'ok' &&
+      contact.geometryResult.geometry.altitudeMode === 'absolute')
+  );
+}
+
 /** CoT HAE is already ellipsoidal; never apply the MSL geoid correction. */
 export function cotTrailPositions(contact) {
   const airborne = isAirborne(contact);
@@ -136,6 +145,17 @@ export function cotTrailPositions(contact) {
 
 function detailLines(contact, stale) {
   const lines = [];
+  const geometry = contact.geometryResult;
+  if (geometry?.status === 'ok') {
+    lines.push(
+      `${geometry.geometry.kind.toUpperCase()} · ${geometry.geometry.vertices.length} vertices`,
+    );
+    if (geometry.geometry.kind === 'route')
+      lines.push(
+        `${geometry.geometry.route.method} · ${geometry.geometry.route.direction}`,
+      );
+  } else if (geometry && geometry.status !== 'not-geometry')
+    lines.push(`Geometry ${geometry.status}: ${geometry.reason}`);
   if (Number.isFinite(contact.point.hae))
     lines.push(`HAE ${Math.round(contact.point.hae)} m`);
   const group = contact.event.detail.group;
@@ -172,9 +192,13 @@ export function createCotOverlay(
   const entities = new Map(); // uid -> {entity, trail, key}
   let disposed = false;
   let visible = true;
+  let draftEntity = null;
   registerPickOwner(
     'tak',
-    (id) => id.startsWith('tak:') || id.startsWith('tak-trail:'),
+    (id) =>
+      id.startsWith('tak:') ||
+      id.startsWith('tak-trail:') ||
+      id.startsWith('tak-draft:'),
   );
   const clicks = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
   bindTrackingClickGesture(clicks, (click, gesture) => {
@@ -209,7 +233,7 @@ export function createCotOverlay(
     return Cesium.Cartesian3.fromDegrees(
       lon,
       lat,
-      isAirborne(contact) ? hae : 0,
+      absoluteHeight(contact) ? hae : 0,
     );
   }
 
@@ -248,6 +272,18 @@ export function createCotOverlay(
           : Cesium.HeightReference.CLAMP_TO_GROUND;
         record.airborne = airborne;
       }
+    }
+    const geometry = contact.geometryResult;
+    if (geometry?.status === 'ok') {
+      const graphics = geometryGraphics(geometry.geometry, { stale });
+      record.entity.polyline = graphics.polyline;
+      record.entity.polygon = graphics.polygon;
+      record.entity.billboard.show = false;
+    } else {
+      record.entity.polyline = undefined;
+      record.entity.polygon = undefined;
+      record.entity.billboard.show =
+        !geometry || geometry.status === 'not-geometry';
     }
     // Trail: recent positions of moving SA contacts.
     if (contact.trail.length >= 2) {
@@ -309,7 +345,7 @@ export function createCotOverlay(
           }
           upsert(contact, stale);
           const { lat, lon, hae } = contact.point;
-          const height = isAirborne(contact) ? hae : 0;
+          const height = absoluteHeight(contact) ? hae : 0;
           const card = {
             id: contact.uid,
             position: Cesium.Cartesian3.fromDegrees(lon, lat, height),
@@ -359,10 +395,35 @@ export function createCotOverlay(
       viewer.scene.requestRender();
     },
     isVisible: () => visible,
+    /** Draft remains private and is removed on clear, expiry, logout and teardown. */
+    setDraftGeometry(geometry) {
+      if (disposed) return;
+      if (draftEntity) dataSource.entities.remove(draftEntity);
+      draftEntity = geometry
+        ? dataSource.entities.add({
+            id: 'tak-draft:editor',
+            ...geometryGraphics(geometry, { draft: true }),
+          })
+        : null;
+      viewer.scene.requestRender();
+    },
+    focusDraft() {
+      if (disposed || !draftEntity) return false;
+      return navigate(() => {
+        viewer.selectedEntity = undefined;
+        void viewer
+          .flyTo(draftEntity, { duration: 1.2 })
+          .catch((error) => console.warn('[TAK] Cannot focus drawing', error));
+        return true;
+      });
+    },
     focus(uid) {
       if (disposed) return;
       const record = entities.get(uid);
       if (!record) return;
+      const geometry = record.contact.geometryResult;
+      if (geometry && !['ok', 'not-geometry'].includes(geometry.status))
+        return false;
       return navigate(() => {
         viewer.selectedEntity = record.entity;
         void viewer
@@ -371,7 +432,7 @@ export function createCotOverlay(
             offset: new Cesium.HeadingPitchRange(
               viewer.camera.heading || 0,
               Cesium.Math.toRadians(-40),
-              TAK_FOCUS_RANGE_M,
+              geometry?.status === 'ok' ? 0 : TAK_FOCUS_RANGE_M,
             ),
           })
           .catch((error) => console.warn('[TAK] Cannot focus contact', error));

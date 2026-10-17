@@ -411,6 +411,22 @@ runs remain in `.gev-cache/field-unit-final.log`,
 `qa-artifacts/field-packages/` and the earlier privacy CI records; their causes
 and corrections are described above rather than being counted as passes.
 
+## Drawings and routes integration
+
+The next additive slice implements actual `u-d-f` line/polygon and `b-m-r`
+route geometry, a phone editor, ordered waypoint identities, local drafts,
+explicit per-save sharing, immutable-source conflict checks and gateway-owned
+updates/deletes. GEV whiteboard, public directions, camera gesture ownership and
+all existing layers remain separate. Geometry is limited to 256 vertices per
+object and 16,384 retained vertices across the contact store.
+
+Focused local evidence: 64 geometry/client/store/renderer tests, 40 drawing/
+gateway tests and six real Chromium phone touch scenarios passed. The latter
+cover dateline routes, stable edit/reorder, invalid mixed heights, polygon
+rendering, safe labels, update conflicts and teardown. CI now includes the
+phone drawing gate. Native-peer geometry acceptance, turn guidance and broader
+native shape types remain open; see [drawing evidence](TAK_DRAWINGS_ROUTES.md).
+
 ## Current external prerequisites
 
 No authorized live TAK Server credentials, certificate material or real-client

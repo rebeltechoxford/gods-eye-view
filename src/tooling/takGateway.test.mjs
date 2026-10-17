@@ -23,6 +23,9 @@ import {
   SERVER_QUEUE_MAX_AGE_MS,
 } from '../../server/providers/tak/serverLink.js';
 import { parseCotEvent, serializeCotEvent } from '../tak/protocol/cot.js';
+import { buildGeometry } from '../tak/geometryCot.js';
+import { parseTakGeometry } from '../tak/geometry.js';
+import { createTakClient } from '../tak/client.js';
 import {
   buildChat,
   buildMarker,
@@ -38,6 +41,129 @@ import {
 } from '../tak/protocol/fixtures.mjs';
 
 const TOKEN = 'synthetic-local-operator-token-0123456789';
+
+test('same-clock client drawing edit and delete pass actual gateway revision authorization', async (t) => {
+  const now = Date.now();
+  const g = await startGateway({}, { now: () => now });
+  t.after(g.close);
+  const ws = connect(g.port);
+  t.after(() => ws.terminate());
+  await ws.next(isOp('identity'));
+  const client = createTakClient({
+    now: () => now,
+    storage: { get: () => JSON.stringify(IDENTITY), set() {} },
+    setInterval: () => 1,
+    clearInterval() {},
+    createTransport: () => ({
+      submit(id, xml) {
+        ws.send(JSON.stringify({ op: 'cot', id, xml }));
+        return true;
+      },
+      disconnect() {},
+    }),
+  });
+  t.after(() => client.destroy());
+  const shape = {
+    kind: 'polyline',
+    callsign: 'SAME CLOCK',
+    vertices: [
+      { lat: 34, lon: -89 },
+      { lat: 35, lon: -89 },
+    ],
+  };
+  const made = client.saveGeometry(shape, { broadcast: true });
+  await ws.next(submission(made.submissionId, 'queued'));
+  const updated = client.saveGeometry(
+    { ...shape, uid: made.uid },
+    { broadcast: true, expectedEvent: client.store.get(made.uid).event },
+  );
+  await ws.next(submission(updated.submissionId, 'queued'));
+  ws.send(
+    serializeCotEvent(buildDelete(IDENTITY, made.uid, 'u-d-f', { nowMs: now })),
+  );
+  assert.match(JSON.parse(await ws.next(isOp('reject'))).reason, /older/);
+  const deleted = client.removeContact(made.uid);
+  await ws.next(submission(deleted.submissionId, 'queued'));
+  assert.equal(parseCotEvent(g.server.sent.at(-1)).type, 't-x-d-d');
+  assert.ok(parseCotEvent(g.server.sent.at(-1)).timeMs > now + 1);
+  assert.equal(g.server.sent.length, 3);
+});
+
+test('real WebSocket drawing create/update/delete carries all vertices and rejects another browser writer', async (t) => {
+  const g = await startGateway();
+  t.after(g.close);
+  const a = connect(g.port),
+    other = createIdentity(),
+    b = connect(g.port, { identity: other });
+  t.after(() => {
+    a.terminate();
+    b.terminate();
+  });
+  await Promise.all([a.next(isOp('identity')), b.next(isOp('identity'))]);
+  const input = {
+    kind: 'route',
+    callsign: 'SYNTHETIC ROUTE',
+    vertices: Array.from({ length: 40 }, (_, i) => ({
+      lat: 34 + i * 0.001,
+      lon: -89,
+    })),
+  };
+  const event = buildGeometry(IDENTITY, input, { staleMs: 60000 });
+  a.send(
+    JSON.stringify({
+      op: 'cot',
+      id: 'drawing-create',
+      xml: serializeCotEvent(event),
+    }),
+  );
+  // The deliberately fake uplinks do not acknowledge a transport write.
+  await a.next(submission('drawing-create', 'queued'));
+  const received = parseCotEvent(await b.next(isXml));
+  assert.equal(received.uid, event.uid);
+  assert.equal(parseTakGeometry(received).geometry.vertices.length, 40);
+  assert.deepEqual(
+    parseTakGeometry(received).geometry,
+    parseTakGeometry(parseCotEvent(g.server.sent[0])).geometry,
+  );
+  b.send(serializeCotEvent(event));
+  assert.match(JSON.parse(await b.next(isOp('reject'))).reason, /owned/);
+  assert.equal(g.server.sent.length, 1);
+  const updated = buildGeometry(
+    IDENTITY,
+    {
+      ...parseTakGeometry(event).geometry,
+      uid: event.uid,
+      callsign: 'UPDATED ROUTE',
+      vertices: parseTakGeometry(event).geometry.vertices.slice(0, 35),
+    },
+    { nowMs: event.timeMs + 1, staleMs: 60000 },
+  );
+  a.send(
+    JSON.stringify({
+      op: 'cot',
+      id: 'drawing-update',
+      xml: serializeCotEvent(updated),
+    }),
+  );
+  await a.next(submission('drawing-update', 'queued'));
+  assert.equal(
+    parseTakGeometry(parseCotEvent(await b.next(isXml))).geometry.vertices
+      .length,
+    35,
+  );
+  b.send(serializeCotEvent(buildDelete(other, event.uid, event.type)));
+  assert.match(JSON.parse(await b.next(isOp('reject'))).reason, /Only markers/);
+  a.send(
+    JSON.stringify({
+      op: 'cot',
+      id: 'drawing-delete',
+      xml: serializeCotEvent(buildDelete(IDENTITY, event.uid, event.type)),
+    }),
+  );
+  await a.next(submission('drawing-delete', 'queued'));
+  assert.equal(parseCotEvent(await b.next(isXml)).type, 't-x-d-d');
+  assert.equal(g.server.sent.length, 3);
+});
 function fresh(xml, staleMs = 60_000) {
   const event = parseCotEvent(xml);
   const now = Date.now();
