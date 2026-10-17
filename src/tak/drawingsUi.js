@@ -132,7 +132,9 @@ export function createDrawingsPanel({
     $('[data-drawing-notes]').value = draft?.remarks || '';
     $('[data-drawing-color]').value = rgb(draft?.style?.strokeColor);
     $('[data-drawing-fill]').value = rgb(draft?.style?.fillColor);
-    $('[data-drawing-width]').value = draft?.style?.strokeWidth ?? 3;
+    $('[data-drawing-width]').value = draft
+      ? (draft.style?.strokeWidth ?? 3)
+      : '';
     $('[data-drawing-method]').value = draft?.route?.method || ROUTE_METHODS[0];
     $('[data-drawing-direction]').value =
       draft?.route?.direction || ROUTE_DIRECTIONS[0];

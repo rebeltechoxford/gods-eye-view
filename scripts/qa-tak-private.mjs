@@ -322,7 +322,12 @@ async function stateSnapshot(page) {
         ...document.querySelectorAll(
           '.tak-web-root input:not([type="checkbox"]),.tak-web-root textarea',
         ),
-      ].some((el) => el.value !== ''),
+      ].some((el) =>
+        el.matches('[data-drawing-color],[data-drawing-fill]')
+          ? el.value !== '#ffffff'
+          : el.value !== '',
+      ),
+      drawing: drawingResetSnapshot(),
       markerShare: document.querySelector('[data-tak-marker-broadcast]')
         .checked,
       emergency: document
@@ -330,6 +335,55 @@ async function stateSnapshot(page) {
         .getAttribute('aria-pressed'),
     };
   });
+}
+function drawingResetSnapshot() {
+  const $ = (selector) => document.querySelector(selector);
+  return {
+    stroke: $('[data-drawing-color]').value,
+    fill: $('[data-drawing-fill]').value,
+    width: $('[data-drawing-width]').value,
+    share: $('[data-drawing-broadcast]').checked,
+    editorDisabled: $('[data-drawing-editor]').disabled,
+    vertexRows: $('[data-drawing-vertices]').children.length,
+    draftEntity: !!window.__godsEyeView.viewer.dataSources
+      .getByName('TAK contacts')[0]
+      ?.entities.getById('tak-draft:editor'),
+  };
+}
+const clearedDrawing = {
+  stroke: '#ffffff',
+  fill: '#ffffff',
+  width: '',
+  share: false,
+  editorDisabled: true,
+  vertexRows: 0,
+  draftEntity: false,
+};
+async function seedPrivateDrawing(page) {
+  await page.evaluate(() => {
+    const $ = (selector) => document.querySelector(selector);
+    $('[data-drawing-kind]').value = 'route';
+    $('[data-drawing-new]').click();
+    $('[data-drawing-name]').value = 'SYNTHETIC PRIVATE ROUTE';
+    $('[data-drawing-notes]').value = 'SYNTHETIC PRIVATE NOTES';
+    $('[data-drawing-color]').value = '#123456';
+    $('[data-drawing-fill]').value = '#654321';
+    $('[data-drawing-width]').value = '17';
+    for (const coordinate of ['34.37, -89.52', '34.38, -89.51']) {
+      $('[data-drawing-coordinate]').value = coordinate;
+      $('[data-drawing-hae]').value = '25';
+      $('[data-drawing-waypoint-name]').value = 'SYNTHETIC PRIVATE WAYPOINT';
+      $('[data-drawing-vertex-form]').requestSubmit();
+    }
+    $('[data-drawing-coordinate]').value = '34.39, -89.50';
+    $('[data-drawing-hae]').value = '31';
+    $('[data-drawing-waypoint-name]').value = 'SYNTHETIC UNSAVED WAYPOINT';
+    $('[data-drawing-broadcast]').checked = true;
+  });
+  const drawing = await page.evaluate(drawingResetSnapshot);
+  assert.equal(drawing.vertexRows, 2);
+  assert.equal(drawing.draftEntity, true);
+  assert.equal(drawing.share, true);
 }
 async function storageSnapshot(page) {
   return page.evaluate(async () => ({
@@ -356,6 +410,7 @@ async function finishExpiredNavigation(page, baseline, expectExpired = true) {
   assert.equal(snapshot.sa, false);
   assert.equal(snapshot.activeGps, false);
   assert.equal(snapshot.privateInputs, false);
+  assert.deepEqual(snapshot.drawing, clearedDrawing);
   assert.equal(snapshot.privacy.authorized, false);
   assert.equal(snapshot.disclosure, false);
   assert.equal(snapshot.packageConsent, false);
@@ -401,6 +456,9 @@ async function preparePage() {
     hasTouch: true,
   });
   await hookRenderErrors(page);
+  await page.evaluateOnNewDocument(
+    `window.drawingResetSnapshot = ${drawingResetSnapshot.toString()}`,
+  );
   page.on('pageerror', (error) => errors.push(scrub(error?.message || error)));
   page.on('console', (message) => {
     const text = message.text();
@@ -433,7 +491,12 @@ async function preparePage() {
             ...document.querySelectorAll(
               '.tak-web-root input:not([type="checkbox"]),.tak-web-root textarea',
             ),
-          ].some((el) => el.value !== ''),
+          ].some((el) =>
+            el.matches('[data-drawing-color],[data-drawing-fill]')
+              ? el.value !== '#ffffff'
+              : el.value !== '',
+          ),
+          drawing: drawingResetSnapshot(),
           markerShare: document.querySelector('[data-tak-marker-broadcast]')
             .checked,
           emergency: document
@@ -1077,6 +1140,7 @@ try {
           'SYNTHETIC PACKAGE';
         document.querySelector('[data-tak-package-authorize]').checked = true;
       });
+      await seedPrivateDrawing(page);
       await openSection(page, 'network');
       await touch(page, '[data-tak-logout]');
       await page.waitForFunction(() => location.pathname === '/login');
@@ -1087,6 +1151,7 @@ try {
       assert.equal(logoutSnapshot.sa, false);
       assert.equal(logoutSnapshot.activeGps, false);
       assert.equal(logoutSnapshot.privateInputs, false);
+      assert.deepEqual(logoutSnapshot.drawing, clearedDrawing);
       assert.equal(logoutSnapshot.privacy.authorized, false);
       assert.equal(logoutSnapshot.disclosure, false);
       assert.equal(logoutSnapshot.packageConsent, false);
@@ -1129,6 +1194,7 @@ try {
           'SYNTHETIC PACKAGE';
         document.querySelector('[data-tak-package-authorize]').checked = true;
       });
+      await seedPrivateDrawing(page);
       const baseline = unloadSnapshots.length;
       nowMs += SESSION_TTL_MS + 1;
       instance.gateway.recheckSessions();
