@@ -1022,5 +1022,12 @@
   "src/tooling/takOfflineMaps.test.mjs",
   "src/tooling/takOfflineMapsHttp.test.mjs",
   "src/tooling/takOfflineShell.test.mjs",
-  "scripts/qa-offline-maps.mjs"
+  "scripts/qa-offline-maps.mjs",
+  "src/tak/navigation.js",
+  "src/tak/navigationWorkflow.js",
+  "src/tak/navigationUi.js",
+  "src/tak/navigationCamera.js",
+  "src/tak/navigation.css",
+  "src/tak/navigation.test.mjs",
+  "docs/TAK_FIELD_NAVIGATION.md"
 ]
