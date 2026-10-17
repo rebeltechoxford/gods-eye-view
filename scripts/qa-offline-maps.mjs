@@ -390,7 +390,14 @@ async function pageForRun() {
               '.tak-web-root input:not([type="checkbox"]),.tak-web-root textarea',
             ),
           ].some((el) => el.value !== ''),
-          disclosure: document.querySelector('[data-tak-disclosure]')?.checked,
+          disclosure: [
+            ...document.querySelectorAll('[data-tak-disclosure]'),
+          ].some((input) => input.checked),
+          disclosureScopes: Object.fromEntries(
+            [...document.querySelectorAll('[data-tak-disclosure]')].map(
+              (input) => [input.dataset.takDisclosure, input.checked],
+            ),
+          ),
           markerShare: document.querySelector('[data-tak-marker-broadcast]')
             ?.checked,
         })
@@ -1253,9 +1260,12 @@ try {
         tak.client.importXml(
           `<event version="2.0" uid="GeoChat.synthetic.All.expiring" type="b-t-f" how="h-e" time="${time}" start="${time}" stale="${stale}"><point lat="0" lon="0"/><detail><__chat messageId="expiring" chatroom="All Chat Rooms" id="All Chat Rooms" senderCallsign="Synthetic"/><remarks>${sentinel}</remarks></detail></event>`,
         );
-        const disclosure = document.querySelector('[data-tak-disclosure]');
-        disclosure.checked = true;
-        disclosure.dispatchEvent(new Event('change', { bubbles: true }));
+        for (const disclosure of document.querySelectorAll(
+          '[data-tak-disclosure]',
+        )) {
+          disclosure.checked = true;
+          disclosure.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         document.querySelector('[data-tak-xml]').value = sentinel;
         document.querySelector('[data-tak-marker-broadcast]').checked = true;
       }, secretSentinel);
@@ -1294,6 +1304,11 @@ try {
       assert.equal(snapshot.authorized, false);
       assert.equal(snapshot.privateInputs, false);
       assert.equal(snapshot.disclosure, false);
+      assert.deepEqual(snapshot.disclosureScopes, {
+        ai: false,
+        sharing: false,
+        recording: false,
+      });
       assert.equal(snapshot.markerShare, false);
       assert.equal(expiredShellResponses.length - responseBaseline, 1);
       return { actualShellHttpStatus: 401, clearedBeforeUnload: snapshot };
