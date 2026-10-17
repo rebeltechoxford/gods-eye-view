@@ -29,7 +29,8 @@ export class RecordingControls {
 
   setRecordingMode(enabled, options = {}) {
     if (this.destroyed) return;
-    if (enabled && isTakPrivacyBlocked(this.hud?.viewer)) return false;
+    if (enabled && isTakPrivacyBlocked(this.hud?.viewer, 'recording'))
+      return false;
     const {
       hidePanels = true,
       hudMode = 'minimal',

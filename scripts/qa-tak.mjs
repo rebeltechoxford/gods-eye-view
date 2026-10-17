@@ -782,14 +782,46 @@ try {
         captured: false,
         exported: false,
       });
-      await press(page, '[data-tak-disclosure]');
+      await press(page, '[data-tak-disclosure="ai"]');
+      assert.equal(
+        await page.evaluate(() =>
+          window.__godsEyeView.styleManager.shareLinkManager._buildHashParams(),
+        ),
+        null,
+        'AI authorization does not authorize public sharing',
+      );
+      assert.equal(
+        await page.evaluate(
+          () => window.__godsEyeView.takClient.privacy().authorized,
+        ),
+        false,
+        'one use does not authorize the other uses',
+      );
+      await press(page, '[data-tak-disclosure="sharing"]');
+      assert.notEqual(
+        await page.evaluate(() =>
+          window.__godsEyeView.styleManager.shareLinkManager._buildHashParams(),
+        ),
+        null,
+        'explicit sharing permission enables link composition',
+      );
+      await press(page, '[data-tak-disclosure="recording"]');
       assert.equal(
         await page.evaluate(
           () => window.__godsEyeView.takClient.privacy().authorized,
         ),
         true,
       );
-      await press(page, '[data-tak-disclosure]');
+      await press(page, '[data-tak-revoke]');
+      assert.equal(
+        await page.evaluate(() =>
+          [...document.querySelectorAll('[data-tak-disclosure]')].some(
+            (input) => input.checked,
+          ),
+        ),
+        false,
+        'revoke clears every permission',
+      );
       assert.equal(
         await page.evaluate(
           () => window.__godsEyeView.takClient.privacy().authorized,
@@ -936,7 +968,7 @@ try {
       );
       assert(box.overflow, 'long content remains internally scrollable');
       const phoneControls = await page.$$eval(
-        '#tak-web-panel button, #tak-web-panel input:not([type="checkbox"]):not([type="file"]), #tak-web-panel select, #tak-web-panel textarea, #tak-web-panel summary',
+        '#tak-web-panel button, #tak-web-panel input:not([type="checkbox"]):not([type="file"]), #tak-web-panel select, #tak-web-panel textarea, #tak-web-panel summary, #tak-web-panel .tak-web-check',
         (els) =>
           els
             .filter((el) => el.getBoundingClientRect().height > 0)

@@ -24,8 +24,8 @@ export const VIEWPORT_MAX_ENCODED_BYTES = 200 * 1024;
 
 export async function captureViewportImage() {
   const viewer = window.__godsEyeView?.viewer;
-  if (isTakPrivacyBlocked(viewer)) return null;
-  const privacy = takDisclosureTicket(viewer);
+  if (isTakPrivacyBlocked(viewer, 'ai')) return null;
+  const privacy = takDisclosureTicket(viewer, 'ai');
   const source =
     viewer?.scene?.canvas ||
     document.querySelector('#cesiumContainer .cesium-widget canvas');
@@ -137,8 +137,8 @@ export function pointerCropRect({
  */
 export async function capturePointerCrop(screenPx) {
   const viewer = window.__godsEyeView?.viewer;
-  if (isTakPrivacyBlocked(viewer)) return null;
-  const privacy = takDisclosureTicket(viewer);
+  if (isTakPrivacyBlocked(viewer, 'ai')) return null;
+  const privacy = takDisclosureTicket(viewer, 'ai');
   const source = viewer?.scene?.canvas;
   if (!source?.width || !source?.height || !screenPx) return null;
   const fresh = await renderFreshPointerFrame(viewer);
@@ -403,8 +403,8 @@ export class RealtimeViewport {
 
   /** Capture one image and make it the single retained image in context. */
   async sendRetainedImage(captureImage, text, label, frame = {}) {
-    if (isTakPrivacyBlocked()) return false;
-    const privacy = takDisclosureTicket();
+    if (isTakPrivacyBlocked(undefined, 'ai')) return false;
+    const privacy = takDisclosureTicket(undefined, 'ai');
     if (!this.dc || this.dc.readyState !== 'open') return false;
     const generation = this.generation;
     const request = ++this.captureSeq;

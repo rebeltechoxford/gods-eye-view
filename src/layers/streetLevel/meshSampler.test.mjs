@@ -69,18 +69,22 @@ test('cells are probed once, nearest first, with overlays excluded', async () =>
   sampler.destroy();
 });
 
-test('far cells are skipped, misses are not latched, and nothing runs while disabled', async () => {
+test('far cells are skipped, misses are not latched, and nothing runs while disabled', (t) => {
+  // This checks selection/enablement, not elapsed CPU time. A delayed worker
+  // can exhaust the real 6 ms slice before its first probe under full-suite load.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const { viewer, probes } = fakeViewer({ holes: (lon) => lon > 10.0049 });
-  const sampler = createMeshSampler({ getViewer: () => viewer });
+  const sampler = createMeshSampler({ getViewer: () => viewer, now: () => 0 });
+  t.after(() => sampler.destroy());
   sampler.request([[10.001, 50]]);
-  await settle();
+  probeNow(t);
   assert.equal(probes.length, 0, 'disabled: nothing queued');
   sampler.setEnabled(true);
   sampler.request([
     [10.05, 50], // ~3.6 km away
     [10.005, 50], // a hole: tiles not streamed
   ]);
-  await settle();
+  probeNow(t);
   assert.equal(probes.length, 1);
   assert.equal(sampler.meshAt(10.05, 50), undefined);
   assert.equal(sampler.meshAt(10.005, 50), undefined);

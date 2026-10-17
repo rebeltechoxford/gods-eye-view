@@ -66,7 +66,7 @@ const mimeFor = (file) =>
 /** Own staged imports, author drafts and share bytes separately from playback and project state. */
 export function createSceneSharing(director) {
   const disclosureAllowed = () => {
-    if (!isTakPrivacyBlocked(director.viewer)) return true;
+    if (!isTakPrivacyBlocked(director.viewer, 'sharing')) return true;
     director._updateStatus(TAK_PRIVACY_MESSAGE);
     return false;
   };
@@ -350,7 +350,7 @@ export function createSceneSharing(director) {
     dialog.button('Download asset bundle', () =>
       run(owner, async () => {
         if (!disclosureAllowed()) return;
-        const privacy = takDisclosureTicket(director.viewer);
+        const privacy = takDisclosureTicket(director.viewer, 'sharing');
         const selected = [...files.files, ...folder.files];
         const packs = project.scenes.flatMap((s) => s.dataPacks || []);
         const text = await createSceneBundle(

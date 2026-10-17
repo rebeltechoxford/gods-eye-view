@@ -17,6 +17,7 @@ import {
   markTakDataPrivate,
   subscribeTakPrivacy,
   takPrivacyState,
+  takDisclosurePermissions,
 } from './privacy.js';
 
 const browserStorage = Object.freeze({
@@ -110,8 +111,12 @@ export function initTakWebClient({
       return true;
     },
     privacy: {
-      state: () => takPrivacyState(viewer),
-      authorize: (enabled) => authorizeTakDisclosure(viewer, enabled),
+      state: () => ({
+        ...takPrivacyState(viewer),
+        permissions: takDisclosurePermissions(viewer),
+      }),
+      authorize: (enabled, scope) =>
+        authorizeTakDisclosure(viewer, enabled, scope),
     },
   });
   let mapBootstrap = null;

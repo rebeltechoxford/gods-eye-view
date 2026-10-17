@@ -28,6 +28,22 @@ export async function interceptFixtures(
   const client = await page.createCDPSession();
   const errors = [];
   const cancellations = [];
+  const diagnostics = [];
+  const requests = new Map(),
+    failures = new Map(),
+    frames = new Map();
+  function boundedSet(map, key, value) {
+    map.set(key, value);
+    if (map.size > 512) map.delete(map.keys().next().value);
+  }
+  const onRequest = (event) =>
+    boundedSet(requests, event.requestId, {
+      loaderId: event.loaderId,
+      frameId: event.frameId,
+      at: Date.now(),
+    });
+  const onFrame = ({ frame }) =>
+    boundedSet(frames, frame.id, { loaderId: frame.loaderId, at: Date.now() });
   const cancelled = new Map(),
     waiting = new Map(),
     recorded = new WeakSet();
@@ -40,6 +56,11 @@ export async function interceptFixtures(
     errors.push(String(error?.stack || error));
   };
   const onLoadingFailed = (event) => {
+    boundedSet(failures, event.requestId, {
+      error: event.errorText,
+      canceled: event.canceled,
+      at: Date.now(),
+    });
     if (
       !event.canceled &&
       !/^net::ERR_(?:ABORTED|INTERNET_DISCONNECTED)$/.test(
@@ -72,10 +93,14 @@ export async function interceptFixtures(
     });
   };
   client.on('Network.loadingFailed', onLoadingFailed);
+  client.on('Network.requestWillBeSent', onRequest);
+  client.on('Page.frameNavigated', onFrame);
+  await client.send('Page.enable');
   await client.send('Network.enable');
   const onPaused = async (event) => {
     if (disposed) return;
-    const { requestId, networkId, request, resourceType } = event;
+    const { requestId, networkId, request, resourceType, frameId } = event;
+    const pausedAt = Date.now();
     const url = new URL(request.url);
     let handled = false;
     const resolve = async (command, values) => {
@@ -87,7 +112,10 @@ export async function interceptFixtures(
         if (disposed) return;
         // Navigation/offline transitions can cancel an already paused request.
         // Ignore only an invalid Fetch ID matched to Chrome's Network failure
-        // for that same request; an unexplained protocol error remains fatal.
+        // or the replacement of that exact request's owning document. Chrome
+        // can omit loadingFailed for an old document's favicon redirect. A
+        // navigation commitment after the pause proves this is a retired loader;
+        // unknown loaders, other frames and Document requests still fail closed.
         if (
           /Invalid InterceptionId\.?$/i.test(error?.message || '') &&
           (await hasCancellation(networkId))
@@ -99,6 +127,42 @@ export async function interceptFixtures(
           if (cancellations.length > 512) cancellations.shift();
           return;
         }
+        const owner = requests.get(networkId);
+        const current = frames.get(frameId);
+        if (
+          /Invalid InterceptionId\.?$/i.test(error?.message || '') &&
+          resourceType !== 'Document' &&
+          networkId &&
+          owner?.frameId === frameId &&
+          owner.loaderId &&
+          current?.loaderId &&
+          owner.loaderId !== current.loaderId &&
+          current.at >= pausedAt &&
+          current.at >= owner.at
+        ) {
+          cancellations.push({
+            networkId,
+            error: 'document-replaced',
+            loaderId: owner.loaderId,
+            replacementLoaderId: current.loaderId,
+          });
+          if (cancellations.length > 512) cancellations.shift();
+          return;
+        }
+        diagnostics.push({
+          requestId,
+          networkId,
+          frameId,
+          command,
+          resourceType,
+          url: url.origin + url.pathname,
+          pausedAt,
+          at: Date.now(),
+          request: requests.get(networkId),
+          failure: failures.get(networkId),
+          frame: frames.get(frameId),
+        });
+        if (diagnostics.length > 512) diagnostics.shift();
         recordError(error);
         throw error;
       }
@@ -152,12 +216,15 @@ export async function interceptFixtures(
   return {
     errors,
     cancellations,
+    diagnostics,
     async dispose() {
       disposed = true;
       for (const group of waiting.values())
         for (const settle of [...group]) settle(false);
       client.off('Fetch.requestPaused', onPaused);
       client.off('Network.loadingFailed', onLoadingFailed);
+      client.off('Network.requestWillBeSent', onRequest);
+      client.off('Page.frameNavigated', onFrame);
       await client.send('Fetch.disable').catch(() => {});
       await client.detach().catch(() => {});
     },

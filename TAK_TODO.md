@@ -109,8 +109,9 @@ running.
   initial concurrent SwiftShader runs had inconsistent frame intervals.
 - Keep privacy race coverage across viewport/pointer imagery, structured AI/
   voice/tool requests, public links, scenes/exports, recording, logs/analytics
-  and embed handoffs. Session disclosure authorization is broad; refine it per
-  destination/action before supporting more sharing workflows.
+  and embed handoffs. AI / voice, public sharing / scenes and recording now
+  have separate page-session permissions; extend them with destination-specific
+  decisions where additional providers or sharing workflows need narrower consent.
 - Review certificates, session lifecycle, reconnect queues, malformed CoT,
   resource limits and rejected access as protocol support expands. Do not
   introduce browser-held privileged keys or unauthorized arbitrary upstreams.

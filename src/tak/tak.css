@@ -385,7 +385,8 @@ body.recording-mode .tak-web-root {
   .tak-web-root button,
   .tak-web-root select,
   .tak-web-root input:not([type='checkbox']),
-  .tak-web-root summary {
+  .tak-web-root summary,
+  .tak-web-root .tak-web-check {
     min-height: 44px;
     touch-action: manipulation;
   }

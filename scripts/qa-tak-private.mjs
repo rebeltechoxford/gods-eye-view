@@ -525,9 +525,12 @@ async function preparePage() {
                 lon: -89.5192,
                 source: 'USER',
               });
-              const consent = document.querySelector('[data-tak-disclosure]');
-              consent.checked = true;
-              consent.dispatchEvent(new Event('change', { bubbles: true }));
+              for (const consent of document.querySelectorAll(
+                '[data-tak-disclosure]',
+              )) {
+                consent.checked = true;
+                consent.dispatchEvent(new Event('change', { bubbles: true }));
+              }
               document.querySelector('[data-tak-xml]').value =
                 'SYNTHETIC INITIAL STATUS INPUT';
             });
@@ -1047,9 +1050,12 @@ try {
           lon: -89.52,
           broadcast: false,
         });
-        const consent = document.querySelector('[data-tak-disclosure]');
-        consent.checked = true;
-        consent.dispatchEvent(new Event('change', { bubbles: true }));
+        for (const consent of document.querySelectorAll(
+          '[data-tak-disclosure]',
+        )) {
+          consent.checked = true;
+          consent.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         document.querySelector('[data-tak-xml]').value =
           'SYNTHETIC PRIVATE INPUT';
       });
@@ -1197,6 +1203,7 @@ try {
           fixtureCancellations: interceptions.flatMap(
             (item) => item.cancellations,
           ),
+          fixtureDiagnostics: interceptions.flatMap((item) => item.diagnostics),
           authRequests,
           touchTrace,
           results,

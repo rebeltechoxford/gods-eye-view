@@ -74,9 +74,9 @@ export function initGevVoiceCommands(options) {
   const runner = async (name, args, callOptions = {}) => {
     if (callOptions.localOnly && LOCAL_VIEW_ACTIONS.has(name))
       return baseRunner(name, args, callOptions);
-    if (isTakPrivacyBlocked(options.viewer))
+    if (isTakPrivacyBlocked(options.viewer, 'ai'))
       return { ok: false, error: TAK_PRIVACY_MESSAGE };
-    const privacy = takDisclosureTicket(options.viewer);
+    const privacy = takDisclosureTicket(options.viewer, 'ai');
     const result = await baseRunner(name, args, callOptions);
     return canDiscloseTakData(privacy)
       ? result
@@ -92,7 +92,7 @@ export function initGevVoiceCommands(options) {
     runner,
   });
   const removePrivacyListener = subscribeTakPrivacy(options.viewer, () => {
-    if (!isTakPrivacyBlocked(options.viewer)) return;
+    if (!isTakPrivacyBlocked(options.viewer, 'ai')) return;
     commands.stop();
     pointer?.clear();
     referents.clear();

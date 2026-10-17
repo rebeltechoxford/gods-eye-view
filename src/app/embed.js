@@ -286,7 +286,7 @@ export function installViews({
       const steps = await applyView(view, { viewer, dataManager, run, signal });
       // The parent receives operation status only while private TAK is loaded.
       // Provider errors may contain a derived map location or request URL.
-      const reported = isTakPrivacyBlocked(viewer)
+      const reported = isTakPrivacyBlocked(viewer, 'sharing')
         ? steps.map(({ step, ok }) => ({ step, ok }))
         : steps;
       post(
