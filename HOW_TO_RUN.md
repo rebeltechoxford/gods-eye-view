@@ -43,6 +43,26 @@ local marker. **CONTACTS** rows focus the globe. **CHAT** is the current
 broadcast chat room. **MY POSITION** can use an operator-set map position or
 device geolocation; position broadcast starts only when you enable it.
 
+**SUBMISSIONS** shows each shared item's progress through the gateway: pending,
+queued, submitted, rejected or expired. Submitted means the configured transport
+accepted the write; it does not confirm a remote peer received it. Local imports
+and unshared markers are never automatically resent. See
+[delivery semantics](docs/TAK_DELIVERY.md).
+
+**NAVIGATION** accepts DD, DMS, MGRS and UTM coordinates. Validate a coordinate,
+focus the globe or create a local marker, and measure horizontal WGS84 range and
+true bearing from the map center or a fresh position. The origin is labeled;
+map center is not GPS. Routes, magnetic bearings and terrain clearance are not
+part of this workflow. See [formats and limits](docs/TAK_FIELD_NAVIGATION.md).
+
+**MISSION PACKAGES** inspects a local TAK manifest ZIP before you apply contacts
+or save attachments. Importing does not transmit anything. Export only the
+contacts and files you explicitly select, then authorize that individual
+download. Archives are limited to 32 MiB compressed and expanded, 128 entries
+and 8 MiB per file. This is local file exchange, with no server mission sync;
+real-client package compatibility still needs acceptance. See
+[package formats and limits](docs/TAK_MISSION_PACKAGES.md).
+
 ## Run GEV without a TAK network
 
 ```sh

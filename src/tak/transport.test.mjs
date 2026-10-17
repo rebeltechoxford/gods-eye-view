@@ -111,6 +111,71 @@ test('send failures and slow browser sockets return unsent without unbounded que
   s.transport.disconnect();
 });
 
+test('correlated submissions respect authentication/frame/backpressure bounds and are not replayed on reconnect', () => {
+  const s = setup();
+  s.connect();
+  const socket = s.sockets[0];
+  socket.open();
+  assert.equal(s.transport.submit('r1', '<event/>'), false);
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  assert.equal(s.transport.submit('r1', '<event/>'), true);
+  assert.deepEqual(JSON.parse(socket.sent.at(-1)), {
+    op: 'cot',
+    id: 'r1',
+    xml: '<event/>',
+  });
+  assert.equal(s.transport.submit('x'.repeat(65), '<event/>'), false);
+  assert.equal(
+    s.transport.submit('r2', '"'.repeat(MAX_TRANSPORT_FRAME_BYTES / 2)),
+    false,
+    'JSON escape overhead is included',
+  );
+  socket.bufferedAmount = MAX_TRANSPORT_BUFFER_BYTES;
+  assert.equal(s.transport.submit('r3', '<event/>'), false);
+  socket.bufferedAmount = 0;
+  s.transport.cancelSubmissions();
+  assert.deepEqual(JSON.parse(socket.sent.at(-1)), {
+    op: 'cancel-submissions',
+  });
+  s.transport.disconnect();
+  s.connect();
+  const replacement = s.sockets[1];
+  replacement.open();
+  replacement.control({ op: 'identity', uid: s.identity.uid });
+  assert.equal(
+    replacement.sent.length,
+    1,
+    'only fresh identity, no stale CoT queue',
+  );
+  s.transport.disconnect();
+});
+
+test('failed cancellation retires a full or throwing socket without reconnecting or retrying queued work', () => {
+  for (const fail of ['buffer', 'write']) {
+    const s = setup();
+    s.connect();
+    const socket = s.sockets[0];
+    socket.open();
+    socket.control({ op: 'identity', uid: s.identity.uid });
+    assert.equal(s.transport.submit('before-clear', '<event/>'), true);
+    if (fail === 'buffer') socket.bufferedAmount = MAX_TRANSPORT_BUFFER_BYTES;
+    else socket.fail = true;
+    assert.equal(s.transport.cancelSubmissions(), false);
+    assert.equal(s.transport.state(), 'closed');
+    assert.equal(socket.readyState, 3);
+    assert.equal(s.timers.size, 0);
+    assert.equal(s.transport.submit('after-clear', '<event/>'), false);
+    socket.open();
+    socket.control({ op: 'identity', uid: s.identity.uid });
+    assert.equal(
+      s.transport.isOpen(),
+      false,
+      'retired callbacks cannot reauthorize the cancelled connection',
+    );
+    assert.equal(s.sockets.length, 1);
+  }
+});
+
 test('disconnect cancels authentication/reconnect timers and retired callbacks cannot reopen', () => {
   const s = setup();
   s.connect();

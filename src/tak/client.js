@@ -7,6 +7,7 @@ import {
   parseCotDocument,
   parseCotEvent,
   serializeCotEvent,
+  cotKind,
 } from './protocol/cot.js';
 import {
   ALL_CHAT_ROOMS,
@@ -20,6 +21,7 @@ import {
 } from './protocol/builders.js';
 import { createTakStore } from './store.js';
 import { isGpsFixFresh } from './position.js';
+import { createSubmissionStore } from './delivery.js';
 
 export const IDENTITY_STORAGE_KEY = 'gev.tak.identity.v1';
 export const SA_INTERVAL_MS = 10_000;
@@ -42,6 +44,8 @@ export function createTakClient({
   clearInterval: stopEvery = (h) => clearInterval(h),
 }) {
   const store = createTakStore({ now });
+  const delivery = createSubmissionStore({ now });
+  let submissionSeq = 0;
   const listeners = new Set();
   const counters = { rx: 0, rxRejected: 0, tx: 0, txLocalOnly: 0 };
   const ownMarkers = new Set();
@@ -123,7 +127,16 @@ export function createTakClient({
         };
       } else if (message?.op === 'hello' || message?.op === 'status')
         gateway = message.status || null;
-      else if (message?.op === 'reject')
+      else if (message?.op === 'submission') {
+        if (delivery.update(message) && message.state === 'rejected')
+          lastReject = {
+            reason:
+              message.reason ||
+              message.routes.find((route) => route.reason)?.reason ||
+              'Submission rejected by uplink',
+            atMs: now(),
+          };
+      } else if (message?.op === 'reject')
         lastReject = {
           reason: String(message.reason || 'rejected'),
           atMs: now(),
@@ -134,13 +147,44 @@ export function createTakClient({
       if (destroyed) return;
       linkState = state;
       linkDetail = detail || '';
+      if (state !== 'open') delivery.interrupt();
       if (state === 'open' && saEnabled) beacon();
       notify();
     },
   });
 
   const unsubscribeStore = store.subscribe(notify);
-  const sweepTimer = every(() => store.sweep(), SWEEP_INTERVAL_MS);
+  const sweepTimer = every(() => {
+    store.sweep();
+    if (delivery.sweep()) notify();
+  }, SWEEP_INTERVAL_MS);
+
+  function submit(event) {
+    const id = `${identity.uid}-${++submissionSeq}`;
+    delivery.add({
+      id,
+      uid: event.uid,
+      kind: cotKind(event.type),
+      staleMs: event.staleMs,
+      sent: true,
+    });
+    const xml = serializeCotEvent(event);
+    const sent = transport.submit
+      ? transport.submit(id, xml)
+      : transport.send(xml);
+    if (sent) counters.tx++;
+    else {
+      counters.txLocalOnly++;
+      delivery.update({
+        id,
+        state: 'rejected',
+        routes: [],
+        reason: 'Not connected or browser send buffer full; kept local',
+      });
+    }
+    notify();
+    return { sent, submissionId: id };
+  }
 
   /**
    * Apply locally and, when asked and connected, send to the network.
@@ -153,10 +197,7 @@ export function createTakClient({
       counters.txLocalOnly++;
       return { sent: false };
     }
-    const sent = transport.send(serializeCotEvent(event));
-    if (sent) counters.tx++;
-    else counters.txLocalOnly++;
-    return { sent };
+    return submit(event);
   }
 
   function beacon() {
@@ -175,6 +216,8 @@ export function createTakClient({
   }
 
   function clearPrivateState() {
+    transport.cancelSubmissions?.();
+    delivery.clear();
     saEnabled = false;
     restartSaTimer();
     fix = null;
@@ -188,6 +231,7 @@ export function createTakClient({
 
   return Object.freeze({
     store,
+    submissions: () => delivery.list(),
     identity: () => identity,
     /** Update callsign/team/role; the uid is stable for the device. */
     setIdentity(changes) {
@@ -287,13 +331,10 @@ export function createTakClient({
       const wasShared = sharedMarkers.delete(uid);
       ownMarkers.delete(uid);
       if (broadcast && wasShared) {
-        const sent = transport.send(
-          serializeCotEvent(
-            buildDelete(identity, uid, contact.type, { nowMs: now() }),
-          ),
-        );
-        if (sent) counters.tx++;
-        return { removed: true, sent };
+        return {
+          removed: true,
+          ...submit(buildDelete(identity, uid, contact.type, { nowMs: now() })),
+        };
       }
       return { removed: true, sent: false };
     },
@@ -361,6 +402,7 @@ export function createTakClient({
       transport.disconnect();
       listeners.clear();
       store.destroy();
+      delivery.clear();
       ownMarkers.clear();
       sharedMarkers.clear();
       fix = null;

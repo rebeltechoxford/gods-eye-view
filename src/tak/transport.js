@@ -244,6 +244,21 @@ export function createGatewayTransport({
     };
   }
 
+  function disconnect(detail = '') {
+    generation++;
+    clearSessionProbe();
+    wanted = false;
+    clearConnectTimer();
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+    if (ws) {
+      const old = ws;
+      ws = null;
+      old.close();
+    }
+    setState('closed', detail);
+  }
+
   return Object.freeze({
     /** Connect (or reconnect with a new token). */
     connect(options = {}) {
@@ -274,24 +289,30 @@ export function createGatewayTransport({
       }
       open();
     },
-    disconnect() {
-      generation++;
-      clearSessionProbe();
-      wanted = false;
-      clearConnectTimer();
-      if (timer !== null) clearTimer(timer);
-      timer = null;
-      if (ws) {
-        const old = ws;
-        ws = null;
-        old.close();
-      }
-      setState('closed');
-    },
+    disconnect,
     /** Send one CoT event (XML). Returns false when not connected. */
     send(xml) {
       if (state !== 'open') return false;
       return write(xml);
+    },
+    /** Correlated, bounded submission. Raw XML send remains available to legacy clients. */
+    submit(id, xml) {
+      if (
+        state !== 'open' ||
+        typeof id !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,64}$/.test(id) ||
+        typeof xml !== 'string'
+      )
+        return false;
+      return write(JSON.stringify({ op: 'cot', id, xml }));
+    },
+    cancelSubmissions() {
+      if (state !== 'open') return true;
+      if (write(JSON.stringify({ op: 'cancel-submissions' }))) return true;
+      disconnect(
+        'Cancellation could not be sent; connection closed, peer receipt unconfirmed',
+      );
+      return false;
     },
     identify(next) {
       if (next?.uid !== identity?.uid) return false;

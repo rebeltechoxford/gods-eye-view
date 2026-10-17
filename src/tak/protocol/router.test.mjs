@@ -49,6 +49,38 @@ test('rate limiter refills over time', () => {
   assert.equal(limiter.take(), false);
 });
 
+test('validated browser ingress retains link rate limits, counters and no-echo semantics', () => {
+  const now = clock();
+  const router = createCotRouter({ now });
+  const browser = link('browser', 'browser', { rate: 1, burst: 1 });
+  const server = link('server', 'server');
+  router.addLink(browser);
+  router.addLink(server);
+  const event = (name) =>
+    buildMarker(IDENTITY, { callsign: name, lat: 1, lon: 2 }, { nowMs: now() });
+  assert.equal(
+    router.publishValidated(event('A'), 'missing').reason,
+    'unknown-link',
+  );
+  assert.equal(router.publishValidated(event('A'), 'browser').ok, true);
+  assert.equal(
+    router.publishValidated(event('B'), 'browser').reason,
+    'rate-limited',
+  );
+  assert.equal(server.sent.length, 1);
+  assert.equal(browser.sent.length, 0);
+  const stats = router.stats();
+  assert.equal(stats.received, 2);
+  assert.equal(stats.limited, 1);
+  assert.deepEqual(
+    stats.links.find((state) => state.id === 'browser'),
+    { id: 'browser', kind: 'browser', rx: 2, tx: 0, dropped: 1 },
+  );
+  now.advance(1000);
+  assert.equal(router.publishValidated(event('C'), 'browser').ok, true);
+  router.destroy();
+});
+
 test('fans out to every other link, never back to the origin', () => {
   const router = createCotRouter({ now: clock() });
   const a = link('a', 'browser');

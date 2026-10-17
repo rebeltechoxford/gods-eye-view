@@ -92,21 +92,29 @@ export function createMeshLink({
     kind: 'mesh',
     limits: { rate: 100, burst: 400 },
     /** Router send hook: chat to the chat group, everything else to SA. */
-    send(xml, event) {
-      if (closed) return;
+    send(xml, event, tracking) {
+      if (closed) return false;
       const payload = Buffer.from(xml, 'utf8');
       if (payload.length > MAX_MESH_DATAGRAM_BYTES) {
         counters.oversized++;
-        return;
+        return false;
       }
       const channel = cotKind(event?.type) === 'chat' ? chat : sa;
-      if (!channel.ready) return;
+      if (!channel.ready) return false;
+      tracking?.onState?.({ state: 'queued' });
       channel.socket.send(payload, channel.port, channel.group, (error) => {
         if (error) {
           counters.errors++;
           lastError = String(error.message || error);
         } else counters.tx++;
+        tracking?.onState?.({
+          state: error ? 'rejected' : 'submitted',
+          ...(error
+            ? { reason: 'UDP write failed; peer receipt unknown' }
+            : {}),
+        });
       });
+      return true;
     },
     status: () => ({
       state,

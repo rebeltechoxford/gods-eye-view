@@ -357,6 +357,60 @@ upstream compatibility and avoid merging into `main`. Remote CI results, when
 available, supplement local evidence instead of replacing browser or live-peer
 acceptance.
 
+## Field workflow integration, 2026-10-17 UTC
+
+The next additive slice provides three operator workflows within the existing
+TAK panel: [coordinate/navigation tools](TAK_FIELD_NAVIGATION.md),
+[local mission ZIP files](TAK_MISSION_PACKAGES.md), and
+[correlated submission state](TAK_DELIVERY.md). The original 30 GEV catalog
+registrations, map choices and navigation owner remain in place. The privacy
+slice separates AI/voice, sharing/scenes and recording permissions; a selected
+mission-package export has its own single-download consent.
+
+The first combined full run on Windows/Node 24.19.0 reported 6,629 passes,
+10 existing skips and one failure: a real-TLS rejection test expected an exact
+30,000 ms queued-data timeout while using a moving wall clock. The transport
+correctly subtracts elapsed time from that deadline. Verification uses an
+injected queue clock while retaining real certificate/socket rejection and the
+exact expiry/reconnect assertions. No transport timeout is relaxed.
+
+Browser testing caught a real startup defect in the new coordinate module:
+`mgrs` exposes different CommonJS and browser ESM exports. A namespace adapter
+now supports both; the subsequent navigation gate passed all 13 scenarios.
+Mission-package startup fixtures also wait for the actual initialized welcome
+dialog before touching controls. Existing privacy/offline fixtures were updated
+to exercise all three permissions and to distinguish a same-document map URL
+update from the required login document transition. Their private-state,
+HTTP401 and actual login assertions remain mandatory.
+
+New navigation/package browser gates run in the existing private TAK CI job.
+The run guide and remaining-work ledger now describe implemented local file
+exchange and coordinate/submission behavior separately from server mission
+sync, routes and genuine peer/device acceptance. Final combined command results
+are recorded below. Product source was validated at `ae07782d`; merging the
+verified privacy PR #7 (`9ca7bcf6`) added no further product diff. Final evidence
+documentation is committed with this field-workflow integration.
+
+| Gate                                    | Result and local evidence                                                                                                                                                                                                                       |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Supported runtime / setup               | Windows, Node 24.19.0; `node scripts/setup-doctor.mjs --json` ready. Provider keys remain unconfigured, so key-dependent live GEV sources are not claimed tested.                                                                               |
+| Full test runner                        | `node scripts/run-unit-tests.mjs`: 6,631 ordinary passes, zero failures, 10 pre-existing skips, followed by all 14 serialized allocation passes. `.gev-cache/field-unit-verified.log`.                                                          |
+| Formatting / boundaries / tokens        | 1,418 adopted source files; import directions, package ownership and published layer-token check against `origin/main` passed. All 30 runtime GEV layer registrations remain.                                                                   |
+| Production / embedded builds            | `vite build` and `node scripts/build-panel.mjs` passed; existing large-chunk warnings remain. `.gev-cache/field-build.log`, `.gev-cache/field-panel-build.log`.                                                                                 |
+| Dependency audit                        | Full locked dependency `npm audit --json` reported zero vulnerabilities. `.gev-cache/field-audit.json`.                                                                                                                                         |
+| Synthetic TAK / disclosure / submission | 12/12 browser scenarios; actual TCP/WebSocket lab, visible correlated marker/chat status, no auto-send on Connect, scoped privacy, phone/embed and cleanup. `qa-artifacts/field-tak-final/`.                                                    |
+| Phone coordinates / navigation          | 13/13 browser scenarios; four coordinate formats, actual camera ownership, fresh GPS versus operator/map origin, 44 px controls and cleanup. `qa-artifacts/field-navigation-final/`.                                                            |
+| Phone mission-package files             | 8/8 browser scenarios; actual file selection, inspection, bounded stable selection, selected export/download, cancellation and cleanup. `qa-artifacts/field-packages-final/`. Independent Python ZIP/XML/hash checks also passed 36 assertions. |
+| Private production HTTPS / session      | 12/12 scenarios; real loopback TLS/login/WSS, rejection, logout/expiry and cleared navigation/package inputs before departure. `qa-artifacts/field-private-final/`.                                                                             |
+| Retained server/device maps             | 8/8 scenarios; actual server shutdown and fresh saved-app launch, decoded imagery/fonts, verified files/resume/deletion, actual HTTP401 and all three permissions cleared before login. `qa-artifacts/field-offline-final/`.                    |
+
+All browser evidence uses synthetic contacts and local/intercepted providers.
+It establishes neither current real-world chart editions nor physical-phone
+performance or real TAK Server/ATAK/iTAK/WinTAK acceptance. Failed intermediate
+runs remain in `.gev-cache/field-unit-final.log`,
+`qa-artifacts/field-packages/` and the earlier privacy CI records; their causes
+and corrections are described above rather than being counted as passes.
+
 ## Current external prerequisites
 
 No authorized live TAK Server credentials, certificate material or real-client

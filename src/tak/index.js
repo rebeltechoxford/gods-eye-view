@@ -8,10 +8,13 @@ import {
   fetchGatewaySession,
 } from './transport.js';
 import { createTakPanel } from './ui.js';
+import { createMissionPackagePanel } from './packagesUi.js';
 import { createGeolocation } from './geolocation.js';
 import { createMobileSession } from './mobile.js';
 import { logoutOperatorSession } from './session.js';
 import { createSavedMaps } from '../maps/offline/ui.js';
+import { createNavigationPanel } from './navigationUi.js';
+import { createNavigationFocus } from './navigationCamera.js';
 import {
   authorizeTakDisclosure,
   markTakDataPrivate,
@@ -74,6 +77,8 @@ export function initTakWebClient({
   let gatewayInfo = null;
   let gatewayReady;
   let expiredRedirected = false;
+  let navigation = null;
+  let packages = null;
   const mobile = createMobileSession();
   const geolocation = createGeolocation();
 
@@ -93,6 +98,8 @@ export function initTakWebClient({
     geolocation,
     mobile,
     async logout() {
+      navigation?.clearPrivateInputs();
+      packages?.clearPrivateInputs();
       await logoutOperatorSession(globalThis.fetch, controller.signal);
       window.location.replace('/login');
     },
@@ -118,6 +125,21 @@ export function initTakWebClient({
       authorize: (enabled, scope) =>
         authorizeTakDisclosure(viewer, enabled, scope),
     },
+  });
+  navigation = createNavigationPanel({
+    container: document.getElementById('tak-web-panel'),
+    client,
+    getMapCenter: () => mapCenter(viewer),
+    focusTarget: createNavigationFocus(viewer, navigate),
+    markPrivate: () => markTakDataPrivate(viewer),
+    gpsActive: () => geolocation.isActive(),
+    subscribeMapCenter: (listener) =>
+      viewer.camera.moveEnd.addEventListener(listener),
+  });
+  packages = createMissionPackagePanel({
+    container: document.getElementById('tak-web-panel'),
+    client,
+    markPrivate: () => markTakDataPrivate(viewer),
   });
   let mapBootstrap = null;
   let mapBootstrapAt = 0;
@@ -175,6 +197,8 @@ export function initTakWebClient({
       client.clearPrivateState();
       authorizeTakDisclosure(viewer, false);
       panel.clearPrivateInputs();
+      navigation.clearPrivateInputs();
+      packages.clearPrivateInputs();
       window.location.replace('/login');
     }
     if (client.store.count() || client.store.chats().length || client.fix())
@@ -210,6 +234,8 @@ export function initTakWebClient({
     client,
     overlay,
     savedMaps,
+    navigation,
+    packages,
     privacy: () => takPrivacyState(viewer),
     destroy() {
       controller.abort();
@@ -221,6 +247,8 @@ export function initTakWebClient({
       mobile.destroy();
       geolocation.destroy();
       savedMaps?.destroy();
+      navigation.destroy();
+      packages.destroy();
       mapBootstrap = null;
       panel.destroy();
       overlay.destroy();

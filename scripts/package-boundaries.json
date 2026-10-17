@@ -1495,6 +1495,7 @@
       "src/tak/index.js",
       "src/tak/tak.css",
       "src/tak/client.js",
+      "src/tak/delivery.js",
       "src/tak/cotOverlay.js",
       "src/tak/store.js",
       "src/tak/transport.js",
@@ -1502,6 +1503,11 @@
       "src/tak/protocol/builders.js",
       "src/tak/protocol/cot.js",
       "src/tak/protocol/xml.js",
+      "src/tak/packages.js",
+      "src/tak/packagesZip.js",
+      "src/tak/packagesFile.js",
+      "src/tak/packagesUi.js",
+      "src/tak/packages.css",
       "src/app/viewer.js",
       "src/app/atmosphereCompat.js",
       "src/bloom.js",
@@ -2248,7 +2254,12 @@
       "src/maps/offline/file.js",
       "src/maps/offline/imagery.js",
       "src/maps/offline/boot.js",
-      "src/maps/offline/ui.js"
+      "src/maps/offline/ui.js",
+      "src/tak/navigation.js",
+      "src/tak/navigationWorkflow.js",
+      "src/tak/navigationUi.js",
+      "src/tak/navigationCamera.js",
+      "src/tak/navigation.css"
     ],
     "external": [
       "hls.js",
