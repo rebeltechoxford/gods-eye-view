@@ -437,6 +437,13 @@ body.recording-mode .tak-web-root {
 }
 
 /* Long retained-map notices stay complete without changing public map credits. */
+#cesium-credits:has(.gev-saved-map-credit) {
+  z-index: 149;
+}
+body:has(.tak-web-panel:not([hidden]))
+  #cesium-credits:has(.gev-saved-map-credit) {
+  z-index: 139;
+}
 #cesium-credits:has(.gev-saved-map-credit),
 #cesium-credits:has(.gev-saved-map-credit) .cesium-credit-textContainer {
   white-space: normal;
@@ -444,7 +451,15 @@ body.recording-mode .tak-web-root {
 #cesium-credits .gev-saved-map-credit {
   display: inline-block;
   box-sizing: border-box;
+  width: min(48rem, calc(100vw - 3rem));
   max-width: min(48rem, calc(100vw - 3rem));
+  padding: 8px;
+  border: 1px solid #42637a;
+  border-radius: 4px;
+  background: #081522;
+  color: #e5f0fc;
+  font-size: 11px;
+  line-height: 1.4;
   max-height: min(25vh, 10rem);
   max-height: min(25dvh, 10rem);
   overflow: auto;

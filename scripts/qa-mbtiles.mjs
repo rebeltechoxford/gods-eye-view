@@ -905,7 +905,17 @@ try {
             right: r.right,
             top: r.top,
             bottom: r.bottom,
+            width: r.width,
             height: r.height,
+            interiorHits: [0.2, 0.5, 0.8].flatMap((x) =>
+              [0.2, 0.5, 0.8].map((y) => {
+                const hit = document.elementFromPoint(
+                  r.left + r.width * x,
+                  r.top + r.height * y,
+                );
+                return hit === el || el.contains(hit);
+              }),
+            ),
             clientHeight: el.clientHeight,
             scrollHeight: el.scrollHeight,
             complete: el.textContent.includes(fullLicense),
@@ -924,6 +934,11 @@ try {
           credit.right <= 391 &&
           credit.top >= 0 &&
           credit.bottom <= 844,
+      );
+      assert(credit.width >= 280, 'Saved credit needs a readable phone width');
+      assert(
+        credit.interiorHits.every(Boolean),
+        'Full saved attribution scroll area must be unobstructed',
       );
       assert(
         credit.height <= 161 &&
