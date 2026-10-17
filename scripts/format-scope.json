@@ -1029,5 +1029,6 @@
   "src/tak/navigationCamera.js",
   "src/tak/navigation.css",
   "src/tak/navigation.test.mjs",
-  "docs/TAK_FIELD_NAVIGATION.md"
+  "docs/TAK_FIELD_NAVIGATION.md",
+  "scripts/qa-tak-navigation.mjs"
 ]
