@@ -127,6 +127,15 @@ export function createDeviceStreamPool({
     while (device.seen.size > limit)
       device.seen.delete(device.seen.keys().next().value);
   }
+  function rebalance() {
+    // Attaching a UID reduces every partition's share immediately, including
+    // partitions that receive no subsequent writes.
+    trimReplay(sharedReplay);
+    for (const device of devices.values()) {
+      trimReplay(device.replay);
+      pruneSeen(device);
+    }
+  }
   function deliver(device, xml, event, context, digest) {
     const members = validMembers(device);
     if (!members.length) return;
@@ -198,6 +207,10 @@ export function createDeviceStreamPool({
     });
     if (stream.uid) {
       const device = devices.get(stream.uid);
+      if (device?.deadline <= now()) {
+        endPresence(device);
+        return;
+      }
       if (device) deliver(device, normalized, event, context, digest);
     } else {
       remember(sharedReplay, normalized, event);
@@ -312,11 +325,7 @@ export function createDeviceStreamPool({
       device.seen.clear();
     }
     ensureShared();
-    for (const d of devices.values()) {
-      trimReplay(d.replay);
-      pruneSeen(d);
-    }
-    trimReplay(sharedReplay);
+    rebalance();
     onStatus();
   }
   function attach(ref, { uid, callsign, authorized }) {
@@ -370,6 +379,7 @@ export function createDeviceStreamPool({
       detach(ref);
       return { ok: false, reason: 'Upstream stream capacity reached' };
     }
+    rebalance();
     onStatus();
     return { ok: true };
   }
@@ -393,6 +403,7 @@ export function createDeviceStreamPool({
       tracking?.canWrite?.() === false
     )
       return false;
+    if (device.stream && device.deadline <= now()) endPresence(device);
     const bytes = typeof xml === 'string' ? Buffer.byteLength(xml) : Infinity;
     if (
       bytes > 64 * 1024 ||
@@ -402,6 +413,10 @@ export function createDeviceStreamPool({
     )
       return false;
     const isSa = cotKind(event.type) === 'sa' && event.uid === device.uid;
+    // TAK Server binds a stream to the first contact@endpoint it observes.
+    // Only a fresh authorized self-SA may claim that binding, including after
+    // reconnect; a marker/control must never register a different UID first.
+    if (!isSa && event.detail.endpoint) return false;
     if (isSa) {
       if (
         event.detail.callsign !== device.callsign ||

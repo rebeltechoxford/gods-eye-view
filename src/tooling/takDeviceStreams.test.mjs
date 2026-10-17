@@ -110,6 +110,9 @@ function fixture(t, options = {}) {
     presence,
     marker,
     now: () => time,
+    elapse(ms) {
+      time += ms;
+    },
     advance(ms) {
       time += ms;
       tick();
@@ -200,6 +203,106 @@ test('self presence validates exact identity, canonical endpoint and fresh obser
   );
   assert.equal(f.send(a, { ...sa, timeMs: f.now() - 30_001 }), false);
   assert.equal(f.pool.status().presence[0].active, false);
+});
+
+test('only fresh self-SA can carry an endpoint before or after reconnect', (t) => {
+  const f = fixture(t),
+    a = f.join(),
+    marker = f.marker('NOT-A-DEVICE');
+  const endpointMarker = {
+    ...marker,
+    detail: { ...marker.detail, endpoint: '*:-1:stcp' },
+  };
+  assert.equal(f.send(a, endpointMarker), false);
+  assert.equal(f.links[0].sent.length, 0);
+  assert.equal(f.presence(a), true);
+  const wire = f.links.at(-1);
+  wire.hooks.onStatus({ state: 'reconnecting' });
+  wire.hooks.onStatus({ state: 'connected' });
+  assert.equal(f.pool.status().presence[0].presenceSent, false);
+  assert.equal(f.send(a, endpointMarker), false);
+  assert.equal(
+    f.send(a, marker),
+    true,
+    'endpoint-free public work remains usable',
+  );
+  assert.equal(f.pool.status().presence[0].presenceSent, false);
+  assert.equal(f.presence(a), true);
+  assert.equal(f.pool.status().presence[0].presenceSent, true);
+  assert.equal(
+    wire.sent
+      .filter((item) => item.event.detail.endpoint)
+      .every(
+        (item) =>
+          item.event.uid === a.identity.uid && item.event.type.startsWith('a-'),
+      ),
+    true,
+  );
+});
+
+test('lease expiry rejects routing synchronously before the periodic cleanup tick', (t) => {
+  const f = fixture(t),
+    a = f.join();
+  f.presence(a);
+  const wire = f.links.at(-1);
+  f.elapse(DEVICE_STREAM_LIMITS.presenceMs);
+  wire.hooks.onXml(serializeCotEvent(f.marker('EXPIRED-PRIVATE')));
+  assert.equal(f.received.length, 0);
+  assert.equal(wire.closed, true);
+  assert.equal(f.pool.status().presence[0].active, false);
+  assert.equal(
+    f.send(a, f.marker()),
+    true,
+    'fresh public work uses the shared feed',
+  );
+});
+
+test('growing a populated pool immediately trims every retained replay partition', (t) => {
+  const f = fixture(t),
+    a = f.join();
+  for (let i = 0; i < 1000; i++)
+    f.links[0].hooks.onXml(serializeCotEvent(f.marker(`old-public-${i}`)));
+  assert.equal(f.pool.replay(a.ref).length, 1000);
+  f.presence(a);
+  const privateWire = f.links.at(-1),
+    b = f.join(),
+    sharedWire = f.links.at(-1),
+    share = Math.floor(DEVICE_STREAM_LIMITS.replayEntries / 3);
+  assert.equal(f.pool.replay(a.ref).length, share);
+  assert.equal(f.pool.replay(b.ref).length, share);
+  for (let i = 0; i < share; i++) {
+    privateWire.hooks.onXml(serializeCotEvent(f.marker(`private-A-${i}`)));
+    sharedWire.hooks.onXml(serializeCotEvent(f.marker(`new-public-${i}`)));
+  }
+  const c = f.join(),
+    reduced = Math.floor(DEVICE_STREAM_LIMITS.replayEntries / 4);
+  for (const member of [a, b, c])
+    assert.equal(f.pool.replay(member.ref).length, reduced);
+  assert.ok(
+    f.pool.replay(a.ref).every((item) => item.xml.includes('private-A-')),
+  );
+  assert.ok(
+    f.pool.replay(c.ref).every((item) => item.xml.includes('new-public-')),
+  );
+});
+
+test('attaching another UID immediately reduces existing dedup history without requiring a new write', (t) => {
+  const f = fixture(t),
+    a = f.join();
+  let oldest, newest;
+  for (let i = 0; i < DEVICE_STREAM_LIMITS.seenEntries; i++) {
+    const xml = serializeCotEvent(f.marker(`dedup-${i}`));
+    if (!i) oldest = xml;
+    newest = xml;
+    f.pool.rememberPublic(xml);
+  }
+  f.join();
+  f.links[0].hooks.onXml(oldest);
+  f.links[0].hooks.onXml(newest);
+  assert.equal(f.received.filter((item) => item[0] === a.ref).length, 1);
+  assert.ok(
+    f.received.find((item) => item[0] === a.ref)[1].includes('dedup-0'),
+  );
 });
 
 test('four streams include shared feed; no fifth dial and no active-device eviction', (t) => {
