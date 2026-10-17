@@ -143,10 +143,20 @@ for (const scenario of [
 ]) {
   test(`real TLS rejects ${scenario.name} and schedules a bounded reconnect`, async (t) => {
     const peer = await startPeer(t, scenario.certificate);
-    const client = startLink(t, peer.port, scenario.overrides());
+    // TLS uses real sockets; its unwritten-message freshness budget uses a
+    // controlled clock. A real millisecond between enqueue/arm otherwise makes
+    // a correct remaining deadline 29,999ms rather than exactly 30,000ms.
+    const queueNowMs = Date.now();
+    const client = startLink(t, peer.port, scenario.overrides(), {
+      now: () => queueNowMs,
+    });
     client.link.send(
       '',
-      buildMarker(IDENTITY, { callsign: 'MUST-NOT-LEAK', lat: 34, lon: -89 }),
+      buildMarker(
+        IDENTITY,
+        { callsign: 'MUST-NOT-LEAK', lat: 34, lon: -89 },
+        { nowMs: queueNowMs },
+      ),
     );
     await waitFor(
       () => client.link.status().state === 'reconnecting',
@@ -174,6 +184,50 @@ for (const scenario of [
     assert.equal(client.link.status().state, 'closed');
   });
 }
+
+test('real TLS rejection preserves the remaining queue deadline when enqueue observation consumes time', async (t) => {
+  const peer = await startPeer(t);
+  let queueNowMs = Date.now();
+  const client = startLink(
+    t,
+    peer.port,
+    {
+      ca: fixtures.file('other-ca.pem'),
+    },
+    { now: () => queueNowMs },
+  );
+  client.link.send(
+    '',
+    buildMarker(
+      IDENTITY,
+      { callsign: 'UNWRITTEN', lat: 34, lon: -89 },
+      { nowMs: queueNowMs },
+    ),
+    {
+      onState({ state }) {
+        if (state === 'queued') queueNowMs += 25;
+      },
+    },
+  );
+  assert.equal(client.link.status().queue, 1);
+  assert.equal(
+    client.reconnects.filter(
+      (timer) => timer.ms === SERVER_QUEUE_MAX_AGE_MS - 25,
+    ).length,
+    1,
+    'expiry owns the remaining enqueue deadline, not a fresh full budget',
+  );
+  await waitFor(
+    () => client.link.status().state === 'reconnecting',
+    'untrusted CA rejected after elapsed queue time',
+  );
+  assert.equal(
+    client.reconnects.filter((timer) => timer.ms === 1000).length,
+    1,
+  );
+  assert.equal(peer.incoming.join(''), '');
+  assert.ok(!client.states.includes('connected'));
+});
 
 test('real mutual TLS peer rejects a client which omits its certificate', async (t) => {
   const peer = await startPeer(t);
