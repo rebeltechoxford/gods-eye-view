@@ -60,6 +60,28 @@ labelled reference fixture, corrected against independent UTM arithmetic; a
 separate regression covers `mgrs` 2.1.0 returning a zero-area southwest point
 for a zero-digit 100 km reference. No unit check was relaxed.
 
+The combined field-integration app passed all 13 scenarios of
+`node scripts/qa-tak-navigation.mjs --url http://127.0.0.1:4174
+--artifact-dir qa-artifacts/field-navigation-final` at
+`2026-10-17T01:25:14Z`, Windows, Node 24.19.0 and Chrome 152. The gate used 31
+physical touches and real form input across all four formats; it checked local
+marker creation with zero TAK transmissions, public-camera follow release and
+completed focus, private sharing protection, synthetic GPS freshness, local
+sign-out cleanup and repeated teardown. At a 390 × 844 viewport, ten controls
+measured at least 44 px tall with 16 px text, and the inspected screenshot
+contained 16 textured Cesium terrain tiles. Evidence: the `results.json` and
+`phone-navigation.png` in that artifact directory; no uncaught, render or fixture
+errors occurred. The sign-out scenario deliberately returns synthetic HTTP503
+to verify clearing before the POST; real session revocation is covered by the
+separate private-HTTPS gate. GPS and map imagery are synthetic, and this does
+not establish physical-phone or operational TAK-peer acceptance.
+
+That browser run also caught a real startup incompatibility: the existing
+`mgrs` package exposes a CommonJS default through Node but named-only ESM through
+Vite. A namespace import with a reflective default fallback now supports both
+without requesting a nonexistent ESM export; all 39 targeted tests passed again
+after that correction.
+
 The existing `mgrs` 2.1.0 dependency supplies MGRS conversion; its existing
 licensing and provenance remain applicable. UTM uses an independent arithmetic
 implementation of the published fourth-order Kruger series. Existing Cesium
