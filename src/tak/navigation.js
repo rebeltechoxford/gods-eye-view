@@ -1,5 +1,9 @@
-import mgrs from 'mgrs';
+import * as mgrsModule from 'mgrs';
 import { Cartographic, Ellipsoid, EllipsoidGeodesic } from 'cesium';
+
+// Node resolves this package's CommonJS main; Vite resolves its named-only ESM
+// module. Reflect avoids requesting a nonexistent static default ESM export.
+const mgrs = Reflect.get(mgrsModule, 'default') ?? mgrsModule;
 
 export const COORDINATE_FORMATS = Object.freeze(['DD', 'DMS', 'MGRS', 'UTM']);
 const RAD = Math.PI / 180;

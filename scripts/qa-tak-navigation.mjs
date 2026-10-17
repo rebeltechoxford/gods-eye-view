@@ -228,7 +228,9 @@ try {
   await hookRenderErrors(page);
   const cdp = await page.createCDPSession();
   await cdp.send('Network.enable');
-  cdp.on('Network.webSocketCreated', ({ url }) => sockets.push(url));
+  cdp.on('Network.webSocketCreated', ({ url }) => {
+    if (new URL(url).pathname === '/api/tak/ws') sockets.push(url);
+  });
   await page.evaluateOnNewDocument(() => {
     window.__qaUnhandled = [];
     window.addEventListener('unhandledrejection', (event) =>
