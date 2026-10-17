@@ -293,7 +293,14 @@ async function prepare(context, label) {
           ].some((el) => el.value !== ''),
           colors: [
             ...document.querySelectorAll('.tak-web-root input[type="color"]'),
-          ].map((el) => el.value),
+          ].map((el) => ({
+            name: el.hasAttribute('data-drawing-color')
+              ? 'stroke'
+              : el.hasAttribute('data-drawing-fill')
+                ? 'fill'
+                : 'unknown',
+            value: el.value,
+          })),
         });
         if (window.__qaFailLogoutOnce) {
           window.__qaFailLogoutOnce = false;
@@ -841,6 +848,20 @@ try {
         posts,
         'Cross-tab retirement never posts logout',
       );
+      await section(bravo, 'maps');
+      await bravo.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-offline-status]')
+            .textContent.includes('No saved maps'),
+        { timeout },
+      );
+      assert.equal(
+        await bravo.$eval('[data-offline-list]', (el) =>
+          el.textContent.includes('PRIVATE ALPHA AREA'),
+        ),
+        false,
+      );
       const value = await snapshot(bravo);
       bravoScope = value.context.storageScope;
       assert.equal(value.context.principal, 'bravo');
@@ -1024,7 +1045,10 @@ try {
         vertices: 0,
         draft: false,
         privateInputs: false,
-        colors: ['#ffffff', '#ffffff'],
+        colors: [
+          { name: 'stroke', value: '#ffffff' },
+          { name: 'fill', value: '#ffffff' },
+        ],
       });
       assert.equal(
         logoutPosts,
