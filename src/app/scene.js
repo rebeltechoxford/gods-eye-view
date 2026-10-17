@@ -13,7 +13,7 @@ import {
   uninstallRenderGovernor,
   governorRequestRender,
 } from '../renderGovernor.js';
-import { describeError } from './errors.js';
+import { ApplicationRedirectError, describeError } from './errors.js';
 import { readSelectedOfflinePack } from '../maps/offline/boot.js';
 import { offlineSource } from '../maps/offline/imagery.js';
 import { markTakDataPrivate } from '../tak/privacy.js';
@@ -43,7 +43,7 @@ export async function createApplicationScene({
     : await resolveOperatorContext({ signal });
   if (accountContext?.sessionExpired) {
     window.location.replace('/login');
-    throw new DOMException('Operator session expired', 'AbortError');
+    throw new ApplicationRedirectError('Returning to sign-in…');
   }
   const accountLifetime = new AbortController();
   const accountSignal = AbortSignal.any([signal, accountLifetime.signal]);
