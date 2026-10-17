@@ -95,7 +95,7 @@ export function createSubmissionStore({ now = Date.now } = {}) {
                     ...route,
                     state: 'rejected',
                     reason:
-                      'Browser connection ended; unwritten attempt cancelled',
+                      'Connection ended; cancellation requested, peer receipt unconfirmed',
                   })
                 : route,
             ),

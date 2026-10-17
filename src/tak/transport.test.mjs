@@ -150,6 +150,32 @@ test('correlated submissions respect authentication/frame/backpressure bounds an
   s.transport.disconnect();
 });
 
+test('failed cancellation retires a full or throwing socket without reconnecting or retrying queued work', () => {
+  for (const fail of ['buffer', 'write']) {
+    const s = setup();
+    s.connect();
+    const socket = s.sockets[0];
+    socket.open();
+    socket.control({ op: 'identity', uid: s.identity.uid });
+    assert.equal(s.transport.submit('before-clear', '<event/>'), true);
+    if (fail === 'buffer') socket.bufferedAmount = MAX_TRANSPORT_BUFFER_BYTES;
+    else socket.fail = true;
+    assert.equal(s.transport.cancelSubmissions(), false);
+    assert.equal(s.transport.state(), 'closed');
+    assert.equal(socket.readyState, 3);
+    assert.equal(s.timers.size, 0);
+    assert.equal(s.transport.submit('after-clear', '<event/>'), false);
+    socket.open();
+    socket.control({ op: 'identity', uid: s.identity.uid });
+    assert.equal(
+      s.transport.isOpen(),
+      false,
+      'retired callbacks cannot reauthorize the cancelled connection',
+    );
+    assert.equal(s.sockets.length, 1);
+  }
+});
+
 test('disconnect cancels authentication/reconnect timers and retired callbacks cannot reopen', () => {
   const s = setup();
   s.connect();
