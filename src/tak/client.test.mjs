@@ -567,3 +567,81 @@ test('operator session expiry clears tactical memory, positions and armed broadc
   );
   client.destroy();
 });
+
+test('scoped and ephemeral identities cannot fall back to legacy or another account', () => {
+  const values = new Map(),
+    storage = { get: (k) => values.get(k), set: (k, v) => values.set(k, v) };
+  const create = (key) =>
+    createTakClient({
+      createTransport: fakeTransport().factory,
+      storage,
+      identityStorageKey: key,
+      setInterval: () => 1,
+      clearInterval() {},
+    });
+  const a = create(`${IDENTITY_STORAGE_KEY}.alpha`),
+    b = create(`${IDENTITY_STORAGE_KEY}.bravo`);
+  a.setIdentity({ callsign: 'PRIVATE ALPHA' });
+  assert.notEqual(a.identity().uid, b.identity().uid);
+  const again = create(`${IDENTITY_STORAGE_KEY}.alpha`);
+  assert.equal(again.identity().uid, a.identity().uid);
+  assert.equal(again.identity().callsign, 'PRIVATE ALPHA');
+  assert.equal(values.has(IDENTITY_STORAGE_KEY), false);
+  const count = values.size,
+    temporary = create(null);
+  temporary.setIdentity({ callsign: 'TEMP' });
+  assert.equal(values.size, count);
+  for (const client of [a, b, again, temporary]) client.destroy();
+});
+
+test('receive-only policy permits local work and receiving but never network sending', () => {
+  const transport = fakeTransport(),
+    client = createTakClient({
+      createTransport: transport.factory,
+      canShare: () => false,
+      now: () => T0,
+      setInterval: () => 1,
+      clearInterval() {},
+    });
+  client.connect({ session: true, storageScope: 'a'.repeat(64) });
+  client.setFix({ lat: 5, lon: 6 });
+  assert.equal(client.canShare(), false);
+  assert.throws(() => client.setSaEnabled(true), /receive-only/);
+  assert.throws(() => client.sendChat('NO'), /receive-only/);
+  assert.throws(() => client.setEmergency(true), /receive-only/);
+  const marker = client.addMarker({
+    callsign: 'LOCAL OBSERVER',
+    lat: 5,
+    lon: 6,
+    broadcast: true,
+  });
+  assert.equal(marker.sent, false);
+  assert.equal(client.store.get(marker.uid).callsign, 'LOCAL OBSERVER');
+  assert.equal(transport.sent.length, 0);
+  assert.deepEqual(client.submissions(), []);
+  transport.handlers.onXml(ATAK_SA);
+  assert(client.store.get(parseCotEvent(ATAK_SA).uid));
+  client.removeContact(marker.uid);
+  assert.equal(transport.sent.length, 0);
+  client.destroy();
+});
+
+test('retirement forgets in-memory identity without overwriting its account record', () => {
+  const values = new Map(),
+    key = `${IDENTITY_STORAGE_KEY}.alpha`,
+    client = createTakClient({
+      createTransport: fakeTransport().factory,
+      identityStorageKey: key,
+      storage: { get: (k) => values.get(k), set: (k, v) => values.set(k, v) },
+      setInterval: () => 1,
+      clearInterval() {},
+    });
+  client.setIdentity({ callsign: 'PRIVATE OLD ACCOUNT' });
+  const saved = values.get(key),
+    uid = client.identity().uid;
+  client.destroy({ forgetIdentity: true });
+  assert.notEqual(client.identity().uid, uid);
+  assert.notEqual(client.identity().callsign, 'PRIVATE OLD ACCOUNT');
+  assert.equal(values.get(key), saved);
+  assert.equal(client.canShare(), false);
+});

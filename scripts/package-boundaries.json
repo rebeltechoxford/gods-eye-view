@@ -1493,6 +1493,7 @@
       "src/app/surfaceServices.js",
       "src/app/tools.js",
       "src/tak/index.js",
+      "src/tak/operatorContext.js",
       "src/tak/tak.css",
       "src/tak/client.js",
       "src/tak/geometry.js",

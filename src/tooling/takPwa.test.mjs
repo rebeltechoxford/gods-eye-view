@@ -81,11 +81,11 @@ function run(fetchImpl, timers = { setTimeout, clearTimeout }, hooks = {}) {
       });
       return response;
     },
-    async message(type, source = 'approved') {
+    async message(type, source = 'approved', extra = {}) {
       const replies = [];
       let completion;
       handlers.get('message')({
-        data: { type },
+        data: { type, ...extra },
         source: { id: source },
         ports: [
           {
@@ -504,3 +504,62 @@ test(
     assert.equal((await handle.message('GEV_SHELL_SAVE')).ok, true);
   },
 );
+
+test('named offline save binds only manifest request and never persists account scope', async () => {
+  const { files, manifest } = fixture(),
+    scope = 'a'.repeat(64),
+    handle = run(async (url) =>
+      url === '/api/maps/offline/shell'
+        ? new Response(JSON.stringify(manifest))
+        : new Response(files.get(url)),
+    );
+  assert.equal(
+    (
+      await handle.message('GEV_SHELL_SAVE', 'approved', {
+        storageScope: scope,
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(
+    handle.requests[0].options.headers['X-TAK-Storage-Scope'],
+    scope,
+  );
+  assert(
+    handle.requests
+      .slice(1)
+      .every(({ options }) => !options.headers?.['X-TAK-Storage-Scope']),
+  );
+  for (const entries of handle.storage.values())
+    for (const response of entries.values())
+      assert(!(await response.clone().text()).includes(scope));
+  const refused = run(async () => {
+    throw new Error('must not fetch');
+  });
+  assert.equal(
+    (
+      await refused.message('GEV_SHELL_SAVE', 'approved', {
+        storageScope: 'invalid',
+      })
+    ).ok,
+    false,
+  );
+  assert.equal(refused.requests.length, 0);
+  assert.equal(refused.storage.size, 0);
+});
+
+test('named offline manifest scope mismatch propagates session retirement without storing any files', async () => {
+  const handle = run(
+    async () =>
+      new Response('{"code":"operator-context-changed"}', {
+        status: 409,
+        headers: { 'X-TAK-Account-Context': 'mismatch' },
+      }),
+  );
+  const result = await handle.message('GEV_SHELL_SAVE', 'approved', {
+    storageScope: 'a'.repeat(64),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.sessionExpired, true);
+  assert.equal(handle.storage.size, 0);
+});

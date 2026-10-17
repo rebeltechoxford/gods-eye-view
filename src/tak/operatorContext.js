@@ -2,7 +2,7 @@
 export const OPERATOR_ACTIVE_KEY = 'gev.tak.operator-active.v1';
 export const OPERATOR_OFFLINE_KEY = 'gev.tak.operator-offline.v1';
 const SCOPE = /^[a-f0-9]{64}$/;
-const PRINCIPAL = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const PRINCIPAL = /^[a-z][a-z0-9-]{0,31}$/;
 const MAX_STATUS_BYTES = 16 * 1024;
 const MAX_RECORD_LENGTH = 1024;
 const blocked = (reason, sessionExpired = false) =>

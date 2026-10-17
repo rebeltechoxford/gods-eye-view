@@ -384,3 +384,53 @@ test('retired reconnect callbacks cannot replace a newly authorized attempt', ()
   assert.equal(s.sockets.length, 2);
   s.transport.disconnect();
 });
+
+test('named cookie WebSocket binds scope and invalid replacement retires old socket first', () => {
+  const s = setup(),
+    scope = 'a'.repeat(64);
+  s.transport.connect({
+    session: true,
+    storageScope: scope,
+    identity: s.identity,
+  });
+  const socket = s.sockets[0];
+  assert.deepEqual(socket.protocols, ['tak.v1', `tak.scope.${scope}`]);
+  assert.equal(socket.url.includes(scope), false);
+  socket.open();
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  s.transport.connect({
+    session: true,
+    storageScope: 'invalid',
+    identity: s.identity,
+  });
+  assert.equal(s.transport.state(), 'refused');
+  assert.equal(socket.readyState, 3);
+  assert.equal(s.sockets.length, 1);
+  assert.equal(s.timers.size, 0);
+  s.transport.disconnect();
+});
+
+test('named failed upgrade compares cookie scope and retires mismatched account without retry', async () => {
+  const s = setup({
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        multiOperator: true,
+        sessionAuthenticated: true,
+        storageScope: 'b'.repeat(64),
+      }),
+    }),
+  });
+  s.transport.connect({
+    session: true,
+    storageScope: 'a'.repeat(64),
+    identity: s.identity,
+  });
+  s.sockets[0].onclose({ code: 1006 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(s.controls.some((c) => c.op === 'session-expired'));
+  assert.equal(s.transport.state(), 'refused');
+  assert.equal(s.timers.size, 0);
+  s.transport.disconnect();
+});

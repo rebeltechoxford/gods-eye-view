@@ -59,6 +59,8 @@ const results = [];
 const errors = [];
 const authRequests = [];
 const unloadSnapshots = [];
+const bootUnloadSnapshots = [];
+let initialStatusSnapshot = null;
 const touchTrace = [];
 const pages = [];
 const interceptions = [];
@@ -469,10 +471,27 @@ async function preparePage() {
     )
       errors.push(scrub(text));
   });
+  await page.exposeFunction('__qaRecordBootUnload', (value) =>
+    bootUnloadSnapshots.push(value),
+  );
   await page.evaluateOnNewDocument(() => {
+    window.__qaDatabaseOpens = 0;
+    const originalOpen = indexedDB.open.bind(indexedDB);
+    indexedDB.open = (...args) => {
+      window.__qaDatabaseOpens++;
+      return originalOpen(...args);
+    };
     window.addEventListener('beforeunload', () => {
       const tak = window.__godsEyeView?.takClient;
-      if (!tak) return;
+      if (!tak) {
+        void window
+          .__qaRecordBootUnload({
+            tak: false,
+            databaseOpens: window.__qaDatabaseOpens,
+          })
+          .catch(() => {});
+        return;
+      }
       void window
         .__qaRecordUnload({
           contacts: tak.client.store.count(),
@@ -588,27 +607,20 @@ async function preparePage() {
         if (url.origin === instance.origin) {
           if (rejectInitialStatus && url.pathname === '/api/tak/status') {
             rejectInitialStatus = false;
-            await page.waitForFunction(
-              () => !!window.__godsEyeView?.takClient,
-              {
-                timeout,
-              },
+            initialStatusSnapshot = await page.evaluate(() => ({
+              tak: !!window.__godsEyeView?.takClient,
+              databaseOpens: window.__qaDatabaseOpens,
+            }));
+            assert.equal(
+              initialStatusSnapshot.tak,
+              false,
+              'Rejected account status must precede TAK identity boot',
             );
-            await page.evaluate(() => {
-              window.__godsEyeView.takClient.client.setFix({
-                lat: 34.3665,
-                lon: -89.5192,
-                source: 'USER',
-              });
-              for (const consent of document.querySelectorAll(
-                '[data-tak-disclosure]',
-              )) {
-                consent.checked = true;
-                consent.dispatchEvent(new Event('change', { bubbles: true }));
-              }
-              document.querySelector('[data-tak-xml]').value =
-                'SYNTHETIC INITIAL STATUS INPUT';
-            });
+            assert.equal(
+              initialStatusSnapshot.databaseOpens,
+              0,
+              'Rejected account status must precede retained-map reads',
+            );
             return await req.respond({
               status: 401,
               contentType: 'application/json',
@@ -1228,16 +1240,31 @@ try {
     },
   );
   await step(
-    'simulated initial status HTTP401 clears data loaded during the pending status request',
+    'initial status HTTP401 prevents TAK identity and retained-map initialization',
     async () => {
       await page.goto(instance.origin + '/login', {
         waitUntil: 'domcontentloaded',
         timeout,
       });
       rejectInitialStatus = true;
-      const baseline = unloadSnapshots.length;
+      const baseline = bootUnloadSnapshots.length;
       await submitLogin(page, false);
-      await finishExpiredNavigation(page, baseline, false);
+      await page.waitForFunction(() => location.pathname === '/login', {
+        timeout,
+      });
+      assert.deepEqual(initialStatusSnapshot, { tak: false, databaseOpens: 0 });
+      const until = Date.now() + timeout;
+      while (bootUnloadSnapshots.length <= baseline && Date.now() < until)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      assert(
+        bootUnloadSnapshots.length > baseline,
+        'Rejected startup document reports its pre-TAK cleanup',
+      );
+      assert.deepEqual(bootUnloadSnapshots.at(-1), {
+        tak: false,
+        databaseOpens: 0,
+      });
+      assert.equal(await page.evaluate(() => !!window.__godsEyeView), false);
     },
   );
   await step(

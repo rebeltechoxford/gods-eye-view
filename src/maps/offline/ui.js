@@ -74,6 +74,9 @@ export function shellMessage(type, onProgress = () => {}) {
       ]);
       const worker = registration.active;
       if (!worker) throw new Error('Reopen the application after installation');
+      const accountContext = getResolvedOperatorContext();
+      if (!isOperatorContextCurrent(accountContext))
+        throw new Error('Offline application account context changed');
       const channel = new MessageChannel();
       port = channel.port1;
       timer = setTimeout(() => {
@@ -100,7 +103,15 @@ export function shellMessage(type, onProgress = () => {}) {
           reject(error);
         }
       };
-      worker.postMessage({ type }, [channel.port2]);
+      worker.postMessage(
+        {
+          type,
+          ...(accountContext.multiOperator
+            ? { storageScope: accountContext.storageScope }
+            : {}),
+        },
+        [channel.port2],
+      );
     } catch (error) {
       clearTimeout(timer);
       port?.close();
@@ -238,7 +249,12 @@ export function createSavedMaps({
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    if (response.status === 401) onSessionExpired();
+    if (
+      response.status === 401 ||
+      (response.status === 409 &&
+        response.headers.get('X-TAK-Account-Context') === 'mismatch')
+    )
+      onSessionExpired();
     if (!accountCurrent()) throw new Error('Saved-map account context changed');
     if (response.status === 204) return null;
     const bytes = await responseBytes(
@@ -305,7 +321,12 @@ export function createSavedMaps({
           redirect: 'error',
           signal,
         });
-        if (response.status === 401) onSessionExpired();
+        if (
+          response.status === 401 ||
+          (response.status === 409 &&
+            response.headers.get('X-TAK-Account-Context') === 'mismatch')
+        )
+          onSessionExpired();
         if (!response.ok)
           throw new Error(
             'Tile unavailable or sign-in expired; reconnect and retry device copy',

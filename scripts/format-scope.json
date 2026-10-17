@@ -1053,5 +1053,8 @@
   "scripts/qa-tak-drawings.mjs",
   "docs/TAK_DRAWINGS_ROUTES.md",
   "src/tooling/takMultioperator.test.mjs",
-  "docs/TAK_MULTIOPERATOR.md"
+  "docs/TAK_MULTIOPERATOR.md",
+  "src/tak/operatorContext.js",
+  "src/tak/operatorContext.test.mjs",
+  "scripts/qa-tak-operators.mjs"
 ]
