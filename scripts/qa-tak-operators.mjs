@@ -107,6 +107,8 @@ async function step(name, action) {
   console.log(`ok ${results.length} ${name}`);
 }
 async function tap(page, selector) {
+  await page.bringToFront();
+  assert.equal(await page.evaluate(() => document.visibilityState), 'visible');
   const node = await page.waitForSelector(selector, { visible: true });
   try {
     await node.evaluate(async (el) => {
@@ -155,6 +157,7 @@ async function tap(page, selector) {
   }
 }
 async function fill(page, selector, value) {
+  await page.bringToFront();
   const node = await page.waitForSelector(selector, { visible: true });
   await node.focus();
   await page.keyboard.down('Control');
