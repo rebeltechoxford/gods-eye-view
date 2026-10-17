@@ -42,7 +42,11 @@ async function readState() {
   }
 }
 async function bounded(response, limit) {
-  if (response.status === 401) {
+  if (
+    response.status === 401 ||
+    (response.status === 409 &&
+      response.headers?.get('X-TAK-Account-Context') === 'mismatch')
+  ) {
     const error = new Error('Operator session expired; sign in again');
     error.sessionExpired = true;
     throw error;
@@ -106,7 +110,7 @@ function validate(value) {
     throw new Error('Offline application exceeds its storage budget');
   return value;
 }
-async function saveShell(port) {
+async function saveShell(port, storageScope) {
   if (saving || deleting)
     throw new Error('An offline application operation is already running');
   const abort = new AbortController();
@@ -117,6 +121,9 @@ async function saveShell(port) {
   let committed = false;
   try {
     const response = await fetch('/api/maps/offline/shell', {
+      ...(storageScope
+        ? { headers: { 'X-TAK-Storage-Scope': storageScope } }
+        : {}),
       credentials: 'same-origin',
       cache: 'no-store',
       redirect: 'error',
@@ -237,8 +244,14 @@ self.addEventListener('message', (event) => {
         )
           throw new Error('Top-level app required');
         let result;
+        const scope = event.data.storageScope;
+        if (
+          scope !== undefined &&
+          (typeof scope !== 'string' || !/^[a-f0-9]{64}$/.test(scope))
+        )
+          throw new Error('Invalid offline application account scope');
         if (event.data.type === 'GEV_SHELL_SAVE')
-          result = await saveShell(port);
+          result = await saveShell(port, scope);
         else if (event.data.type === 'GEV_SHELL_DELETE') {
           if (saving || deleting)
             throw new Error('Wait for the current application operation first');

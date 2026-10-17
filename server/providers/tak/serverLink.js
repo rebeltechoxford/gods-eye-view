@@ -28,6 +28,14 @@ export function loadTlsOptions(config, readFile = readFileSync) {
     servername: net.isIP(config.host) ? undefined : config.host,
     minVersion: 'TLSv1.2',
   };
+  if (t.material)
+    return {
+      ...options,
+      cert: t.material.cert,
+      key: t.material.key,
+      ca: t.material.ca,
+      rejectUnauthorized: true,
+    };
   if (t.p12) {
     options.pfx = readFile(t.p12);
     if (t.p12Password !== null && t.p12Password !== undefined)

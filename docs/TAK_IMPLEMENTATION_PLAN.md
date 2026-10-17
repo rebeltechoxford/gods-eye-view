@@ -432,6 +432,54 @@ expanded privacy reset check for real draft geometry and pending inputs.
 Native-peer geometry acceptance, turn guidance and broader native shape types
 remain open; see [drawing evidence](TAK_DRAWINGS_ROUTES.md).
 
+The drawings milestone merged through PR #9 as development `3afdc368` after all
+five repository jobs passed. All six checks on the development-to-main review
+PR #6 subsequently passed, including the macOS iPhone archive/simulator job.
+The review test-merge `cb65b392` has the same file tree as development; main
+remains unchanged. The run guide links the independently hash-verified IPA.
+
+## Named operator isolation
+
+The private HTTPS host adds an optional closed-schema account file with up to
+eight named principals and four sessions per principal. Each enabled account
+has distinct pinned mTLS material, an independent gateway/router/replay/queue,
+server-enforced operator or receive-only rights and its own bounded server map
+directory. Legacy single-operator HTTPS and loopback lab configurations remain
+available. Global server/mesh bridging is rejected in named mode.
+
+The browser resolves authenticated account context before opening device map
+storage or restoring identity. Named namespaces and explicit saved-app offline
+approval prevent account mixups on network outage; HTTP authorization failures
+never invoke that fallback. Cross-tab changes retire the old client, GPS,
+private editor state and disclosures. Requests also carry expected context on
+maps, saved-shell manifests, WSS and logout to cover shared-cookie changes
+before a storage event arrives. Scope identifiers provide binding, not access
+authority or encryption. Logout clears the page synchronously before dispatch;
+an unconfirmed request leaves an explicit reopen/sign-in path.
+
+Focused verification covers 59 server HTTPS/gateway/TLS cases and 116 browser
+context/client/transport/session/PWA/offline/font cases using synthetic
+identities. The dedicated production browser gate exercises actual loopback
+HTTPS/WSS, separate mTLS connections, saved maps, account switching, receive-only
+rights, real server outage and rejected access; its final run evidence and CI
+results are tracked in [PR #10](https://github.com/rebeltechoxford/gods-eye-view/pull/10).
+Actual TAK Server IN/OUT membership and revocation,
+native directed-reply routing and physical EUD acceptance remain open. See
+[account setup and security contract](TAK_MULTIOPERATOR.md).
+
+The integrated application at `f3e7e773` passed the full local Node 24.19 Windows
+runner: **6,721 ordinary passes**, ten existing skips, zero failures, then all
+**14 allocation checks** (`.gev-cache/operators-unit-full.log`). Review also
+fixed queued historical storage events retiring a newly authenticated matching
+account, an expected expired-session redirect reported as a startup crash, and
+undersized native login controls. The account-context regression file now has
+35 passing tests, including genuine account changes and delayed old responses.
+Production and panel builds, formatting, import/package boundaries and published
+layer tokens passed. The production browser gate remains a separate acceptance
+requirement. Its fixture handling requires exact Chrome request/document or
+renderer-abort evidence before classifying a canceled request; unmatched IDs,
+other frames and unrelated protocol failures still fail the gate.
+
 ## Current external prerequisites
 
 No authorized live TAK Server credentials, certificate material or real-client

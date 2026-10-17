@@ -6,6 +6,7 @@ export const TAK_WS_PATH = '/api/tak/ws';
 export const TAK_STATUS_PATH = '/api/tak/status';
 export const TAK_WS_PROTOCOL = 'tak.v1';
 export const TAK_TOKEN_PROTOCOL_PREFIX = 'tak.token.';
+export const TAK_SCOPE_PROTOCOL_PREFIX = 'tak.scope.';
 export const RECONNECT_MS = Object.freeze({ min: 1_000, max: 30_000 });
 export const MAX_TRANSPORT_BUFFER_BYTES = 256 * 1024;
 export const MAX_TRANSPORT_FRAME_BYTES = 64 * 1024;
@@ -41,6 +42,7 @@ export function createGatewayTransport({
   let state = 'idle';
   let token = null;
   let sessionAuthenticated = false;
+  let storageScope = null;
   let backoff = RECONNECT_MS.min;
   let timer = null;
   let wanted = false;
@@ -84,10 +86,28 @@ export function createGatewayTransport({
         return fetchImpl(TAK_STATUS_PATH, {
           credentials: 'same-origin',
           cache: 'no-store',
+          redirect: 'error',
           signal: probe.controller.signal,
         });
       })
-      .then((response) => finish(response?.status === 401))
+      .then(async (response) => {
+        if (response?.status === 401 || response?.status === 403)
+          return finish(true);
+        if (storageScope && response?.ok) {
+          let value;
+          try {
+            value = await response.json();
+          } catch {
+            return finish(true);
+          }
+          return finish(
+            value?.storageScope !== storageScope ||
+              value?.multiOperator !== true ||
+              value?.sessionAuthenticated !== true,
+          );
+        }
+        finish();
+      })
       .catch(() => finish());
   }
 
@@ -144,6 +164,7 @@ export function createGatewayTransport({
     }
     setState('connecting');
     const protocols = [TAK_WS_PROTOCOL];
+    if (storageScope) protocols.push(TAK_SCOPE_PROTOCOL_PREFIX + storageScope);
     if (token) protocols.push(TAK_TOKEN_PROTOCOL_PREFIX + token);
     let socket;
     try {
@@ -266,6 +287,7 @@ export function createGatewayTransport({
       clearSessionProbe();
       token = options.token ? String(options.token) : null;
       sessionAuthenticated = options.session === true;
+      storageScope = options.storageScope ?? null;
       identity = options.identity || null;
       wanted = true;
       everOpened = false;
@@ -277,6 +299,16 @@ export function createGatewayTransport({
         const old = ws;
         ws = null;
         old.close();
+      }
+      if (
+        storageScope !== null &&
+        (!sessionAuthenticated ||
+          typeof storageScope !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(storageScope))
+      ) {
+        wanted = false;
+        setState('refused', 'Invalid operator account scope');
+        return;
       }
       if (
         (!sessionAuthenticated &&

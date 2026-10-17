@@ -68,9 +68,14 @@ function hostPort(value) {
 export function readTakGatewayConfig(env = process.env) {
   const errors = [];
   const enabled = flag(env.TAK_GATEWAY);
+  const multiOperator = !!String(env.TAK_GATEWAY_USERS_FILE || '').trim();
   const token = String(env.TAK_GATEWAY_TOKEN ?? '').trim() || null;
   const tokenValid = !!token && /^[A-Za-z0-9._~-]{24,128}$/.test(token);
-  if (enabled && !tokenValid)
+  if (enabled && multiOperator)
+    errors.push(
+      'Named principals require the private HTTPS host; the Vite/lab gateway stays disabled',
+    );
+  if (enabled && !tokenValid && !multiOperator)
     errors.push(
       'TAK_GATEWAY_TOKEN is required: use 24-128 characters of A-Z a-z 0-9 . _ ~ -; the gateway stays off until it is valid',
     );
@@ -155,7 +160,7 @@ export function readTakGatewayConfig(env = process.env) {
   }
 
   return Object.freeze({
-    enabled: enabled && tokenValid,
+    enabled: enabled && tokenValid && !multiOperator,
     token: tokenValid ? token : null,
     localBootstrap: flag(env.TAK_GATEWAY_LOCAL_BOOTSTRAP),
     principal: 'local-operator',

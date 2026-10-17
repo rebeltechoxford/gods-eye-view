@@ -243,6 +243,8 @@ export function createTakPanel({
     $('[data-tak-submission-count]').textContent = '';
     renderedSubmissions = null;
     $('[data-tak-fix]').textContent = 'No position set.';
+    $('[data-tak-whoami]').textContent = '';
+    $('[data-tak-uid]').textContent = '';
     $('[data-tak-sa]').checked = false;
     for (const input of root.querySelectorAll('[data-tak-disclosure]'))
       input.checked = false;
@@ -411,13 +413,30 @@ export function createTakPanel({
     frame = 0;
     if (destroyed) return;
     const link = client.link();
+    const canShare = client.canShare?.() !== false;
+    for (const selector of [
+      '[data-tak-sa]',
+      '[data-tak-emergency]',
+      '[data-tak-marker-broadcast]',
+      '[data-tak-chat-input]',
+      '[data-tak-chat-form] button',
+    ]) {
+      const control = $(selector);
+      control.disabled = !canShare;
+      if (!canShare && control.type === 'checkbox') control.checked = false;
+    }
     const device = mobile.state();
     $('[data-tak-connect]').disabled = !gatewayInfo();
     const operatorSession =
       gatewayInfo()?.sessionAuthenticated || link.gateway?.sessionAuthenticated;
-    $('[data-tak-logout]').hidden = !operatorSession;
+    const reopenRequired = gatewayInfo()?.reopenRequired === true;
+    $('[data-tak-logout]').hidden = !operatorSession && !reopenRequired;
+    $('[data-tak-logout]').textContent = reopenRequired
+      ? 'Reopen / sign in'
+      : 'Sign out';
+    $('[data-tak-logout]').disabled = logoutPending;
     const tokenInput = $('[data-tak-token]');
-    tokenInput.hidden = !!operatorSession;
+    tokenInput.hidden = !!operatorSession || reopenRequired;
     if (operatorSession) tokenInput.value = '';
     if (link.lastReject && link.lastReject !== renderedReject) {
       renderedReject = link.lastReject;
@@ -451,6 +470,10 @@ export function createTakPanel({
         : label;
     root.dataset.link = link.state;
     $('[data-tak-gateway]').textContent = describeGateway(link, gatewayInfo());
+    const account = gatewayInfo();
+    if (account?.multiOperator)
+      $('[data-tak-gateway]').textContent +=
+        ` Account ${account.principal} · ${account.role === 'observer' ? 'RECEIVE ONLY — local drafts and maps remain available.' : 'OPERATOR'}`;
     $('[data-tak-uplinks]').textContent = describeUplinks(link);
     const id = client.identity();
     const whoami = $('[data-tak-whoami]');
@@ -598,7 +621,11 @@ export function createTakPanel({
       return 'Disconnected. Working local-only.';
     }, 'Unable to disconnect.'),
   );
+  let logoutPending = false;
   $('[data-tak-logout]').addEventListener('click', async () => {
+    if (logoutPending) return;
+    logoutPending = true;
+    $('[data-tak-logout]').disabled = true;
     connectAttempt?.abort();
     geolocation.stop();
     gpsOn = false;
@@ -612,9 +639,12 @@ export function createTakPanel({
     } catch (error) {
       report(
         error?.message ||
-          'Server sign-out could not be confirmed; retry while connected.',
+          'Server sign-out could not be confirmed; reopen while connected.',
         true,
       );
+    } finally {
+      logoutPending = false;
+      render();
     }
   });
 

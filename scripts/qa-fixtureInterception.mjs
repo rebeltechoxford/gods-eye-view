@@ -1,3 +1,5 @@
+import { createXhrAbortProof } from './qa-xhrAbortProof.mjs';
+
 /**
  * Route hermetic browser fixtures without Puppeteer's cross-target request-ID
  * correlation. Puppeteer 25 + Chromium 152 can otherwise leave Cesium ESM
@@ -8,7 +10,7 @@
  */
 export async function interceptFixtures(
   page,
-  { origin, handle, includePaths = [] },
+  { origin, handle, includePaths = [], observeXhrAborts = false },
 ) {
   origin = new URL(origin).origin;
   if (typeof handle !== 'function')
@@ -36,12 +38,22 @@ export async function interceptFixtures(
     map.set(key, value);
     if (map.size > 512) map.delete(map.keys().next().value);
   }
-  const onRequest = (event) =>
-    boundedSet(requests, event.requestId, {
+  let xhrProof = null;
+  const onRequest = (event) => {
+    const owner = {
       loaderId: event.loaderId,
       frameId: event.frameId,
+      startedAt: Number.isFinite(event.wallTime) ? event.wallTime * 1000 : null,
       at: Date.now(),
+    };
+    // Match in memory only. Never serialize query strings or authentication URLs.
+    Object.defineProperties(owner, {
+      url: { value: event.request?.url },
+      method: { value: event.request?.method },
     });
+    boundedSet(requests, event.requestId, owner);
+    xhrProof?.observeNetwork();
+  };
   const onFrame = ({ frame }) =>
     boundedSet(frames, frame.id, { loaderId: frame.loaderId, at: Date.now() });
   const cancelled = new Map(),
@@ -97,6 +109,9 @@ export async function interceptFixtures(
   client.on('Page.frameNavigated', onFrame);
   await client.send('Page.enable');
   await client.send('Network.enable');
+  xhrProof = observeXhrAborts
+    ? await createXhrAbortProof(client, { origin, frames, requests })
+    : null;
   const onPaused = async (event) => {
     if (disposed) return;
     const { requestId, networkId, request, resourceType, frameId } = event;
@@ -124,6 +139,16 @@ export async function interceptFixtures(
             networkId,
             error: cancelled.get(networkId)?.error || 'cancelled',
           });
+          if (cancellations.length > 512) cancellations.shift();
+          return;
+        }
+        const explicitAbort = /Invalid InterceptionId\.?$/i.test(
+          error?.message || '',
+        )
+          ? xhrProof?.evidence(networkId, event)
+          : null;
+        if (explicitAbort) {
+          cancellations.push(explicitAbort);
           if (cancellations.length > 512) cancellations.shift();
           return;
         }
@@ -221,6 +246,7 @@ export async function interceptFixtures(
       disposed = true;
       for (const group of waiting.values())
         for (const settle of [...group]) settle(false);
+      await xhrProof?.dispose();
       client.off('Fetch.requestPaused', onPaused);
       client.off('Network.loadingFailed', onLoadingFailed);
       client.off('Network.requestWillBeSent', onRequest);

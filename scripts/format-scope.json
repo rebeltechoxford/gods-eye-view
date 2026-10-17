@@ -1017,6 +1017,8 @@
   "scripts/qa-reference-live.mjs",
   "scripts/qa-tak-stress.mjs",
   "scripts/qa-fixtureInterception.mjs",
+  "scripts/qa-xhrAbortProof.mjs",
+  "src/tooling/qaXhrAbortProof.test.mjs",
   "src/tooling/qaFixtureInterception.test.mjs",
   "src/tak/storeResources.test.mjs",
   "src/tooling/takHttps.test.mjs",
@@ -1051,5 +1053,10 @@
   "server/providers/tak/browserGeometry.js",
   "src/tooling/takBrowserGeometry.test.mjs",
   "scripts/qa-tak-drawings.mjs",
-  "docs/TAK_DRAWINGS_ROUTES.md"
+  "docs/TAK_DRAWINGS_ROUTES.md",
+  "src/tooling/takMultioperator.test.mjs",
+  "docs/TAK_MULTIOPERATOR.md",
+  "src/tak/operatorContext.js",
+  "src/tak/operatorContext.test.mjs",
+  "scripts/qa-tak-operators.mjs"
 ]

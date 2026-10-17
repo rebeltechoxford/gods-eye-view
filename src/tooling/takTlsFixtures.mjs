@@ -4,7 +4,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-export function createTakTlsFixtures() {
+export function createTakTlsFixtures({
+  clientName = 'Synthetic client',
+  authorityName = 'Synthetic',
+} = {}) {
+  if (!/^[A-Za-z0-9 -]{1,64}$/.test(clientName))
+    throw new Error('Invalid synthetic TLS client name');
+  if (!/^[A-Za-z0-9 -]{1,64}$/.test(authorityName))
+    throw new Error('Invalid synthetic TLS authority name');
   const candidates = [
     'openssl',
     path.join(
@@ -61,7 +68,7 @@ export function createTakTlsFixtures() {
         '-days',
         '2',
         '-subj',
-        `/CN=Synthetic ${name}`,
+        `/CN=${authorityName} ${name}`,
       ]);
     for (const name of ['server', 'client'])
       run([
@@ -75,7 +82,7 @@ export function createTakTlsFixtures() {
         '-out',
         `${name}.csr`,
         '-subj',
-        `/CN=Synthetic ${name}`,
+        name === 'client' ? `/CN=${clientName}` : `/CN=Synthetic ${name}`,
       ]);
     writeFileSync(
       file('server.ext'),

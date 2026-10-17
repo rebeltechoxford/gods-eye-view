@@ -115,10 +115,13 @@ of the public GEV layer registry and share-state formats.
 ## Connect an authorized real TAK Server
 
 This requires credentials issued for a TAK Server you are authorized to use.
-The gateway serves **one operator**. Development/lab access stays on direct
-loopback; the production host below also supports explicitly configured private
-HTTPS access for that operator's EUD. Distinct users, roles and TAK groups are
-not implemented.
+The configuration below serves one operator. Development/lab access stays on
+direct loopback; the production host also supports private HTTPS access.
+For multiple people, use [named operators](docs/TAK_MULTIOPERATOR.md): up to
+eight accounts, separate issued client certificates, operator/receive-only
+roles and isolated gateway streams, replay and saved-map storage. TAK Server
+group membership must be provisioned and tested on the authorized server;
+callsigns and team colors do not grant access.
 
 Keep certificate files outside Git. Set these values in the gitignored `.env`
 file, substituting your actual authorized server and absolute certificate paths:
@@ -192,6 +195,14 @@ Allowed connections are loopback or RFC1918 IPv4. Public, wildcard, link-local,
 CGNAT and IPv6 ULA addresses, forwarded headers and cross-origin requests are
 refused. Do not expose or forward this listener to the public Internet.
 
+For named accounts, keep the same `TAK_HTTPS_*` listener settings and set
+`TAK_GATEWAY_USERS_FILE` to the protected JSON described in the
+[account setup guide](docs/TAK_MULTIOPERATOR.md). Each enabled account needs
+its own PEM client certificate/key and trusted TAK CA. Remove global
+`TAK_SERVER`, mesh and bridge settings in this mode; they are rejected to
+prevent accidental stream sharing. Login uses the account name and its own
+random token. The server keeps only token hashes in the account file.
+
 ```sh
 npm ci
 npm run build
@@ -207,6 +218,20 @@ eight hours of idle time or eight hours total; restarting the host requires
 sign-in again. Expired active WebSockets are revoked, and the client clears
 private state and returns to sign-in when it receives that expiry response.
 
+Named mode additionally limits each account to four sessions/connections.
+Receive-only accounts can view their authorized stream and work with local
+maps, files and drafts; they cannot publish positions, chat, alerts or objects.
+Changing accounts in another tab clears the previous tab's tactical state and
+reopens the app. Map requests and WebSockets bind the expected account to the
+server session so a stale tab cannot operate as the replacement account.
+
+Named device identities and map databases use separate account/configuration
+namespaces. **Save app for offline use** also explicitly approves that account
+for later network-outage reopening. A rejected login/status is never treated
+as an offline fallback. Sign-out revokes the approval. These namespaces are
+not encryption or protection from someone controlling the same unlocked
+browser profile; use separate OS/browser profiles for that boundary.
+
 The production host retains GEV's provider middleware and built globe/layers,
 voice and PWA assets. Existing provider credentials and coverage requirements
 still apply. `/api/setup` and `/mcp` remain unavailable on the private host;
@@ -217,9 +242,10 @@ installation alone does not download them. Tactical contacts/chat stay in page
 memory, and reliable background GPS is not supplied by the browser.
 
 `TAK_HTTPS_*` protects browser-to-GEV traffic. The separate `TAK_SERVER_*`
-settings above protect the gateway-to-TAK Server connection. Configure both
-when using an authorized real server. HTTPS login alone does not establish
-TAK peer delivery or browser GPS permission.
+settings above, or each named account's `server` entry, protect the
+gateway-to-TAK Server connection. Configure both sides when using an authorized
+real server. HTTPS login alone does not establish TAK peer delivery or browser
+GPS permission.
 
 Local tests use temporary synthetic certificates and loopback HTTPS/WSS. A
 real phone with its issued/trusted certificate, private-network reachability,
@@ -231,11 +257,14 @@ to produce those local results.
 
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is
-`output/ios/f3f65373/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`output/ios/3afdc368/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
 `provenance.json` and a simulator screenshot. The same package is in the
-[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38962072944)
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38996827171)
 while GitHub retains it. Its SHA-256 is
-`da65e0a67ad3b2adb8ab88f840bda5ac9007a68620f0504eab1768bba51fd61b`.
+`a2521bd41b339872bfcd4810b60dd9e22e6e17a90ee3f82dc3dcafe9c2733fe0`.
+This development revision passed all six review checks. The archive was built
+with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
+establish a physical-phone or configured-private-endpoint result.
 
 1. Set up [AltStore Classic/AltServer on Windows](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows)
    for your own iPhone. Apple authentication and personal signing stay in that

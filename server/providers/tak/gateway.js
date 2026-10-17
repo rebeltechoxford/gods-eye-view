@@ -45,11 +45,15 @@ const UUID =
 const DEVICE_UID =
   /^GEV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** One shared secret represents one local operator, never a public multiuser service. */
-function hasAuthenticatedSession(req, authenticateSession) {
+/** Each gateway instance accepts only its configured server-authenticated principal. */
+function hasAuthenticatedSession(
+  req,
+  authenticateSession,
+  principal = 'local-operator',
+) {
   if (!req || typeof authenticateSession !== 'function') return false;
   try {
-    return authenticateSession(req)?.principal === 'local-operator';
+    return authenticateSession(req)?.principal === principal;
   } catch {
     return false;
   }
@@ -57,7 +61,13 @@ function hasAuthenticatedSession(req, authenticateSession) {
 
 export function authorizeUpgrade(
   req,
-  { token, accessPolicy = createBrowserAccessPolicy() },
+  {
+    token,
+    principal = 'local-operator',
+    multiOperator = false,
+    storageScope,
+    accessPolicy = createBrowserAccessPolicy(),
+  },
   { authenticateSession } = {},
 ) {
   const local = authorizeBrowserRequest(req, accessPolicy);
@@ -69,15 +79,26 @@ export function authorizeUpgrade(
     .map((p) => p.trim());
   if (!offered.includes(TAK_WS_PROTOCOL))
     return { ok: false, status: 400, reason: 'protocol' };
+  if (multiOperator) {
+    const scopes = offered.filter((protocol) =>
+      protocol.startsWith('tak.scope.'),
+    );
+    if (
+      scopes.length !== 1 ||
+      !/^[a-f0-9]{64}$/.test(storageScope || '') ||
+      scopes[0] !== `tak.scope.${storageScope}`
+    )
+      return { ok: false, status: 401, reason: 'operator context required' };
+  }
   const supplied = offered.find((p) => p.startsWith(TAK_TOKEN_PROTOCOL_PREFIX));
   if (accessPolicy.mode === 'private-https') {
-    return hasAuthenticatedSession(req, authenticateSession)
+    return hasAuthenticatedSession(req, authenticateSession, principal)
       ? { ok: true }
       : { ok: false, status: 401, reason: 'operator session required' };
   }
   if (
     !matchesToken(supplied?.slice(TAK_TOKEN_PROTOCOL_PREFIX.length), token) &&
-    !hasAuthenticatedSession(req, authenticateSession)
+    !hasAuthenticatedSession(req, authenticateSession, principal)
   )
     return { ok: false, status: 401, reason: 'token' };
   return { ok: true };
@@ -123,6 +144,8 @@ export function createTakGateway({
 }) {
   if (!config.enabled || !matchesToken(config.token, config.token))
     throw new Error('An enabled TAK gateway requires an operator token');
+  const authenticated = (req) =>
+    hasAuthenticatedSession(req, authenticateSession, config.principal);
   const replay = new Map();
   const browsers = new Map();
   const browserContexts = new WeakMap();
@@ -209,10 +232,7 @@ export function createTakGateway({
                 !record.inactive &&
                 record.browser.ws.readyState === 1 &&
                 (!record.browser.sessionBased ||
-                  hasAuthenticatedSession(
-                    record.browser.request,
-                    authenticateSession,
-                  )),
+                  authenticated(record.browser.request)),
             }) !== false;
         } catch {
           /* correlated rejection below */
@@ -290,10 +310,7 @@ export function createTakGateway({
   function send(ws, payload) {
     if (closed || ws.readyState !== 1) return false;
     const context = browserContexts.get(ws);
-    if (
-      context?.sessionBased &&
-      !hasAuthenticatedSession(context.request, authenticateSession)
-    ) {
+    if (context?.sessionBased && !authenticated(context.request)) {
       ws.close(1008, 'session expired');
       return false;
     }
@@ -317,8 +334,8 @@ export function createTakGateway({
   const control = (ws, message) => send(ws, JSON.stringify(message));
   function broadcastStatus() {
     statusTimer = null;
-    const message = JSON.stringify({ op: 'status', status: status() });
-    for (const { ws } of browsers.values()) send(ws, message);
+    for (const { ws, request } of browsers.values())
+      control(ws, { op: 'status', status: status(request) });
   }
   function scheduleStatus() {
     if (!closed && !statusTimer) statusTimer = setTimeout(broadcastStatus, 250);
@@ -360,6 +377,8 @@ export function createTakGateway({
   function authorizeEvent(event, browser) {
     const identity = browser.identity;
     if (!identity) return 'Register your identity before sending CoT';
+    if (config.role === 'observer')
+      return 'This principal has receive-only TAK access';
     const t = now();
     if (
       event.staleMs <= t ||
@@ -635,7 +654,7 @@ export function createTakGateway({
     };
     router.addLink(link);
     browsers.set(id, browser);
-    control(ws, { op: 'hello', link: id, status: status() });
+    control(ws, { op: 'hello', link: id, status: status(request) });
     const identityTimeout = setTimeout(() => {
       if (!browser.identity) ws.close(1008, 'identity required');
     }, 10_000);
@@ -668,10 +687,7 @@ export function createTakGateway({
       browser.alive = true;
     });
     ws.on('message', (data, isBinary) => {
-      if (
-        browser.sessionBased &&
-        !hasAuthenticatedSession(browser.request, authenticateSession)
-      ) {
+      if (browser.sessionBased && !authenticated(browser.request)) {
         ws.close(1008, 'session expired');
         return;
       }
@@ -751,7 +767,7 @@ export function createTakGateway({
           for (const record of browser.legacySubmissions) cancelRecord(record);
           browser.legacySubmissions.clear();
         } else if (message?.op === 'status')
-          control(ws, { op: 'status', status: status() });
+          control(ws, { op: 'status', status: status(request) });
         else control(ws, { op: 'reject', reason: 'unknown control message' });
         return;
       }
@@ -775,10 +791,7 @@ export function createTakGateway({
     prune();
     for (const browser of browsers.values()) {
       expireSubmissions(browser);
-      if (
-        browser.sessionBased &&
-        !hasAuthenticatedSession(browser.request, authenticateSession)
-      ) {
+      if (browser.sessionBased && !authenticated(browser.request)) {
         browser.ws.close(1008, 'session expired');
         continue;
       }
@@ -804,7 +817,11 @@ export function createTakGateway({
         `HTTP/1.1 ${code} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
     };
-    if (closed || browsers.size >= MAX_BROWSERS) {
+    if (
+      closed ||
+      browsers.size >=
+        Math.min(MAX_BROWSERS, config.browserLimit || MAX_BROWSERS)
+    ) {
       reject(503);
       return true;
     }
@@ -818,21 +835,30 @@ export function createTakGateway({
   }
   function publicStatus(req) {
     const internal = config.accessPolicy?.mode === 'private-https';
+    const sessionAuthenticated = authenticated(req);
     return {
       enabled: true,
       tokenRequired: true,
       localOnly: !internal,
       internalOnly: internal,
-      principal: 'local-operator',
+      ...(!config.multiOperator || sessionAuthenticated
+        ? { principal: config.principal || 'local-operator' }
+        : {}),
+      ...(config.multiOperator ? { multiOperator: true } : {}),
       bootstrapAllowed: !internal && !!config.localBootstrap,
-      ...(hasAuthenticatedSession(req, authenticateSession)
-        ? { sessionAuthenticated: true }
+      ...(sessionAuthenticated
+        ? {
+            sessionAuthenticated: true,
+            ...(config.multiOperator
+              ? { role: config.role, storageScope: config.storageScope }
+              : {}),
+          }
         : {}),
     };
   }
-  function status() {
+  function status(req) {
     return {
-      ...publicStatus(),
+      ...publicStatus(req),
       bridge: config.bridge,
       browsers: browsers.size,
       mesh: uplinks.find((l) => l.kind === 'mesh')?.status() || null,
@@ -895,20 +921,24 @@ export function createTakGateway({
     router,
     recheckSessions() {
       for (const browser of browsers.values()) {
-        if (
-          browser.sessionBased &&
-          !hasAuthenticatedSession(browser.request, authenticateSession)
-        )
+        if (browser.sessionBased && !authenticated(browser.request))
           browser.ws.close(1008, 'session expired');
       }
     },
-    close() {
+    close({ sessionExpired = false } = {}) {
       if (closed) return;
       closed = true;
       if (statusTimer) clearTimeout(statusTimer);
       if (pingTimer) stopEvery(pingTimer);
       stopEvery(heartbeat);
-      for (const { ws } of browsers.values()) ws.terminate();
+      for (const { ws } of browsers.values()) {
+        if (sessionExpired) {
+          ws.close(1008, 'session expired');
+          const timeout = setTimeout(() => ws.terminate(), 1000);
+          timeout.unref();
+          ws.once('close', () => clearTimeout(timeout));
+        } else ws.terminate();
+      }
       browsers.clear();
       for (const link of uplinks) link.close();
       wss.close();

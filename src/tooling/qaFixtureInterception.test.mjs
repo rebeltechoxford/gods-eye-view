@@ -245,3 +245,75 @@ test('an old subresource invalid ID requires the exact owning document to be rep
     assert.equal(f.client.listenerCount('Page.frameNavigated'), 0);
   }
 });
+
+test('optional renderer abort proof excuses only the exact invalid ID, never other protocol failures', async () => {
+  for (const mode of ['matching', 'other-protocol', 'no-abort', 'disabled']) {
+    let bindingName;
+    const at = Date.now();
+    const f = fixture(async (command, args, client) => {
+      if (command === 'Runtime.addBinding') bindingName = args.name;
+      if (command === 'Fetch.fulfillRequest') {
+        if (mode !== 'no-abort')
+          client.emit('Runtime.bindingCalled', {
+            name: bindingName,
+            executionContextId: 1,
+            payload: JSON.stringify({
+              kind: 'abort',
+              id: 1,
+              readyState: 2,
+              at: at + 1,
+            }),
+          });
+        throw new Error(
+          mode === 'other-protocol'
+            ? 'Protocol error: disconnected'
+            : 'Protocol error (Fetch.fulfillRequest): Invalid InterceptionId.',
+        );
+      }
+      return { identifier: 'fixture-script' };
+    });
+    const hook = await interceptFixtures(f.page, {
+      origin: 'https://127.0.0.1',
+      observeXhrAborts: mode !== 'disabled',
+      handle: (request) => request.respond({ body: 'x' }),
+    });
+    f.client.emit('Page.frameNavigated', {
+      frame: { id: 'frame-1', loaderId: 'loader-1' },
+    });
+    f.client.emit('Runtime.executionContextCreated', {
+      context: { id: 1, auxData: { isDefault: true, frameId: 'frame-1' } },
+    });
+    f.client.emit('Runtime.bindingCalled', {
+      name: bindingName,
+      executionContextId: 1,
+      payload: JSON.stringify({
+        kind: 'send',
+        id: 1,
+        method: 'GET',
+        url: 'https://fixture.invalid/tile',
+        at,
+      }),
+    });
+    f.client.emit('Network.requestWillBeSent', {
+      requestId: 'network-1',
+      frameId: 'frame-1',
+      loaderId: 'loader-1',
+      wallTime: at / 1000,
+      request: pause().request,
+    });
+    f.client.emit('Fetch.requestPaused', {
+      ...pause(),
+      frameId: 'frame-1',
+      resourceType: 'XHR',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (mode === 'matching') {
+      assert.deepEqual(hook.errors, []);
+      assert.equal(hook.cancellations[0].error, 'explicit-xhr-abort');
+    } else {
+      assert.equal(hook.errors.length, 1, mode);
+      assert.deepEqual(hook.cancellations, []);
+    }
+    await hook.dispose();
+  }
+});

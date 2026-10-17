@@ -26,11 +26,19 @@ import {
   offlineSource,
   isOfflineSource,
 } from './imagery.js';
-import { readSelectedOfflinePack } from './boot.js';
+import { readSelectedOfflinePack as readScopedOfflinePack } from './boot.js';
 import { MapSourceController } from '../controller.js';
 import { createDefaultMapSources } from '../defaultSources.js';
 
 const ID = '12345678-1234-4123-8123-123456789abc';
+// These storage tests inject a validated legacy context; account admission and
+// asynchronous retirement are tested separately in operatorContext.test.mjs.
+const readSelectedOfflinePack = (options) =>
+  readScopedOfflinePack({
+    context: { storageAllowed: true, storageScope: null },
+    isCurrent: () => true,
+    ...options,
+  });
 test('truncated JPEG marker fill is rejected as invalid image data without out-of-bounds reads', () => {
   const malformed = new Uint8Array(64).fill(255);
   malformed[1] = 216;

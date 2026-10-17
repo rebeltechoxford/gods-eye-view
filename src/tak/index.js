@@ -2,20 +2,24 @@ import './tak.css';
 import * as Cesium from 'cesium';
 import { createTakClient } from './client.js';
 import { createCotOverlay } from './cotOverlay.js';
-import {
-  createGatewayTransport,
-  fetchGatewayStatus,
-  fetchGatewaySession,
-} from './transport.js';
+import { createGatewayTransport, fetchGatewaySession } from './transport.js';
 import { createTakPanel } from './ui.js';
 import { createMissionPackagePanel } from './packagesUi.js';
 import { createGeolocation } from './geolocation.js';
 import { createMobileSession } from './mobile.js';
-import { logoutOperatorSession } from './session.js';
+import { signOutOperator } from './session.js';
 import { createSavedMaps } from '../maps/offline/ui.js';
 import { createNavigationPanel } from './navigationUi.js';
 import { createDrawingsPanel } from './drawingsUi.js';
 import { createNavigationFocus } from './navigationCamera.js';
+import { isEmbedded } from '../app/embed.js';
+import {
+  getResolvedOperatorContext,
+  isOperatorContextCurrent,
+  identityStorageKey,
+  subscribeOperatorContextInvalidation,
+  clearOfflineOperatorContext,
+} from './operatorContext.js';
 import {
   authorizeTakDisclosure,
   markTakDataPrivate,
@@ -75,7 +79,31 @@ export function initTakWebClient({
   mapStackController,
 }) {
   const controller = new AbortController();
-  let gatewayInfo = null;
+  const embedded = isEmbedded();
+  const accountContext = embedded ? null : getResolvedOperatorContext();
+  const accountCurrent = () =>
+    !embedded && isOperatorContextCurrent(accountContext);
+  const mayShare = () =>
+    !retired &&
+    accountCurrent() &&
+    (!accountContext.multiOperator || accountContext.role === 'operator');
+  let retired = false;
+  let logoutController = null;
+  let gatewayInfo = accountContext?.gateway || {
+    enabled: false,
+    ...(accountContext?.multiOperator
+      ? {
+          multiOperator: true,
+          principal: accountContext.principal,
+          role: accountContext.role,
+        }
+      : {}),
+    reason:
+      accountContext?.reason ||
+      (accountContext?.online === false
+        ? 'Offline; using approved device context'
+        : 'Account context unavailable'),
+  };
   let gatewayReady;
   let expiredRedirected = false;
   let navigation = null;
@@ -86,7 +114,14 @@ export function initTakWebClient({
 
   const client = createTakClient({
     createTransport: (handlers) => createGatewayTransport(handlers),
-    storage: browserStorage,
+    identityStorageKey: embedded ? null : identityStorageKey(),
+    storage: {
+      get: (key) => (accountCurrent() ? browserStorage.get(key) : null),
+      set: (key, value) => {
+        if (accountCurrent()) browserStorage.set(key, value);
+      },
+    },
+    canShare: mayShare,
     canReportPosition: () => !document.hidden && geolocation.isActive(),
   });
   const overlay = createCotOverlay(viewer, overlays, {
@@ -100,23 +135,44 @@ export function initTakWebClient({
     geolocation,
     mobile,
     async logout() {
-      navigation?.clearPrivateInputs();
-      packages?.clearPrivateInputs();
-      drawings?.clearPrivateInputs();
-      await logoutOperatorSession(globalThis.fetch, controller.signal);
-      window.location.replace('/login');
+      logoutController = new AbortController();
+      await signOutOperator({
+        context: accountContext,
+        isCurrent: accountCurrent,
+        retire,
+        navigate: (path) => window.location.replace(path),
+        signal: AbortSignal.any([
+          logoutController.signal,
+          AbortSignal.timeout(10_000),
+        ]),
+      });
     },
     gatewayInfo: () => gatewayInfo,
     async connect(token, signal) {
       if (!gatewayInfo) await gatewayReady;
-      if (signal.aborted || controller.signal.aborted) return false;
+      if (signal.aborted || controller.signal.aborted || retired) return false;
+      if (!accountCurrent() || !accountContext.online)
+        throw new Error(
+          'Reconnect and reopen the approved server before connecting',
+        );
       if (!token && gatewayInfo?.bootstrapAllowed) {
         const session = await fetchGatewaySession(globalThis.fetch, signal);
         token = session.token;
       }
-      if (signal.aborted || controller.signal.aborted) return false;
+      if (signal.aborted || controller.signal.aborted || retired) return false;
+      if (!accountCurrent() || !accountContext.online)
+        throw new Error(
+          'Reconnect and reopen the approved server before connecting',
+        );
       client.connect(
-        gatewayInfo?.sessionAuthenticated ? { session: true } : token,
+        gatewayInfo?.sessionAuthenticated
+          ? {
+              session: true,
+              ...(accountContext.multiOperator
+                ? { storageScope: accountContext.storageScope }
+                : {}),
+            }
+          : token,
       );
       return true;
     },
@@ -171,7 +227,12 @@ export function initTakWebClient({
         async getAccessHeaders(signal) {
           if (!gatewayInfo) await gatewayReady;
           signal?.throwIfAborted();
-          if (gatewayInfo?.sessionAuthenticated) return {};
+          if (!accountCurrent() || retired)
+            throw new Error('Saved-map account context changed');
+          if (gatewayInfo?.sessionAuthenticated)
+            return accountContext.multiOperator
+              ? { 'X-TAK-Storage-Scope': accountContext.storageScope }
+              : {};
           if (gatewayInfo?.bootstrapAllowed) {
             if (!mapBootstrap || Date.now() - mapBootstrapAt > 30_000) {
               mapBootstrapAt = Date.now();
@@ -197,21 +258,38 @@ export function initTakWebClient({
       })
     : null;
 
+  function retire({ revokeOffline = false, redirect } = {}) {
+    if (retired) return;
+    retired = true;
+    expiredRedirected = true;
+    controller.abort();
+    geolocation.stop();
+    client.disconnect();
+    client.clearPrivateState();
+    authorizeTakDisclosure(viewer, false);
+    panel.clearPrivateInputs();
+    navigation?.clearPrivateInputs();
+    packages?.clearPrivateInputs();
+    drawings?.clearPrivateInputs();
+    overlay.render([], client.store.isStale);
+    client.destroy({ forgetIdentity: true });
+    gatewayInfo = {
+      enabled: false,
+      reopenRequired: true,
+      reason: 'Operator page retired. Reopen or sign in to continue',
+    };
+    panel.render();
+    if (revokeOffline) clearOfflineOperatorContext();
+    if (redirect) window.location.replace(redirect);
+  }
   const renderScene = () => {
     if (
       (client.link().sessionExpired || gatewayInfo?.sessionExpired) &&
       !expiredRedirected &&
       !controller.signal.aborted
     ) {
-      expiredRedirected = true;
-      geolocation.stop();
-      client.clearPrivateState();
-      authorizeTakDisclosure(viewer, false);
-      panel.clearPrivateInputs();
-      navigation.clearPrivateInputs();
-      packages.clearPrivateInputs();
-      drawings.clearPrivateInputs();
-      window.location.replace('/login');
+      retire({ revokeOffline: true, redirect: '/login' });
+      return;
     }
     if (client.store.count() || client.store.chats().length || client.fix())
       markTakDataPrivate(viewer);
@@ -231,16 +309,10 @@ export function initTakWebClient({
     if (client.fix() && !document.hidden) panel.render();
   }, 1000);
 
-  gatewayReady = fetchGatewayStatus(globalThis.fetch, controller.signal)
-    .then((status) => {
-      gatewayInfo = status;
-      if (status.sessionExpired) renderScene();
-      panel.render();
-    })
-    .catch(() => {
-      gatewayInfo = { enabled: false, reason: 'status endpoint unreachable' };
-      panel.render();
-    });
+  const unsubscribeAccount = subscribeOperatorContextInvalidation(() =>
+    retire({ redirect: '/' }),
+  );
+  gatewayReady = Promise.resolve(gatewayInfo).then(() => panel.render());
 
   const api = Object.freeze({
     client,
@@ -250,8 +322,11 @@ export function initTakWebClient({
     packages,
     drawings,
     privacy: () => takPrivacyState(viewer),
+    operatorContext: () => ({ ...accountContext, retired }),
     destroy() {
       controller.abort();
+      logoutController?.abort();
+      unsubscribeAccount();
       clearInterval(staleTimer);
       clearInterval(positionTimer);
       unsubscribe();

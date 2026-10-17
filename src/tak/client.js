@@ -32,6 +32,8 @@ export const SWEEP_INTERVAL_MS = 5_000;
  * @param {object} deps
  * @param {(handlers:{onXml:Function,onControl:Function,onState:Function})=>ReturnType<import('./transport.js').createGatewayTransport>} deps.createTransport
  * @param {{get:(k:string)=>?string, set:(k:string,v:string)=>void}} [deps.storage]
+ * @param {?string} [deps.identityStorageKey] Validated account key; null keeps identity ephemeral.
+ * @param {()=>boolean} [deps.canShare] Browser role/context policy; gateway still authorizes every write.
  * @param {()=>number} [deps.now]
  * @param {(fn:Function, ms:number)=>any} [deps.setInterval]
  * @param {(h:any)=>void} [deps.clearInterval]
@@ -39,6 +41,8 @@ export const SWEEP_INTERVAL_MS = 5_000;
 export function createTakClient({
   createTransport,
   storage = { get: () => null, set: () => {} },
+  identityStorageKey = IDENTITY_STORAGE_KEY,
+  canShare: mayShare = () => true,
   now = Date.now,
   canReportPosition = () => true,
   setInterval: every = (fn, ms) => setInterval(fn, ms),
@@ -68,7 +72,7 @@ export function createTakClient({
 
   function loadIdentity() {
     try {
-      const raw = storage.get(IDENTITY_STORAGE_KEY);
+      const raw = identityStorageKey ? storage.get(identityStorageKey) : null;
       if (raw) return normalizeIdentity(JSON.parse(raw));
     } catch {
       // corrupt or unavailable storage: mint a fresh identity
@@ -79,9 +83,10 @@ export function createTakClient({
   }
 
   function saveIdentity(value) {
+    if (!identityStorageKey) return;
     try {
       storage.set(
-        IDENTITY_STORAGE_KEY,
+        identityStorageKey,
         JSON.stringify({
           uid: value.uid,
           callsign: value.callsign,
@@ -162,6 +167,13 @@ export function createTakClient({
   }, SWEEP_INTERVAL_MS);
 
   function submit(event) {
+    if (destroyed || !mayShare()) {
+      counters.txLocalOnly++;
+      return {
+        sent: false,
+        reason: 'This account is receive-only; kept local',
+      };
+    }
     const id = `${identity.uid}-${++submissionSeq}`;
     delivery.add({
       id,
@@ -234,6 +246,7 @@ export function createTakClient({
 
   return Object.freeze({
     store,
+    canShare: () => !destroyed && !sessionExpired && mayShare(),
     submissions: () => delivery.list(),
     identity: () => identity,
     /** Update callsign/team/role; the uid is stable for the device. */
@@ -255,7 +268,12 @@ export function createTakClient({
       sessionExpired = false;
       const authentication =
         token && typeof token === 'object'
-          ? { session: token.session === true }
+          ? {
+              session: token.session === true,
+              ...(token.storageScope
+                ? { storageScope: token.storageScope }
+                : {}),
+            }
           : { token };
       transport.connect({ ...authentication, identity });
     },
@@ -298,6 +316,10 @@ export function createTakClient({
     /** Turn the periodic self-SA broadcast on/off. */
     setSaEnabled(enabled) {
       if (destroyed) return;
+      if (enabled && !mayShare())
+        throw new CotValidationError(
+          'This account is receive-only; position sharing is unavailable',
+        );
       saEnabled = !!enabled;
       restartSaTimer();
       if (saEnabled) beacon();
@@ -406,6 +428,10 @@ export function createTakClient({
     },
 
     sendChat(message, chatroom = ALL_CHAT_ROOMS) {
+      if (destroyed || !mayShare())
+        throw new CotValidationError(
+          'This account is receive-only; chat sending is unavailable',
+        );
       const event = buildChat(
         identity,
         { message, chatroom, point: fix || undefined },
@@ -417,6 +443,10 @@ export function createTakClient({
     /** Raise or cancel a 911-style alert at our current fix. */
     setEmergency(active, kind = '911 Alert') {
       if (destroyed) return { sent: false };
+      if (!mayShare())
+        throw new CotValidationError(
+          'This account is receive-only; network alerts are unavailable',
+        );
       if (!fix)
         throw new CotValidationError(
           'Set your position before raising an alert',
@@ -458,7 +488,7 @@ export function createTakClient({
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    destroy() {
+    destroy({ forgetIdentity = false } = {}) {
       if (destroyed) return;
       destroyed = true;
       stopEvery(sweepTimer);
@@ -477,6 +507,7 @@ export function createTakClient({
       gateway = null;
       lastReject = null;
       linkState = 'closed';
+      if (forgetIdentity) identity = createIdentity();
     },
   });
 }

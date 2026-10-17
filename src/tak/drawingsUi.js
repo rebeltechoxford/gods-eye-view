@@ -153,6 +153,9 @@ export function createDrawingsPanel({
   }
   function renderDraft() {
     if (destroyed) return;
+    const canShare = client.canShare?.() !== false;
+    $('[data-drawing-broadcast]').disabled = !canShare;
+    if (!canShare) $('[data-drawing-broadcast]').checked = false;
     const state = workflow.state(),
       draft = state?.draft;
     $('[data-drawing-editor]').disabled = !draft;
