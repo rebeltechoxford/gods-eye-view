@@ -70,6 +70,37 @@ export function createServerLink({
   let timer = null;
   let closed = false;
   let blocked = false;
+  let expiryTimer = null;
+  const writing = new Set();
+  function outcome(entry, state, reason) {
+    if (entry.finished) return;
+    if (state !== 'queued') entry.finished = true;
+    try {
+      entry.tracking?.onState?.({ state, ...(reason ? { reason } : {}) });
+    } catch {
+      /* isolated observer */
+    }
+  }
+  function armExpiry() {
+    if (expiryTimer !== null) clearTimer(expiryTimer);
+    expiryTimer = null;
+    if (!closed && queue.length) {
+      const deadline = Math.min(
+        ...queue.map((entry) =>
+          Math.min(entry.staleMs, entry.queuedAt + SERVER_QUEUE_MAX_AGE_MS),
+        ),
+      );
+      expiryTimer = setTimer(
+        () => {
+          expiryTimer = null;
+          expire();
+          armExpiry();
+        },
+        Math.max(1, deadline - now()),
+      );
+      expiryTimer?.unref?.();
+    }
+  }
   const framer = createCotStreamFramer({
     onEvent: (xml) => {
       counters.rx++;
@@ -101,7 +132,7 @@ export function createServerLink({
         queue[i].staleMs <= t ||
         t - queue[i].queuedAt >= SERVER_QUEUE_MAX_AGE_MS
       ) {
-        removeAt(i);
+        outcome(removeAt(i), 'expired', 'Fresh submission window expired');
         counters.droppedExpired++;
       }
     }
@@ -129,8 +160,22 @@ export function createServerLink({
   }
   function flush() {
     expire();
-    while (queue.length && socket && state === 'connected' && !blocked) {
+    while (
+      queue.length &&
+      writing.size < SERVER_QUEUE_LIMIT &&
+      socket &&
+      state === 'connected' &&
+      !blocked
+    ) {
       const entry = queue[0];
+      if (entry.tracking?.canWrite && !entry.tracking.canWrite()) {
+        outcome(
+          removeAt(0),
+          'rejected',
+          'Originating browser is no longer authorized',
+        );
+        continue;
+      }
       if (
         (socket.writableLength || 0) + entry.bytes >
         SERVER_WRITE_BUFFER_BYTES_LIMIT
@@ -139,15 +184,32 @@ export function createServerLink({
         break;
       }
       removeAt(0);
+      writing.add(entry);
       try {
-        blocked = socket.write(entry.xml) === false;
+        blocked =
+          socket.write(entry.xml, (error) => {
+            writing.delete(entry);
+            outcome(
+              entry,
+              error ? 'rejected' : 'submitted',
+              error ? 'Upstream write failed; peer receipt unknown' : undefined,
+            );
+            if (queue.length) queueMicrotask(flush);
+          }) === false;
         counters.tx++;
       } catch {
+        writing.delete(entry);
+        outcome(
+          entry,
+          'rejected',
+          'Upstream write failed; peer receipt unknown',
+        );
         lastError = 'WRITE_FAILED';
         socket.destroy();
         break;
       }
     }
+    armExpiry();
   }
   function start() {
     if (closed) return;
@@ -199,6 +261,13 @@ export function createServerLink({
     });
     s.on('close', () => {
       if (socket !== s) return;
+      for (const entry of writing)
+        outcome(
+          entry,
+          'rejected',
+          'Connection closed before write confirmation; peer receipt unknown',
+        );
+      writing.clear();
       socket = null;
       blocked = false;
       if (!closed) scheduleReconnect();
@@ -209,7 +278,7 @@ export function createServerLink({
     id: 'server',
     kind: 'server',
     limits: { rate: 200, burst: 1000 },
-    send(xml, parsedEvent) {
+    send(xml, parsedEvent, tracking) {
       if (closed) return false;
       let event;
       try {
@@ -244,28 +313,44 @@ export function createServerLink({
         event.type === 't-x-d-d' ? event.detail.links[0]?.uid : event.uid;
       for (let i = queue.length - 1; i >= 0; i--) {
         if (queue[i].uid === target) {
-          removeAt(i);
+          outcome(removeAt(i), 'rejected', 'Superseded by a newer submission');
           counters.coalesced++;
         }
       }
       queue.push({
-        uid: event.uid,
+        uid: target,
         xml: framed,
         bytes,
         staleMs: event.staleMs,
         queuedAt: now(),
+        tracking,
       });
+      const entry = queue.at(-1);
       queueBytes += bytes;
       counters.queued++;
       while (
         queue.length > SERVER_QUEUE_LIMIT ||
         queueBytes > SERVER_QUEUE_BYTES_LIMIT
       ) {
-        removeAt(0);
+        outcome(removeAt(0), 'rejected', 'Upstream queue capacity reached');
         counters.droppedQueue++;
       }
+      outcome(entry, 'queued');
       flush();
       return true;
+    },
+    /** Cancel only unwritten submissions belonging to this opaque connection. */
+    cancel(owner) {
+      if (!owner) return;
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].tracking?.owner === owner)
+          outcome(
+            removeAt(i),
+            'rejected',
+            'Submission cancelled before upstream write',
+          );
+      }
+      armExpiry();
     },
     status,
     close() {
@@ -274,6 +359,17 @@ export function createServerLink({
       state = 'closed';
       if (timer !== null) clearTimer(timer);
       timer = null;
+      if (expiryTimer !== null) clearTimer(expiryTimer);
+      expiryTimer = null;
+      for (const entry of queue)
+        outcome(entry, 'rejected', 'Gateway closed before upstream write');
+      for (const entry of writing)
+        outcome(
+          entry,
+          'rejected',
+          'Gateway closed before write confirmation; peer receipt unknown',
+        );
+      writing.clear();
       queue.length = 0;
       queueBytes = 0;
       socket?.destroy();

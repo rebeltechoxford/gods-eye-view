@@ -10,6 +10,7 @@ import {
   TAK_WS_ROUTE,
   MAX_BROWSER_BUFFER_BYTES,
   REPLAY_BYTES_LIMIT,
+  GATEWAY_SUBMISSION_LIMIT,
   authorizeUpgrade,
   createTakGateway,
   gatewayPolicy,
@@ -287,7 +288,7 @@ function fakeLink(kind) {
   return link;
 }
 
-async function startGateway(configOverrides = {}) {
+async function startGateway(configOverrides = {}, dependencies = {}) {
   const mesh = fakeLink('mesh');
   const server = fakeLink('server');
   const config = {
@@ -302,6 +303,7 @@ async function startGateway(configOverrides = {}) {
     createMesh: mesh.factory,
     createServer: server.factory,
     log: { warn() {}, info() {} },
+    ...dependencies,
   });
   const httpServer = http.createServer((req, res) => {
     if (!gateway.handleHttpRequest(req, res)) res.end();
@@ -366,6 +368,228 @@ function connect(
 
 const isXml = (m) => m.startsWith('<');
 const isOp = (op) => (m) => m.startsWith('{') && JSON.parse(m).op === op;
+const submission = (id, state) => (m) =>
+  isOp('submission')(m) &&
+  JSON.parse(m).id === id &&
+  (!state || JSON.parse(m).state === state);
+
+test('correlated WebSocket submissions report authorization/no-route failures and reject conflicting IDs', async (t) => {
+  const g = await startGateway({ mesh: null, server: null });
+  t.after(g.close);
+  const ws = connect(g.port);
+  await once(ws, 'open');
+  await ws.next(isOp('identity'));
+  const xml = serializeCotEvent(
+    buildMarker(IDENTITY, { callsign: 'LOCAL', lat: 1, lon: 2 }),
+  );
+  ws.send(JSON.stringify({ op: 'cot', id: 'no-route', xml }));
+  const rejected = JSON.parse(
+    await ws.next(submission('no-route', 'rejected')),
+  );
+  assert.match(rejected.reason, /No authorized TAK uplink/);
+  assert.deepEqual(rejected.routes, []);
+  ws.send(JSON.stringify({ op: 'cot', id: 'invalid-xml', xml: '<event/>' }));
+  assert.match(
+    JSON.parse(await ws.next(submission('invalid-xml', 'rejected'))).reason,
+    /Invalid CoT/,
+  );
+  const other = createIdentity({ callsign: 'OTHER' });
+  ws.send(
+    JSON.stringify({
+      op: 'cot',
+      id: 'unowned',
+      xml: serializeCotEvent(
+        buildMarker(other, { callsign: 'NO', lat: 1, lon: 2 }),
+      ),
+    }),
+  );
+  assert.match(
+    JSON.parse(await ws.next(submission('unowned', 'rejected'))).reason,
+    /unowned/,
+  );
+  ws.send(JSON.stringify({ op: 'cot', id: 'no-route', xml }));
+  assert.equal(
+    JSON.parse(await ws.next(submission('no-route'))).state,
+    'rejected',
+  );
+  const closed = once(ws, 'close');
+  ws.send(JSON.stringify({ op: 'cot', id: 'no-route', xml: xml + ' ' }));
+  assert.equal((await closed)[0], 1008);
+});
+
+test('correlated browser ingress strips private routing attributes and refuses received network events', async (t) => {
+  const g = await startGateway();
+  t.after(g.close);
+  const ws = connect(g.port);
+  await once(ws, 'open');
+  await ws.next(isOp('identity'));
+  g.mesh.onXml(ATAK_SA);
+  const received = await ws.next(isXml);
+  ws.send(JSON.stringify({ op: 'cot', id: 'foreign-import', xml: received }));
+  assert.match(
+    JSON.parse(await ws.next(submission('foreign-import', 'rejected'))).reason,
+    /unowned/,
+  );
+  assert.equal(g.server.sent.length, 0);
+  assert.equal(g.mesh.sent.length, 0);
+  const xml = serializeCotEvent(
+    buildMarker(IDENTITY, { callsign: 'STRIPPED', lat: 1, lon: 2 }),
+  ).replace('<contact ', '<contact privateRouting="must-not-relay" ');
+  ws.send(JSON.stringify({ op: 'cot', id: 'safe-schema', xml }));
+  await ws.next(submission('safe-schema', 'queued'));
+  assert.equal(g.server.sent.length, 1);
+  assert.equal(g.server.sent[0].includes('privateRouting'), false);
+  assert.equal(g.mesh.sent[0].includes('must-not-relay'), false);
+  assert.equal(parseCotEvent(g.server.sent[0]).detail.callsign, 'STRIPPED');
+  const browser = g.gateway
+    .status()
+    .router.links.find((link) => link.kind === 'browser');
+  assert.equal(
+    browser.rx,
+    1,
+    'only authorized CoT consumes router ingress, with observable accounting',
+  );
+  ws.close();
+});
+
+test('real WS/TCP submission progresses from outage queue to local socket submission, without claiming peer receipt', async (t) => {
+  const tak = net.createServer();
+  tak.listen(0, '127.0.0.1');
+  await once(tak, 'listening');
+  const port = tak.address().port;
+  await new Promise((resolve) => tak.close(resolve));
+  const upstream = [];
+  const sockets = [];
+  tak.on('connection', (socket) => {
+    sockets.push(socket);
+    socket.on('data', (data) => upstream.push(data.toString()));
+  });
+  const g = await startGateway(
+    { mesh: null, server: { host: '127.0.0.1', port, protocol: 'tcp' } },
+    { createServer: createServerLink },
+  );
+  t.after(async () => {
+    await g.close();
+    for (const s of sockets) s.destroy();
+    if (tak.listening) await new Promise((resolve) => tak.close(resolve));
+  });
+  const ws = connect(g.port);
+  await once(ws, 'open');
+  await ws.next(isOp('identity'));
+  const xml = serializeCotEvent(
+    buildMarker(IDENTITY, { callsign: 'QUEUED', lat: 1, lon: 2 }),
+  );
+  ws.send(JSON.stringify({ op: 'cot', id: 'fresh-marker', xml }));
+  const queued = JSON.parse(
+    await ws.next(submission('fresh-marker', 'queued')),
+  );
+  assert.deepEqual(queued.routes, [{ id: 'server', state: 'queued' }]);
+  tak.listen(port, '127.0.0.1');
+  await once(tak, 'listening');
+  const submitted = JSON.parse(
+    await ws.next(submission('fresh-marker', 'submitted'), 4000),
+  );
+  assert.deepEqual(submitted.routes, [{ id: 'server', state: 'submitted' }]);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.ok(
+    upstream
+      .join('')
+      .includes('<?xml version="1.0" encoding="UTF-8"?>\n<event'),
+  );
+  assert.ok(upstream.join('').includes('QUEUED'));
+  const before = upstream.join('');
+  ws.send(JSON.stringify({ op: 'cot', id: 'fresh-marker', xml }));
+  await ws.next(submission('fresh-marker', 'submitted'));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(upstream.join(''), before, 'same request is idempotent');
+  assert.equal(JSON.stringify(submitted).includes('delivered'), false);
+  ws.close();
+});
+
+test('real WebSocket cancellation, disconnect and clock expiry remove unwritten upstream submissions', async (t) => {
+  let time = Date.now();
+  let expire;
+  const socket = new EventEmitter();
+  const written = [];
+  socket.destroy = () => {};
+  socket.write = (xml, callback) => {
+    written.push(xml);
+    callback?.();
+    return true;
+  };
+  const g = await startGateway(
+    { mesh: null },
+    {
+      now: () => time,
+      createServer: (options) =>
+        createServerLink({
+          ...options,
+          now: () => time,
+          connect: () => socket,
+          setTimer: (fn, ms) => {
+            if (ms === SERVER_QUEUE_MAX_AGE_MS) expire = fn;
+            return { unref() {} };
+          },
+          clearTimer() {},
+        }),
+    },
+  );
+  t.after(g.close);
+  const ws = connect(g.port);
+  await once(ws, 'open');
+  await ws.next(isOp('identity'));
+  const send = (id) =>
+    ws.send(
+      JSON.stringify({
+        op: 'cot',
+        id,
+        xml: serializeCotEvent(
+          buildMarker(
+            IDENTITY,
+            { callsign: id, lat: 1, lon: 2 },
+            { nowMs: time },
+          ),
+        ),
+      }),
+    );
+  send('cancelled');
+  await ws.next(submission('cancelled', 'queued'));
+  ws.send(JSON.stringify({ op: 'cancel-submissions' }));
+  await ws.next(submission('cancelled', 'rejected'));
+  assert.equal(g.gateway.status().server.queue, 0);
+  send('expired');
+  await ws.next(submission('expired', 'queued'));
+  time += SERVER_QUEUE_MAX_AGE_MS + 1;
+  expire();
+  await ws.next(submission('expired', 'expired'));
+  ws.send(
+    serializeCotEvent(
+      buildMarker(
+        IDENTITY,
+        { callsign: 'LEGACY-DISCONNECT', lat: 1, lon: 2 },
+        { nowMs: time },
+      ),
+    ),
+  );
+  send('disconnected');
+  await ws.next(submission('disconnected', 'queued'));
+  assert.equal(
+    g.gateway.status().server.queue,
+    2,
+    'legacy XML keeps compatibility and connection-scoped cancellation',
+  );
+  const closed = once(ws, 'close');
+  ws.close();
+  await closed;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(g.gateway.status().server.queue, 0);
+  socket.emit('connect');
+  assert.equal(
+    written.length,
+    0,
+    'no cancelled/stale/disconnected write is replayed',
+  );
+});
 
 test('browser <-> mesh/server relay over a real WebSocket', async (t) => {
   const g = await startGateway();
@@ -628,7 +852,7 @@ test('server link streams CoT both ways, queues while down and reconnects', asyn
       }),
     ),
   );
-  timers.at(-1).fn();
+  timers.findLast((timer) => timer.ms === 1000).fn();
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(link.status().state, 'connected');
   assert.equal(link.status().reconnects, 1);
@@ -660,6 +884,116 @@ test('server link bounds its offline queue', () => {
   assert.equal(link.status().queue, 256);
   assert.equal(link.status().droppedQueue, 44);
   link.close();
+});
+
+test('tracked uplink outcomes cover coalescing, capacity, revoked writers, failed writes and cleanup', () => {
+  const socket = new EventEmitter();
+  socket.destroy = () => {};
+  const callbacks = [];
+  socket.write = (_xml, callback) => {
+    callbacks.push(callback);
+    return true;
+  };
+  const link = createServerLink({
+    config: { host: '127.0.0.1', port: 1, protocol: 'tcp' },
+    onXml() {},
+    connect: () => socket,
+    setTimer: () => 0,
+    clearTimer() {},
+  });
+  const results = new Map();
+  const track = (key, canWrite = () => true) => ({
+    owner: key,
+    canWrite,
+    onState: (state) => {
+      const values = results.get(key) || [];
+      values.push(state);
+      results.set(key, values);
+    },
+  });
+  const marker = (uid) =>
+    buildMarker(IDENTITY, { uid, callsign: 'SYNTHETIC', lat: 1, lon: 2 });
+  try {
+    link.send('', marker('same'), track('old'));
+    link.send('', marker('same'), track('new'));
+    assert.match(results.get('old').at(-1).reason, /Superseded/);
+    for (let i = 0; i < 256; i++)
+      link.send('', marker(`item-${i}`), track(`item-${i}`));
+    assert.match(results.get('new').at(-1).reason, /capacity/);
+    assert.equal(link.status().queue, 256);
+    for (let i = 0; i < 256; i++) link.cancel(`item-${i}`);
+    assert.equal(link.status().queue, 0);
+    link.send(
+      '',
+      marker('revoked'),
+      track('revoked', () => false),
+    );
+    socket.emit('connect');
+    assert.equal(
+      callbacks.length,
+      0,
+      'authorization checked immediately before queued write',
+    );
+    assert.equal(results.get('revoked').at(-1).state, 'rejected');
+    link.send('', marker('failed'), track('failed'));
+    assert.equal(
+      results.get('failed').at(-1).state,
+      'queued',
+      'write invocation is not yet write completion',
+    );
+    callbacks.shift()(new Error('synthetic failure'));
+    assert.equal(results.get('failed').at(-1).state, 'rejected');
+    link.send('', marker('inflight'), track('inflight'));
+    link.close();
+    assert.equal(results.get('inflight').at(-1).state, 'rejected');
+    callbacks.shift()();
+    assert.equal(
+      results.get('inflight').at(-1).state,
+      'rejected',
+      'late callback cannot resurrect a closed writer',
+    );
+  } finally {
+    link.close();
+  }
+});
+
+test('gateway submission IDs have a bounded per-connection budget and malformed controls never publish', async (t) => {
+  let time = Date.now();
+  const g = await startGateway(
+    { mesh: null, server: null },
+    { now: () => time },
+  );
+  t.after(g.close);
+  const ws = connect(g.port);
+  await once(ws, 'open');
+  await ws.next(isOp('identity'));
+  for (const frame of [
+    { op: 'cot', id: 1, xml: '<event/>' },
+    { op: 'cot', id: 'x'.repeat(65), xml: '<event/>' },
+    { op: 'cot', id: 'extra', xml: '<event/>', extra: true },
+  ]) {
+    ws.send(JSON.stringify(frame));
+    assert.match(
+      JSON.parse(await ws.next(isOp('reject'))).reason,
+      /unknown control/,
+    );
+  }
+  assert.equal(g.gateway.status().router.accepted, 0);
+  for (let i = 0; i < GATEWAY_SUBMISSION_LIMIT; i++) {
+    time += 100;
+    ws.send(JSON.stringify({ op: 'cot', id: `budget-${i}`, xml: '<event/>' }));
+    assert.match(
+      JSON.parse(await ws.next(submission(`budget-${i}`, 'rejected'))).reason,
+      /Invalid CoT/,
+    );
+  }
+  time += 100;
+  ws.send(JSON.stringify({ op: 'cot', id: 'over-budget', xml: '<event/>' }));
+  assert.match(
+    JSON.parse(await ws.next(submission('over-budget', 'rejected'))).reason,
+    /capacity/,
+  );
+  ws.close();
 });
 
 // --- mesh link (fake UDP socket) --------------------------------------------

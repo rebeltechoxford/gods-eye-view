@@ -114,6 +114,12 @@ const PANEL_HTML = `
     </form>
   </details>
 
+  <details class="tak-web-section" data-tak-section="submissions">
+    <summary>NETWORK SUBMISSIONS <span data-tak-submission-count></span></summary>
+    <p class="tak-web-hint">Submitted means a local uplink write succeeded. Peer receipt is unconfirmed. Queued attempts expire within 30 seconds; disconnected attempts are never retried by this page.</p>
+    <div class="tak-web-chat" data-tak-submissions aria-label="Recent network submissions"></div>
+  </details>
+
   <details class="tak-web-section" data-tak-section="import">
     <summary>IMPORT COT FILE</summary>
     <label class="tak-web-label" for="tak-web-file">Import .cot or .xml (up to 1 MiB, stays local)</label>
@@ -198,6 +204,7 @@ export function createTakPanel({
   let connectAttempt = null;
   let reportedEvictions = 0;
   let reportedRejections = 0;
+  let renderedSubmissions = null;
 
   function report(message, error = false) {
     if (destroyed) return;
@@ -232,6 +239,9 @@ export function createTakPanel({
     for (const record of rosterRows.values()) record.row.remove();
     rosterRows.clear();
     $('[data-tak-chat]').replaceChildren();
+    $('[data-tak-submissions]').replaceChildren();
+    $('[data-tak-submission-count]').textContent = '';
+    renderedSubmissions = null;
     $('[data-tak-fix]').textContent = 'No position set.';
     $('[data-tak-sa]').checked = false;
     for (const input of root.querySelectorAll('[data-tak-disclosure]'))
@@ -364,6 +374,39 @@ export function createTakPanel({
     log.scrollTop = log.scrollHeight;
   }
 
+  function renderSubmissions() {
+    const items = client.submissions?.() || [];
+    $('[data-tak-submission-count]').textContent = items.length
+      ? `(${items.length})`
+      : '';
+    const newest = items.at(-1);
+    const signature = items
+      .map(
+        (item) =>
+          `${item.id}:${item.updatedAtMs}:${item.state}:${JSON.stringify(item.routes)}`,
+      )
+      .join('|');
+    if (signature === renderedSubmissions) return;
+    renderedSubmissions = signature;
+    const list = $('[data-tak-submissions]');
+    list.replaceChildren();
+    for (const item of items.slice(-30).reverse()) {
+      const row = document.createElement('p');
+      row.dataset.submissionId = item.id;
+      row.dataset.submissionState = item.state;
+      const routes = item.routes
+        .map(
+          (route) =>
+            `${route.id}: ${route.state}${route.reason ? ` (${route.reason})` : ''}`,
+        )
+        .join('; ');
+      const label = client.store.get(item.uid)?.callsign || item.uid.slice(-12);
+      row.textContent = `${new Date(item.createdAtMs).toISOString().slice(11, 19)}Z · ${item.kind.toUpperCase()} · ${label} · ${item.state.toUpperCase()}${item.reason ? ` · ${item.reason}` : ''}${routes ? ` · ${routes}` : ''}`;
+      list.append(row);
+    }
+    if (!newest) list.textContent = 'No network submissions this session.';
+  }
+
   function render() {
     frame = 0;
     if (destroyed) return;
@@ -463,6 +506,7 @@ export function createTakPanel({
     if (!panel.hidden) {
       renderRoster();
       renderChat();
+      renderSubmissions();
     }
   }
 

@@ -111,6 +111,45 @@ test('send failures and slow browser sockets return unsent without unbounded que
   s.transport.disconnect();
 });
 
+test('correlated submissions respect authentication/frame/backpressure bounds and are not replayed on reconnect', () => {
+  const s = setup();
+  s.connect();
+  const socket = s.sockets[0];
+  socket.open();
+  assert.equal(s.transport.submit('r1', '<event/>'), false);
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  assert.equal(s.transport.submit('r1', '<event/>'), true);
+  assert.deepEqual(JSON.parse(socket.sent.at(-1)), {
+    op: 'cot',
+    id: 'r1',
+    xml: '<event/>',
+  });
+  assert.equal(s.transport.submit('x'.repeat(65), '<event/>'), false);
+  assert.equal(
+    s.transport.submit('r2', '"'.repeat(MAX_TRANSPORT_FRAME_BYTES / 2)),
+    false,
+    'JSON escape overhead is included',
+  );
+  socket.bufferedAmount = MAX_TRANSPORT_BUFFER_BYTES;
+  assert.equal(s.transport.submit('r3', '<event/>'), false);
+  socket.bufferedAmount = 0;
+  s.transport.cancelSubmissions();
+  assert.deepEqual(JSON.parse(socket.sent.at(-1)), {
+    op: 'cancel-submissions',
+  });
+  s.transport.disconnect();
+  s.connect();
+  const replacement = s.sockets[1];
+  replacement.open();
+  replacement.control({ op: 'identity', uid: s.identity.uid });
+  assert.equal(
+    replacement.sent.length,
+    1,
+    'only fresh identity, no stale CoT queue',
+  );
+  s.transport.disconnect();
+});
+
 test('disconnect cancels authentication/reconnect timers and retired callbacks cannot reopen', () => {
   const s = setup();
   s.connect();
