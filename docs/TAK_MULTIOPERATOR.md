@@ -152,6 +152,23 @@ The browser must establish the current authenticated scope before restoring
 account-specific local identity or offline metadata; saved offline authority
 must never override an online 401/403 or changed scope.
 
+Named requests also bind their expected context to the server's current cookie:
+`POST /logout` and every `/api/maps/offline/*` request, including the static
+shell manifest, require one `X-TAK-Storage-Scope: <storageScope>` header. Missing,
+malformed, repeated or mismatched scopes return HTTP 409 with JSON code
+`operator-context-changed` and `X-TAK-Account-Context: mismatch` before reading
+account maps, mutating them or revoking a session. The status bootstrap stays
+unbound so a new page can discover its current authenticated account.
+
+Named WSS upgrades require `tak.v1` and exactly one additional subprotocol,
+`tak.scope.<storageScope>`. A missing, invalid, multiple or mismatched scope
+is rejected with HTTP 401 before any identity acknowledgement, replay or
+publication. The scope is nonsecret and grants no authority by itself; the
+authenticated cookie and all origin/socket checks remain mandatory. This
+prevents an old tab from acting as a new account when another tab changes the
+shared HttpOnly cookie before its storage event arrives. Legacy requests and
+WSS clients retain their existing contract.
+
 ## Resource and offline-map ownership limits
 
 Each principal inherits the existing bounded CoT input, rate, replay and
@@ -196,8 +213,8 @@ and anonymous/fallback settings. Authorized overlapping groups may correctly
 deliver the same event to several principals. The web gateway cannot infer or
 grant server group membership from team colors, callsigns or untrusted XML.
 
-The focused Node 24 suite passed **58 tests** across the HTTPS host, gateway,
-real local TLS rejection tests and the six named-principal scenarios. These
+The focused Node 24 suite passed **59 tests** across the HTTPS host, gateway,
+real local TLS rejection tests and the seven named-principal scenarios. These
 use generated local CAs/client certificates and real loopback HTTPS, WSS and
 mutual-TLS sockets. They verify separate certificate connections, stream/replay
 and identity isolation, observer rejection, own-principal reconnect/queue

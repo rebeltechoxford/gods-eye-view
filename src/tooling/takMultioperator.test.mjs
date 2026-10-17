@@ -197,6 +197,7 @@ async function app(t, port) {
     folder,
     value,
     file,
+    scopeByCookie: new Map(),
     now: () => time,
     advance: (ms) => {
       time += ms;
@@ -220,6 +221,9 @@ function request(
         headers: {
           Origin: instance.origin,
           ...(cookie ? { Cookie: cookie } : {}),
+          ...(instance.scopeByCookie?.has(cookie)
+            ? { 'X-TAK-Storage-Scope': instance.scopeByCookie.get(cookie) }
+            : {}),
           ...(body !== undefined
             ? {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -252,12 +256,16 @@ async function login(instance, id, token = tokens[id]) {
     body: new URLSearchParams({ principal: id, token }).toString(),
   });
   assert.equal(response.status, 303, response.body);
-  return response.headers['set-cookie'][0].split(';')[0];
+  const cookie = response.headers['set-cookie'][0].split(';')[0];
+  const status = await request(instance, '/api/tak/status', { cookie });
+  assert.equal(status.status, 200);
+  instance.scopeByCookie.set(cookie, JSON.parse(status.body).storageScope);
+  return cookie;
 }
 function connect(instance, cookie, suffix = '') {
   const ws = new WebSocket(
     instance.origin.replace('https:', 'wss:') + '/api/tak/ws' + suffix,
-    ['tak.v1'],
+    ['tak.v1', `tak.scope.${instance.scopeByCookie.get(cookie)}`],
     {
       ca: alphaTls.read('ca.pem'),
       origin: instance.origin,
@@ -429,6 +437,129 @@ test('strict named configuration pins distinct client identities, stable opaque 
     }).enabled,
     false,
     'dev/lab cannot silently expose one shared principal',
+  );
+});
+
+test('expected account scope refuses shared-cookie races before map reads, writes, logout or WSS replay', async (t) => {
+  const peer = await startPeer(t),
+    instance = await app(t, peer.port);
+  const aCookie = await login(instance, 'alpha'),
+    bCookie = await login(instance, 'bravo');
+  const aScope = instance.scopeByCookie.get(aCookie),
+    bScope = instance.scopeByCookie.get(bCookie);
+  await waitFor(() => peer.accepted.size === 2, 'both named TLS upstreams');
+  const privateBravo = buildMarker(
+    IDENTITY,
+    {
+      uid: 'BRAVO-PRIVATE-REPLAY',
+      callsign: 'PRIVATE BRAVO REPLAY',
+      lat: 1,
+      lon: 2,
+    },
+    { nowMs: instance.now() },
+  );
+  peer.accepted.get('bravo').write(encodeTakStreamEvent(privateBravo));
+  for (const scope of ['', aScope, 'invalid', [bScope, bScope]]) {
+    const headers = { 'X-TAK-Storage-Scope': scope };
+    for (const route of [
+      '/api/maps/offline/packs',
+      '/api/maps/offline/shell',
+    ]) {
+      const denied = await request(instance, route, {
+        cookie: bCookie,
+        headers,
+      });
+      assert.equal(denied.status, 409);
+      assert.equal(denied.headers['x-tak-account-context'], 'mismatch');
+      assert.equal(JSON.parse(denied.body).code, 'operator-context-changed');
+      assert.doesNotMatch(
+        denied.body,
+        /PRIVATE|BRAVO|tokenSha256|storageScope/,
+      );
+    }
+    const deniedWrite = await request(instance, '/api/maps/offline/packs', {
+      method: 'POST',
+      cookie: bCookie,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'MUST NOT CREATE',
+        sourceId: 'usgs-topo',
+        bounds: { west: 0, south: 0, east: 0.01, north: 0.01 },
+        minZoom: 1,
+        maxZoom: 1,
+      }),
+    });
+    assert.equal(deniedWrite.status, 409);
+    const deniedLogout = await request(instance, '/logout', {
+      method: 'POST',
+      cookie: bCookie,
+      headers,
+    });
+    assert.equal(deniedLogout.status, 409);
+    assert.equal(deniedLogout.headers['set-cookie'], undefined);
+    assert.equal(
+      (await request(instance, '/api/tak/status', { cookie: bCookie })).status,
+      200,
+    );
+  }
+  assert.deepEqual(
+    JSON.parse(
+      (await request(instance, '/api/maps/offline/packs', { cookie: bCookie }))
+        .body,
+    ).packs,
+    [],
+  );
+  for (const protocols of [
+    ['tak.v1'],
+    ['tak.v1', `tak.scope.${aScope}`],
+    ['tak.v1', 'tak.scope.invalid'],
+    ['tak.v1', `tak.scope.${bScope}`, `tak.scope.${aScope}`],
+  ]) {
+    const ws = new WebSocket(
+      instance.origin.replace('https:', 'wss:') + '/api/tak/ws?principal=alpha',
+      protocols,
+      {
+        ca: alphaTls.read('ca.pem'),
+        origin: instance.origin,
+        headers: { Cookie: bCookie, 'X-TAK-Storage-Scope': bScope },
+      },
+    );
+    let received = false;
+    ws.on('message', () => {
+      received = true;
+    });
+    const [, denied] = await once(ws, 'unexpected-response');
+    assert.equal(denied.statusCode, 401);
+    denied.resume();
+    assert.equal(
+      received,
+      false,
+      'no identity ACK, tactical data or replay before scope binding',
+    );
+  }
+  assert.equal(
+    peer.messages.get('bravo')?.length || 0,
+    0,
+    'a stale tab never publishes on the replacement account',
+  );
+  const b = connect(instance, bCookie);
+  await b.next(op('identity'));
+  assert.equal(
+    parseCotEvent(await b.next(isXml)).uid,
+    privateBravo.uid,
+    'valid current scope still receives the actual replay',
+  );
+  b.send(JSON.stringify({ op: 'status' }));
+  assert.equal(JSON.parse(await b.next(op('status'))).status.browsers, 1);
+  b.close();
+  assert.equal(
+    (await request(instance, '/logout', { method: 'POST', cookie: bCookie }))
+      .status,
+    303,
+  );
+  assert.equal(
+    (await request(instance, '/api/tak/status', { cookie: bCookie })).status,
+    401,
   );
 });
 

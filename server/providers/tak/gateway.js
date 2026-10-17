@@ -64,6 +64,8 @@ export function authorizeUpgrade(
   {
     token,
     principal = 'local-operator',
+    multiOperator = false,
+    storageScope,
     accessPolicy = createBrowserAccessPolicy(),
   },
   { authenticateSession } = {},
@@ -77,6 +79,17 @@ export function authorizeUpgrade(
     .map((p) => p.trim());
   if (!offered.includes(TAK_WS_PROTOCOL))
     return { ok: false, status: 400, reason: 'protocol' };
+  if (multiOperator) {
+    const scopes = offered.filter((protocol) =>
+      protocol.startsWith('tak.scope.'),
+    );
+    if (
+      scopes.length !== 1 ||
+      !/^[a-f0-9]{64}$/.test(storageScope || '') ||
+      scopes[0] !== `tak.scope.${storageScope}`
+    )
+      return { ok: false, status: 401, reason: 'operator context required' };
+  }
   const supplied = offered.find((p) => p.startsWith(TAK_TOKEN_PROTOCOL_PREFIX));
   if (accessPolicy.mode === 'private-https') {
     return hasAuthenticatedSession(req, authenticateSession, principal)

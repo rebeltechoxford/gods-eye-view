@@ -392,6 +392,15 @@ export async function startTakHttpsServer({
       multiOperator: true,
     };
   }
+  function scopeMatches(req, authenticated) {
+    const scope = req.headers['x-tak-storage-scope'];
+    return (
+      !multiOperator ||
+      (typeof scope === 'string' &&
+        /^[a-f0-9]{64}$/.test(scope) &&
+        scope === authenticated?.storageScope)
+    );
+  }
   const middlewares = connect();
   const server = https.createServer(
     {
@@ -431,6 +440,13 @@ export async function startTakHttpsServer({
       'Content-Type': html ? 'text/html; charset=utf-8' : 'application/json',
     });
     res.end(html ? value : JSON.stringify(value));
+  }
+  function refuseScope(res) {
+    res.setHeader('X-TAK-Account-Context', 'mismatch');
+    return reply(res, 409, {
+      code: 'operator-context-changed',
+      error: 'Operator context changed; reload before continuing',
+    });
   }
   async function handle(req, res) {
     securityHeaders(res);
@@ -535,6 +551,7 @@ export async function startTakHttpsServer({
         return reply(res, 405, { error: 'Method Not Allowed' });
       if (!authorizeBrowserRequest(req, policy).ok)
         return reply(res, 403, { error: 'Same-origin logout required' });
+      if (!scopeMatches(req, authenticated)) return refuseScope(res);
       sessions.delete(sessionId(req));
       recheckGateways();
       res.setHeader(
@@ -546,6 +563,7 @@ export async function startTakHttpsServer({
     }
     if (sessionGateway(authenticated).handleHttpRequest(req, res)) return;
     if (isOfflineMapsRequest(req)) {
+      if (!scopeMatches(req, authenticated)) return refuseScope(res);
       if (multiOperator) {
         const id = authenticated.principal;
         let storePromise = principalMapStores.get(id);
