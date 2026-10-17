@@ -31,6 +31,12 @@ const fixtures = new URL(
   import.meta.url,
 );
 const original = new Uint8Array(await fs.readFile(fixtures));
+const imagery = await fs.readFile(
+  new URL(
+    '../node_modules/cesium/Build/Cesium/Assets/Textures/NaturalEarthII/0/0/0.jpg',
+    import.meta.url,
+  ),
+);
 const files = await readPackageZip(original);
 const bad = writePackageZip(
   [...files].map(([name, data]) => ({
@@ -51,7 +57,8 @@ await fs.writeFile(attachmentPath, 'Synthetic selected attachment only.');
 const downloads = [],
   errors = [],
   results = [],
-  monitors = [];
+  monitors = [],
+  touchTrace = [];
 let browser, interception;
 const wait = async (read, description, maximum = 20000) => {
   const deadline = Date.now() + maximum;
@@ -73,6 +80,7 @@ try {
       process.env.PUPPETEER_EXECUTABLE_PATH ||
       (await puppeteer.executablePath()),
     headless: true,
+    protocolTimeout: 120000,
     defaultViewport: {
       width: 390,
       height: 844,
@@ -106,10 +114,137 @@ try {
   const page = await browser.newPage();
   page.setDefaultTimeout(90000);
   monitors.push(watchPage(page, { name: 'mission-packages', errors }));
+  let failStartup;
+  const startupFailure = new Promise((_, reject) => {
+    failStartup = reject;
+  });
+  void startupFailure.catch(() => {});
+  const onStartupError = (error) =>
+    failStartup(new Error(`Application startup failed: ${error.message}`));
+  page.on('pageerror', onStartupError);
+  // Use real touch input only after finite transitions and scrolling settle.
+  // The click observer distinguishes a CDP dispatch from a delivered DOM click.
+  async function touch(selector, { panelOpen } = {}) {
+    const trace = { selector, startedAt: Date.now() };
+    touchTrace.push(trace);
+    if (touchTrace.length > 128) touchTrace.shift();
+    const element = await page.waitForSelector(selector, { visible: true });
+    let observer, listener, timer;
+    try {
+      await element.evaluate((el) =>
+        el.scrollIntoView({ block: 'center', behavior: 'instant' }),
+      );
+      await page.waitForFunction(
+        (selector) => {
+          const element = document.querySelector(selector);
+          if (!element || element.disabled) return false;
+          for (let node = element; node; node = node.parentElement)
+            if (
+              node
+                .getAnimations()
+                .some(
+                  (animation) =>
+                    (animation.pending || animation.playState === 'running') &&
+                    Number.isFinite(
+                      animation.effect?.getComputedTiming().endTime,
+                    ),
+                )
+            )
+              return false;
+          const rect = element.getBoundingClientRect(),
+            x = rect.x + rect.width / 2,
+            y = rect.y + rect.height / 2;
+          const hit = document.elementFromPoint(x, y);
+          return (
+            x >= 0 &&
+            x <= innerWidth &&
+            y >= 0 &&
+            y <= innerHeight &&
+            !!hit &&
+            (hit === element || element.contains(hit))
+          );
+        },
+        { polling: 'raf', timeout: 10000 },
+        selector,
+      );
+      const point = await element.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      });
+      trace.point = point;
+      const marker = `QA package touch ${trace.startedAt} ${touchTrace.length} ${selector}`;
+      let rejectClick;
+      const clicked = new Promise((resolve, reject) => {
+        rejectClick = reject;
+        listener = (message) => {
+          if (message.text() === marker) resolve();
+        };
+        page.on('console', listener);
+      });
+      void clicked.catch(() => {});
+      observer = await element.evaluateHandle((el, marker) => {
+        const clicked = () => console.debug(marker);
+        el.addEventListener('click', clicked, { once: true });
+        return { dispose: () => el.removeEventListener('click', clicked) };
+      }, marker);
+      timer = setTimeout(
+        () =>
+          rejectClick(
+            new Error(
+              `Physical package touch did not deliver a click: ${selector}`,
+            ),
+          ),
+        10000,
+      );
+      await Promise.all([page.touchscreen.tap(point.x, point.y), clicked]);
+      trace.acknowledgedAt = Date.now();
+      if (panelOpen !== undefined)
+        await page.waitForFunction(
+          (open) =>
+            document.querySelector('#tak-web-panel')?.hidden === !open &&
+            document
+              .querySelector('.tak-web-launcher')
+              ?.getAttribute('aria-expanded') === String(open),
+          { timeout: 10000 },
+          panelOpen,
+        );
+    } catch (error) {
+      trace.error = error.message;
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      if (listener) page.off('console', listener);
+      await observer?.evaluate((value) => value.dispose()).catch(() => {});
+      await Promise.allSettled([element.dispose(), observer?.dispose()]);
+    }
+  }
   interception = await interceptFixtures(page, {
     origin: address.origin,
     handle(request) {
       const url = new URL(request.url());
+      // An explicit non-404 error selects Cesium's real ellipsoid fallback.
+      if (url.hostname === 'terrain.reearth.land')
+        return request.respond({
+          status: 400,
+          contentType: 'text/plain',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: 'Synthetic terrain unavailable',
+        });
+      if (
+        request.method() === 'GET' &&
+        ((url.origin === 'https://tile.openstreetmap.org' &&
+          /^\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) ||
+          (url.origin === 'https://services.arcgisonline.com' &&
+            /^\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/\d+\/\d+\/\d+$/.test(
+              url.pathname,
+            )))
+      )
+        return request.respond({
+          status: 200,
+          contentType: 'image/jpeg',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: imagery,
+        });
       if (url.origin !== address.origin)
         return request.respond({
           status: 400,
@@ -132,12 +267,48 @@ try {
   address.hash =
     'lat=34.3665&lon=-89.5192&alt=50000&heading=0&pitch=-70&map=osm&b=0';
   await page.goto(address.href, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!window.__godsEyeView?.takClient?.packages);
-  await page.evaluate(() => {
-    document.querySelector('.first-run-explore')?.click();
-    document.querySelector('.tak-web-launcher').click();
-    document.querySelector('[data-tak-section="packages"]').open = true;
-  });
+  await page.bringToFront();
+  try {
+    await Promise.race([
+      (async () => {
+        await page.waitForFunction(
+          () => !!window.__godsEyeView?.takClient?.packages,
+        );
+        await page.waitForFunction(() => {
+          const loading = document.getElementById('loading-screen');
+          return (
+            !loading ||
+            loading.classList.contains('hidden') ||
+            getComputedStyle(loading).display === 'none'
+          );
+        });
+        // Share hashes suppress welcome. Wait for initialization/removal instead
+        // of clicking a hidden HTML template before it has a registered handler.
+        await page.waitForFunction(() => {
+          const welcome = document.getElementById('first-run-launcher');
+          return !welcome || welcome.dataset.initialized === 'true';
+        });
+        if (await page.$('#first-run-launcher.visible')) {
+          await touch('#first-run-launcher.visible .first-run-explore');
+          await page.waitForFunction(
+            () => !document.querySelector('#first-run-launcher.visible'),
+          );
+        }
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+        });
+        await touch('.tak-web-launcher', { panelOpen: true });
+        await page.waitForSelector('#tak-web-panel:not([hidden])');
+        await touch('[data-tak-section="packages"] > summary');
+        await page.waitForFunction(
+          () => document.querySelector('[data-tak-section="packages"]').open,
+        );
+      })(),
+      startupFailure,
+    ]);
+  } finally {
+    page.off('pageerror', onStartupError);
+  }
   const query = (name) => `[data-tak-package-${name}]`;
   const fill = (name, value) =>
     page.$eval(
@@ -148,11 +319,7 @@ try {
       },
       value,
     );
-  const click = async (name) => {
-    const element = await page.$(query(name));
-    await element.evaluate((el) => el.scrollIntoView({ block: 'center' }));
-    await element.tap();
-  };
+  const click = (name) => touch(query(name));
   const status = (pattern) =>
     page.waitForFunction(
       (source) =>
@@ -223,9 +390,7 @@ try {
     'one attachment downloads only after its own explicit save action',
     async () => {
       assert.equal(downloads.length, 0);
-      const button = await page.$('[data-tak-package-save]');
-      await button.evaluate((el) => el.scrollIntoView({ block: 'center' }));
-      await button.tap();
+      await touch('[data-tak-package-save]');
       const download = await wait(
         () =>
           downloads.find(
@@ -238,7 +403,8 @@ try {
         /Synthetic local-only/,
       );
       assert.equal((await state()).privacy.authorized, false);
-      for (let attempt = 0; attempt < 4; attempt++) await button.tap();
+      for (let attempt = 0; attempt < 4; attempt++)
+        await touch('[data-tak-package-save]');
       await status('Download memory limit');
       await wait(
         () =>
@@ -318,17 +484,12 @@ try {
       });
       await fill('name', 'Synthetic chosen package');
       await fill('filter', 'PACKAGE-SYNTHETIC-1');
-      await page.$eval('[data-tak-package-uid="PACKAGE-SYNTHETIC-1"]', (el) => {
-        el.checked = true;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      });
+      await touch('[data-tak-package-uid="PACKAGE-SYNTHETIC-1"]');
       await (await page.$(query('attachments'))).uploadFile(attachmentPath);
       await click('export');
       await status('Allow this selected package');
       assert.equal(downloads.length, priorDownloads);
-      await page.$eval(query('authorize'), (el) => {
-        el.checked = true;
-      });
+      await click('authorize');
       await click('export');
       await status('offered for download');
       const download = await wait(
@@ -380,9 +541,7 @@ try {
           }
         };
       });
-      await page.$eval(query('authorize'), (el) => {
-        el.checked = true;
-      });
+      await click('authorize');
       await click('export');
       await page.waitForFunction(() => !!window.__qaPendingPackageReader);
       await click('clear');
@@ -433,6 +592,7 @@ try {
         noRealTakAcceptance: true,
         node: process.version,
         browser: await browser.version(),
+        touchTrace,
         results,
       },
       null,
@@ -445,7 +605,13 @@ try {
   await fs.writeFile(
     path.join(artifactDir, 'results.json'),
     JSON.stringify(
-      { status: 'failed', syntheticOnly: true, results, error: error.message },
+      {
+        status: 'failed',
+        syntheticOnly: true,
+        touchTrace,
+        results,
+        error: error.message,
+      },
       null,
       2,
     ),
