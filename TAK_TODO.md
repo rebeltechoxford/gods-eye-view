@@ -1,6 +1,6 @@
 # God's Eye View × TAK remaining work
 
-Updated: 2026-10-16. This is the remaining-work handoff for the additive TAK
+Updated: 2026-10-17 UTC. This is the remaining-work handoff for the additive TAK
 foundation on `dev/tak-web-foundation`. Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to run
 the local app/lab. The detailed preservation inventory and parity ledger are in
 [TAK_FEATURE_MATRIX.md](docs/TAK_FEATURE_MATRIX.md); ordered acceptance criteria
@@ -9,7 +9,7 @@ are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 ## First: real peer acceptance
 
 - **iPhone/AltStore acceptance.** A real unsigned arm64 IPA and simulator
-  startup are verified for development revision `3afdc368`; the run guide links the
+  startup are verified for development revision `8c96791c`; the run guide links the
   package and hash. Personal signing/install and actual device TLS/login/WSS,
   touch, GPS/media, Files export and offline WebKit behavior still need testing.
   Native exports cap at 256 MiB and `data:` downloads are unsupported. The
@@ -23,8 +23,12 @@ are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
   HTTPS/WSS fixtures are implemented; actual private-network/device acceptance
   remains open.
 
-- Connect to an authorized TAK Server with issued certificates, then record
-  actual server/client versions and transport settings.
+- Extend the [real-server transport acceptance](docs/TAK_REAL_SERVER_ACCEPTANCE.md)
+  to supported stock distributions and native peers. Official TAK Server
+  `5.7-RELEASE-14` core with a documented loopback bind patch passed eight
+  marker/correction/broadcast-chat, group-separation and TLS-rejection checks
+  through the actual GEV gateway and synthetic TLS peers. This does not close
+  native-client acceptance; the complete upstream WAR build failed.
 - Create and share a web marker/contact; observe it on a real ATAK-CIV peer.
   Change a peer contact/object and observe the expected browser update. Check
   UID/type/time/stale/position/altitude, updates and deletes in both directions.
@@ -47,8 +51,9 @@ running.
    storage. Browser requests bind their expected account to the server cookie;
    stale tabs cannot switch authority with that cookie. Complete actual TAK
    Server IN/OUT group provisioning, group-revocation acceptance and physical
-   EUD account-switch/offline tests. Distinct certificates or CoT team tags do
-   not prove server group isolation. Public hosting remains outside scope.
+   EUD account-switch/offline tests. The real-server lab verified separation for
+   the exercised marker and broadcast-chat flows; broader directional ACL and
+   revocation cases remain open. Public hosting remains outside scope.
 2. **Delivery state and synchronization.** Correlated pending/queued/submitted/
    rejected/expired states are implemented. Submitted confirms a local transport
    write, not a peer receipt. Add compatible peer acknowledgements where available
@@ -56,8 +61,12 @@ running.
    expired data. Cancellation cannot retract bytes already written; a failed
    cancellation control closes the browser connection.
 3. **Chat.** Current scope is broadcast GeoChat. Add directed/group recipients,
-   authorization, receipts and explicit durable-history policy. Validate with
-   each supported peer. Unsupported directed/group chat must remain refused.
+   authorization, receipts and explicit durable-history policy. The real-server
+   routing experiment mapped only the first UID on a shared TLS stream; an
+   experimental position-free control also entered latest-SA replay. Do not
+   silently publish placeholder positions. Resolve per-device stream ownership
+   and explicit presence consent before enabling directed replies, then validate
+   each supported native peer. Unsupported directed/group chat remains refused.
 4. **Shared drawings and routes.** Lines, simple regional polygons and ordered
    routes now have real globe geometry, phone editing, stable waypoint IDs,
    ownership/conflict/delete handling and explicit gateway sharing. Complete

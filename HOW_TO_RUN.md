@@ -257,12 +257,14 @@ to produce those local results.
 
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is
-`output/ios/3afdc368/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`output/ios/8c96791c/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
 `provenance.json` and a simulator screenshot. The same package is in the
-[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38996827171)
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38999554419)
 while GitHub retains it. Its SHA-256 is
-`a2521bd41b339872bfcd4810b60dd9e22e6e17a90ee3f82dc3dcafe9c2733fe0`.
-This development revision passed all six review checks. The archive was built
+`71ab99f7e74c1e9efb3321410f5e10b6a18b14da823441506620f1e8dbea5867`.
+Its PR test-merge `34edc257` has the same file tree as development `8c96791c`.
+The iOS job passed; a separate fresh browser CI run exposed an intermittent
+fixture-interception failure still under investigation. The archive was built
 with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
 establish a physical-phone or configured-private-endpoint result.
 
