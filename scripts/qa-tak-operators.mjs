@@ -77,7 +77,7 @@ const peerSockets = new Set(),
 let peer,
   instance,
   browser,
-  nowMs = Date.now(),
+  clockOffsetMs = 0,
   usersFile,
   origin,
   port,
@@ -377,7 +377,7 @@ async function prepare(context, label) {
         if (url.pathname === '/logout') logoutPosts++;
         if (url.pathname === '/api/tak/status' && page === expirePage) {
           expirePage = null;
-          nowMs += SESSION_TTL_MS + 1;
+          clockOffsetMs += SESSION_TTL_MS + 1;
         }
         if (url.pathname === '/api/tak/status' && page === holdPage) {
           holdPage = null;
@@ -437,7 +437,7 @@ async function startApp(nextPort = 0) {
     distRoot,
     providerPlugins: [],
     port: nextPort,
-    now: () => nowMs,
+    now: () => Date.now() + clockOffsetMs,
     offlineMaps: {
       root: path.join(directory, 'maps'),
       fetchImpl: async (url) => {
@@ -475,7 +475,7 @@ async function peerUpdate(id) {
       lat: 34.3665,
       lon: -89.5192,
     },
-    { nowMs },
+    { nowMs: Date.now() + clockOffsetMs },
   );
   accepted.get(id).write(serializeCotEvent(event) + '\n');
   return event;
@@ -736,6 +736,8 @@ try {
       return { http401: true, indexedDbAccesses: 0, takInitialized: false };
     },
   );
+  // Keep browser-originated CoT on real wall time after this deliberate expiry.
+  clockOffsetMs = 0;
   let bravo, bravoScope;
   await step(
     'cookie changes before account announcement cannot authorize old-scope maps logout or WebSocket',
@@ -758,6 +760,11 @@ try {
           input.dispatchEvent(new Event('change', { bubbles: true }));
         }
       });
+      // Model an old tab whose socket was offline when the shared cookie changed.
+      // Connected sockets are already retired by the server's login revocation.
+      await alpha.evaluate(() =>
+        window.__godsEyeView.takClient.client.disconnect(),
+      );
       bravo = await prepare(context, 'bravo');
       heldStatus = false;
       holdPage = bravo;
@@ -924,7 +931,7 @@ try {
       const denied = buildMarker(
         controls.identity,
         { callsign: 'FORBIDDEN OBSERVER PUBLISH', lat: 34, lon: -89 },
-        { nowMs },
+        { nowMs: Date.now() + clockOffsetMs },
       );
       const rejection = await bravo.evaluate(
         ({ identity, scope, xml }) =>
