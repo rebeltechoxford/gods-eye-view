@@ -531,7 +531,10 @@ async function saveAlphaMap(page) {
     () =>
       document
         .querySelector('[data-offline-status]')
-        .textContent.includes('No saved maps'),
+        .textContent.includes('No saved maps') &&
+      document.querySelector('[data-offline-cancel]').hidden &&
+      !document.querySelector('[data-offline-form] button[type="submit"]')
+        .disabled,
     { timeout },
   );
   await fill(page, '[data-offline-name]', 'PRIVATE ALPHA AREA');
