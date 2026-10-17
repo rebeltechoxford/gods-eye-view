@@ -709,9 +709,11 @@ export function createTakGateway({
                 if (route.state === 'queued')
                   Object.assign(route, {
                     state: 'rejected',
-                    reason: 'Cancelled by originating browser',
+                    reason:
+                      'Browser requested cancellation; peer receipt unconfirmed',
                   });
-              record.reason = 'Cancelled by originating browser';
+              record.reason =
+                'Browser requested cancellation; peer receipt unconfirmed';
               submissionState(record);
             }
           for (const record of browser.legacySubmissions) cancelRecord(record);
