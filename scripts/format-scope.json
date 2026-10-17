@@ -1070,6 +1070,7 @@
   "src/tooling/takProtocolNegotiation.test.mjs",
   "src/tak/uplinkSummary.test.mjs",
   "docs/TAK_PROTOCOL_V1.md",
+  "docs/TAK_OFFLINE_ROADS.md",
   "src/routing/router.test.mjs",
   "src/routing/offlineEngine.test.mjs",
   "src/routing/offlineDirections.test.mjs",

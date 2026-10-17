@@ -370,6 +370,32 @@ app requires `npm run build` and the production HTTPS host. Read
 [the source/download ledger](docs/TAK_OFFLINE_MAP_PLAN.md) for licensed sources,
 terrain and chart import work that remains.
 
+## Drive offline with road packs
+
+Driving directions can be computed on the phone with no signal. Build a road
+pack at home from an OpenStreetMap extract, for example Geofabrik's
+`mississippi-latest.osm.pbf`:
+
+```sh
+node scripts/build-road-pack.mjs --input mississippi-latest.osm.pbf \
+  --name Mississippi --out mississippi.gevroads
+```
+
+Put the `.gevroads` file and its `.gevroads.json` manifest in
+`GEV_ROAD_PACK_DIR` on the private host (default `gods-eye-view/road-packs`
+under `LOCALAPPDATA`, `XDG_DATA_HOME` or `~/.local/share`). On the phone open
+**TAK → OFFLINE ROADS / ROUTING** and choose **Download to this device**. On
+the built private HTTPS app this also saves the app for offline launch, as a
+saved map does. Turn on Directions and choose Drive: when both ends are inside
+an installed pack, the route is computed on the device, never sent to a router,
+and its summary ends in `· offline`. Other trips and walking/cycling stay
+online.
+
+Car routing only, from OSM roads: no turn restrictions, traffic, closures or
+live guidance. Read [what the router knows and the evidence](docs/TAK_OFFLINE_ROADS.md).
+A physical iPhone has not yet been tested; install a pack, enable airplane
+mode, relaunch from the home screen and route before relying on it.
+
 ## Reproduce verification
 
 ```sh
@@ -388,6 +414,7 @@ loopback HTTPS servers and synthetic fixtures; run them sequentially:
 npm run qa:tak:private
 npm run qa:maps:offline
 npm run qa:maps:mbtiles
+node scripts/qa-offline-roads.mjs --https --pack-dir <road pack directory>
 ```
 
 Their reports and screenshots are written under `qa-artifacts/`. The latest

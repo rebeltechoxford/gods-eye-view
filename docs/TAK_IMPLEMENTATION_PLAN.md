@@ -578,6 +578,41 @@ stream negotiation are described, with scope and limits, in
 These are synthetic results. Real ATAK-CIV, WinTAK and iTAK v1 mesh traffic and
 a running TAK Server v1 negotiation remain open in [TAK_TODO.md](../TAK_TODO.md).
 
+## Offline driving directions run
+
+On-device car routing from OpenStreetMap road packs is described, with what
+the router does and does not model, in
+[TAK_OFFLINE_ROADS.md](TAK_OFFLINE_ROADS.md). Recorded on 2026-10-17 UTC with
+Node `24.14.0` on Linux x64 and Chromium `141.0.7390.37`:
+
+- A Mississippi pack (96.2 MiB; 876,340 junctions; 1,084,806 road segments;
+  OSM edition 2026-10-17T00:27Z) was built from the OSM France `us-south`
+  extract in 212 s with a 1.49 GB peak. On it, A\* matched exhaustive Dijkstra
+  on 39 of 39 random trips.
+- 33 routing unit tests in six files pass, including mutation checks: reverting
+  the hung-worker recovery or the exact-bytes transfer fails its test. Full
+  unit suite: **6,890 passed**, one existing skip, zero failures (6,857 before
+  this change). Formatting, import/package boundaries, setup doctor, the
+  layer-token check against `origin/main` and the production build passed.
+- A pre-existing race in MBTiles upload cleanup (a logout detaching the socket
+  before the request timeout was reset) failed 4 of 24 loaded runs of its test
+  on unmodified `dev`. Fixed separately; 24 of 24 then passed.
+- `scripts/qa-offline-roads.mjs` against `npm run tak:lab` passed 5 scenarios
+  with every online router refused (a control request proves the refusal).
+- `scripts/qa-offline-roads.mjs --https` against the production build passed
+  6 scenarios at 390 × 844. After native login it installs the pack through the
+  panel and saves the offline app. Then it stops the server and opens a fresh
+  page from the service worker; the status endpoint is unreachable. That page
+  routed Oxford to Tupelo on the device (80 km, 59 min, 23 steps) in 1.8 s.
+- An earlier run exposed Puppeteer request interception leaving the dev-mode
+  route worker's module imports pending. The gate now pauses only router URLs.
+  The engine now retires a worker that does not answer, so one hung worker
+  cannot block later routes.
+
+These are synthetic browser results. A physical iPhone (storage quota, worker
+memory, eviction, airplane-mode relaunch) remains open in
+[TAK_TODO.md](../TAK_TODO.md).
+
 ## Current external prerequisites
 
 The official-source local server lab used fresh synthetic credentials; no

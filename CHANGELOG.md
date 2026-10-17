@@ -1,5 +1,15 @@
 # Changelog
 
+- Offline driving directions: build an OpenStreetMap car road pack at home
+  (`scripts/build-road-pack.mjs`), serve it read-only from the private host
+  (`GEV_ROAD_PACK_DIR`) and install it on the phone from **TAK → OFFLINE
+  ROADS**. Driving trips inside an installed pack are routed on the device in a
+  worker and never sent to a router; other trips stay online. Packs are
+  SHA-256 verified at install and every load, and installing one saves the app
+  for offline launch. A synthetic Chromium gate stops the server and routes
+  from the saved app. Physical iPhone acceptance is still required; see
+  `docs/TAK_OFFLINE_ROADS.md`.
+
 - Logging out or timing out during an MBTiles upload or a saved-map request no
   longer throws while resetting the request timeout on a socket that is
   already detached.

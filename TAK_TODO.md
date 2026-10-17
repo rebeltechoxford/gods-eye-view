@@ -97,7 +97,11 @@ running.
    [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Broader chart
    acceptance remains: a real NOAA bundle exceeded the unchanged 5,000-tile cap,
    and FAA GeoTIFF conversion/import is unsupported. Add 3D elevation packs
-   separately from rendered topographic maps. Add unsent tactical queue reconciliation with an explicit
+   separately from rendered topographic maps. Offline car routing from OSM
+   road packs is implemented and passes a synthetic production outage gate
+   ([scope and evidence](docs/TAK_OFFLINE_ROADS.md)); test it on a physical
+   iPhone, then add live guidance (position tracking, rerouting) and, if
+   needed, turn restrictions and multi-region packs. Add unsent tactical queue reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs
