@@ -1038,5 +1038,6 @@
   "src/tak/packages.css",
   "src/tak/fixtures/README.md",
   "scripts/qa-tak-packages.mjs",
-  "docs/TAK_MISSION_PACKAGES.md"
+  "docs/TAK_MISSION_PACKAGES.md",
+  "scripts/qa-tak-navigation.mjs"
 ]
