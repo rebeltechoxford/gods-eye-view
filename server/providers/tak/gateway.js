@@ -819,12 +819,16 @@ export function createTakGateway({
           devicePool &&
           message?.op === 'presence' &&
           message.enabled === false &&
-          Object.keys(message).length === 2
+          (Object.keys(message).length === 2 ||
+            (Object.keys(message).length === 3 &&
+              typeof message.id === 'string' &&
+              SUBMISSION_ID.test(message.id)))
         ) {
           if (!browser.identity || !devicePool.stopPresence(browser))
             control(ws, {
               op: 'reject',
               command: 'presence',
+              ...(message.id ? { id: message.id } : {}),
               reason:
                 'Only the active presence publisher may stop this device route',
             });
@@ -833,6 +837,7 @@ export function createTakGateway({
               op: 'presence',
               enabled: false,
               uid: browser.identity.uid,
+              ...(message.id ? { id: message.id } : {}),
             });
         } else if (
           message?.op === 'cot' &&

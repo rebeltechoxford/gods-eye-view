@@ -398,6 +398,75 @@ test('non-SA endpoint cannot register a marker/control UID through actual WebSoc
   );
 });
 
+test('presence STOP echoes a bounded request ID on both acknowledgment and refusal', async (t) => {
+  const f = await fixture(t, { deviceStreams: true }),
+    a = await f.connect(),
+    mirror = await f.connect(a.identity);
+  await f.presence(a);
+  mirror.ws.send(
+    JSON.stringify({ op: 'presence', enabled: false, id: 'mirror-stop_1' }),
+  );
+  await wait(
+    () =>
+      mirror.messages.some(
+        (message) =>
+          message.op === 'reject' &&
+          message.command === 'presence' &&
+          message.id === 'mirror-stop_1',
+      ),
+    'correlated nonpublisher refusal',
+  );
+  a.ws.send(
+    JSON.stringify({ op: 'presence', enabled: false, id: 'owner-stop_1' }),
+  );
+  await wait(
+    () =>
+      a.messages.some(
+        (message) =>
+          message.op === 'presence' &&
+          message.uid === a.identity.uid &&
+          message.id === 'owner-stop_1',
+      ),
+    'first correlated stop',
+  );
+  f.advance(1);
+  assert.equal((await f.presence(a)).state, 'submitted');
+  a.ws.send(
+    JSON.stringify({ op: 'presence', enabled: false, id: 'owner-stop_2' }),
+  );
+  await wait(
+    () =>
+      a.messages.some(
+        (message) => message.op === 'presence' && message.id === 'owner-stop_2',
+      ),
+    'distinct later stop',
+  );
+  assert.equal(
+    a.messages.filter(
+      (message) => message.op === 'presence' && message.id === 'owner-stop_1',
+    ).length,
+    1,
+  );
+  const acknowledgments = a.messages.filter(
+    (message) => message.op === 'presence',
+  ).length;
+  for (const id of ['', 'x'.repeat(65), 'not safe', '../bad'])
+    a.ws.send(JSON.stringify({ op: 'presence', enabled: false, id }));
+  await wait(
+    () =>
+      a.messages.filter(
+        (message) =>
+          message.op === 'reject' &&
+          message.reason === 'unknown control message',
+      ).length === 4,
+    'malformed stop IDs rejected',
+  );
+  assert.equal(
+    a.messages.filter((message) => message.op === 'presence').length,
+    acknowledgments,
+  );
+});
+
 test('mixed public and device-private replay share the original principal entry and byte budget', async (t) => {
   const f = await fixture(t, { deviceStreams: true }),
     a = await f.connect();
