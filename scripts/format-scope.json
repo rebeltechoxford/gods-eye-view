@@ -1029,5 +1029,11 @@
   "src/tak/navigationCamera.js",
   "src/tak/navigation.css",
   "src/tak/navigation.test.mjs",
-  "docs/TAK_FIELD_NAVIGATION.md"
+  "docs/TAK_FIELD_NAVIGATION.md",
+  "src/tak/packages.test.mjs",
+  "src/tak/packagesFile.test.mjs",
+  "src/tak/packages.css",
+  "src/tak/fixtures/README.md",
+  "scripts/qa-tak-packages.mjs",
+  "docs/TAK_MISSION_PACKAGES.md"
 ]
