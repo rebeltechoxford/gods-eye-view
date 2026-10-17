@@ -8,6 +8,8 @@ import {
 import {
   buildMarker,
   buildSelfSa,
+  buildDelete,
+  buildEmergency,
   createIdentity,
 } from '../tak/protocol/builders.js';
 import { serializeCotEvent } from '../tak/protocol/cot.js';
@@ -202,6 +204,15 @@ test('self presence validates exact identity, canonical endpoint and fresh obser
     false,
   );
   assert.equal(f.send(a, { ...sa, timeMs: f.now() - 30_001 }), false);
+  assert.equal(
+    f.send(a, { ...sa, detail: { ...sa.detail, precision: null } }),
+    false,
+  );
+  assert.equal(
+    f.send(a, { ...sa, how: 'm-g' }),
+    false,
+    'USER position must retain its declared observation method',
+  );
   assert.equal(f.pool.status().presence[0].active, false);
 });
 
@@ -389,6 +400,51 @@ test('shared feed serves only SA-off devices and contact replay never copies a p
   );
 });
 
+test('reordered deletes and emergency cancellations cannot erase newer private replay', (t) => {
+  const f = fixture(t),
+    a = f.join();
+  f.presence(a);
+  const wire = f.links.at(-1),
+    marker = f.marker('ORDERED-MARKER');
+  const alert = buildEmergency(
+    a.identity,
+    { lat: 1, lon: 2 },
+    { nowMs: f.now() },
+  );
+  wire.hooks.onXml(serializeCotEvent(marker));
+  wire.hooks.onXml(serializeCotEvent(alert));
+  wire.hooks.onXml(
+    serializeCotEvent(
+      buildDelete(a.identity, marker.uid, marker.type, { nowMs: f.now() - 1 }),
+    ),
+  );
+  wire.hooks.onXml(
+    serializeCotEvent(
+      buildEmergency(
+        a.identity,
+        { lat: 1, lon: 2 },
+        { cancel: true, nowMs: f.now() - 1 },
+      ),
+    ),
+  );
+  assert.equal(f.pool.replay(a.ref).length, 2);
+  wire.hooks.onXml(
+    serializeCotEvent(
+      buildDelete(a.identity, marker.uid, marker.type, { nowMs: f.now() + 1 }),
+    ),
+  );
+  wire.hooks.onXml(
+    serializeCotEvent(
+      buildEmergency(
+        a.identity,
+        { lat: 1, lon: 2 },
+        { cancel: true, nowMs: f.now() + 1 },
+      ),
+    ),
+  );
+  assert.equal(f.pool.replay(a.ref).length, 0);
+});
+
 test('four copied 100Hz public feeds retain per-device delivery instead of spending one principal frame bucket four times', (t) => {
   const f = fixture(t),
     wires = [],
@@ -423,6 +479,38 @@ test('wire byte flood is bounded without consuming another device delivery share
   bw.hooks.onXml(serializeCotEvent(f.marker('fair-B')));
   assert.equal(f.received.at(-1)[0], b.ref);
   assert.match(f.received.at(-1)[1], /fair-B/);
+});
+
+test('four distinct wire floods have explicit aggregate work and fixed retained-memory bounds', (t) => {
+  const f = fixture(t),
+    members = Array.from({ length: 4 }, () => f.join()),
+    wires = [];
+  for (const member of members) {
+    f.presence(member);
+    wires.push(f.links.at(-1));
+  }
+  for (let index = 0; index < wires.length; index++)
+    for (let i = 0; i <= DEVICE_STREAM_LIMITS.wireBurst; i++)
+      wires[index].hooks.onXml(
+        serializeCotEvent(f.marker(`distinct-${index}-${i}`)),
+      );
+  assert.equal(f.received.length, 4 * DEVICE_STREAM_LIMITS.wireBurst);
+  assert.equal(f.pool.status().wireLimited, 4);
+  f.advance(1000);
+  for (let index = 0; index < wires.length; index++)
+    for (let i = 0; i < DEVICE_STREAM_LIMITS.wireRate; i++)
+      wires[index].hooks.onXml(
+        serializeCotEvent(f.marker(`refill-${index}-${i}`)),
+      );
+  assert.equal(
+    f.received.length,
+    4 * (DEVICE_STREAM_LIMITS.wireBurst + DEVICE_STREAM_LIMITS.wireRate),
+  );
+  const status = f.pool.status();
+  assert.ok(status.replay <= DEVICE_STREAM_LIMITS.replayEntries);
+  assert.ok(status.replayBytes <= DEVICE_STREAM_LIMITS.replayBytes);
+  assert.ok(status.dedup <= DEVICE_STREAM_LIMITS.seenEntries);
+  assert.equal(status.deliveryLimited, 0);
 });
 
 test('aggregate pending cap, exact owner cancellation, reconnect epoch and late completion are bounded', (t) => {

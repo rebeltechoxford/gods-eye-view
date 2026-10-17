@@ -51,9 +51,22 @@ export function createDeviceStreamPool({
   setInterval: every = setInterval,
   clearInterval: stopEvery = clearInterval,
   readOnly = false,
+  replayLimits = {
+    entries: DEVICE_STREAM_LIMITS.replayEntries,
+    bytes: DEVICE_STREAM_LIMITS.replayBytes,
+  },
 }) {
   if (config?.protocol !== 'tls')
     throw new TypeError('Device streams require verified TLS');
+  if (
+    !Number.isSafeInteger(replayLimits.entries) ||
+    replayLimits.entries < 1 ||
+    replayLimits.entries > DEVICE_STREAM_LIMITS.replayEntries ||
+    !Number.isSafeInteger(replayLimits.bytes) ||
+    replayLimits.bytes < 1 ||
+    replayLimits.bytes > DEVICE_STREAM_LIMITS.replayBytes
+  )
+    throw new TypeError('Device replay limits must fit the fixed pool budget');
   const owner = Symbol('principal-device-pool'),
     devices = new Map(),
     refs = new Map(),
@@ -70,6 +83,18 @@ export function createDeviceStreamPool({
     deliveryLimited: 0,
     duplicate: 0,
   };
+  const retired = Object.fromEntries(
+    [
+      'rx',
+      'tx',
+      'queued',
+      'droppedQueue',
+      'droppedExpired',
+      'coalesced',
+      'reconnects',
+      'discarded',
+    ].map((key) => [key, 0]),
+  );
 
   const validRef = (record) => {
     try {
@@ -83,11 +108,8 @@ export function createDeviceStreamPool({
     (shared ? 1 : 0) + [...devices.values()].filter((d) => d.stream).length;
   function trimReplay(map) {
     const partitions = devices.size + 1;
-    const count = Math.max(
-      1,
-      Math.floor(DEVICE_STREAM_LIMITS.replayEntries / partitions),
-    );
-    const bytes = Math.floor(DEVICE_STREAM_LIMITS.replayBytes / partitions);
+    const count = Math.floor(replayLimits.entries / partitions);
+    const bytes = Math.floor(replayLimits.bytes / partitions);
     for (const [uid, item] of map) if (item.staleMs <= now()) map.delete(uid);
     let used = [...map.values()].reduce((sum, item) => sum + item.bytes, 0);
     while (map.size > count || used > bytes) {
@@ -99,11 +121,14 @@ export function createDeviceStreamPool({
   function remember(map, xml, event) {
     const kind = cotKind(event.type);
     if (kind === 'delete') {
-      map.delete(event.detail.links[0]?.uid);
+      const target = event.detail.links[0]?.uid;
+      if (event.timeMs >= (map.get(target)?.timeMs ?? Infinity))
+        map.delete(target);
       return;
     }
     if (event.type === 'b-a-o-can') {
-      map.delete(event.uid);
+      if (event.timeMs >= (map.get(event.uid)?.timeMs ?? Infinity))
+        map.delete(event.uid);
       return;
     }
     if (!['sa', 'marker', 'alert', 'drawing'].includes(kind)) return;
@@ -228,6 +253,8 @@ export function createDeviceStreamPool({
     if (!stream || stream.closed) return;
     stream.closed = true;
     processSlots.delete(stream);
+    const final = stream.link?.status?.();
+    for (const key of Object.keys(retired)) retired[key] += final?.[key] || 0;
     for (const record of [...pending])
       if (record.stream === stream) {
         stream.link?.cancel(record);
@@ -421,6 +448,9 @@ export function createDeviceStreamPool({
       if (
         event.detail.callsign !== device.callsign ||
         event.detail.endpoint !== '*:-1:stcp' ||
+        !['GPS', 'USER'].includes(event.detail.precision?.geopointsrc) ||
+        event.how !==
+          (event.detail.precision.geopointsrc === 'GPS' ? 'm-g' : 'h-e') ||
         event.staleMs <= now() ||
         event.timeMs > now() + 60_000 ||
         event.timeMs < now() - 30_000
@@ -540,6 +570,15 @@ export function createDeviceStreamPool({
         shared,
         ...[...devices.values()].map((d) => d.stream),
       ].filter(Boolean);
+      const snapshots = streams.map((stream) => stream.link?.status?.() || {});
+      const totals = { ...retired };
+      for (const snapshot of snapshots)
+        for (const key of Object.keys(totals))
+          totals[key] += snapshot[key] || 0;
+      const replayMaps = [
+        sharedReplay,
+        ...[...devices.values()].map((device) => device.replay),
+      ];
       return {
         state: streams.some((s) => s.state === 'connected')
           ? 'connected'
@@ -550,8 +589,26 @@ export function createDeviceStreamPool({
         deviceStreams: true,
         streams: streams.length,
         devices: devices.size,
+        dedup: [...devices.values()].reduce(
+          (sum, device) => sum + device.seen.size,
+          0,
+        ),
         queue: pending.size,
         queueBytes: pendingBytes,
+        replay: replayMaps.reduce((sum, map) => sum + map.size, 0),
+        replayBytes: replayMaps.reduce(
+          (sum, map) =>
+            sum +
+            [...map.values()].reduce((bytes, item) => bytes + item.bytes, 0),
+          0,
+        ),
+        ...totals,
+        upstreamRx: totals.rx,
+        bufferedBytes: snapshots.reduce(
+          (sum, item) => sum + (item.bufferedBytes || 0),
+          0,
+        ),
+        lastError: snapshots.find((item) => item.lastError)?.lastError || null,
         ...counters,
         presence: [...devices.values()].map((d) => ({
           uid: d.uid,

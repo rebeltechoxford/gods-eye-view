@@ -163,6 +163,7 @@ export function readTakGatewayConfig(env = process.env) {
     enabled: enabled && tokenValid && !multiOperator,
     token: tokenValid ? token : null,
     localBootstrap: flag(env.TAK_GATEWAY_LOCAL_BOOTSTRAP),
+    deviceStreams: flag(env.TAK_DEVICE_STREAMS),
     principal: 'local-operator',
     mesh,
     server,

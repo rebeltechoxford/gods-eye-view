@@ -324,7 +324,11 @@ export async function startTakHttpsServer({
       const principal = principals.get(authenticated.principal);
       if (!principal?.enabled) throw new Error('Principal unavailable');
       instance = createTakGateway({
-        config: principalGatewayConfig(principal, policy),
+        config: principalGatewayConfig(principal, policy, {
+          deviceStreams: /^(1|true|yes|on)$/i.test(
+            String(env.TAK_DEVICE_STREAMS || '').trim(),
+          ),
+        }),
         WebSocketServer,
         now,
         authenticateSession,

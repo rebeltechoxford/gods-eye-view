@@ -998,6 +998,7 @@
   "src/tak/protocol/xml.test.mjs",
   "src/tooling/takGateway.test.mjs",
   "src/tooling/takDeviceStreams.test.mjs",
+  "src/tooling/takDeviceGateway.test.mjs",
   "server/providers/tak/deviceStreams.js",
   "docs/TAK_DEVICE_STREAMS.md",
   "scripts/qa-tak.mjs",
