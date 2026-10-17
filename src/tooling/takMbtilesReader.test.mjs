@@ -309,6 +309,38 @@ test('selected indexed reads reject a real index/table mismatch that quick_check
   );
 });
 
+test('selected zooms may narrow original metadata but cannot contradict its declared range', async (t) => {
+  const selection = {
+    bounds: { west: -134.05, south: 48.95, east: -133.95, north: 49.05 },
+    minZoom: 10,
+    maxZoom: 10,
+  };
+  const rows = [[10, 130, 672, image]];
+  const positive = await fixture(t, {
+    rows,
+    extra: "INSERT INTO metadata VALUES('minzoom','0'),('maxzoom','13')",
+  });
+  const header = await readMbtiles(positive, { selection });
+  assert.deepEqual(header.plannedKeys, ['10/130/351']);
+  assert.equal(header.minZoom, 10);
+  assert.equal(
+    header.metadata.find((row) => row.name === 'maxzoom').value,
+    '13',
+  );
+  for (const extra of [
+    "INSERT INTO metadata VALUES('minzoom','11'),('maxzoom','13')",
+    "INSERT INTO metadata VALUES('minzoom','0'),('maxzoom','9')",
+    "INSERT INTO metadata VALUES('minzoom','11'),('maxzoom','9')",
+  ])
+    await assert.rejects(
+      () =>
+        fixture(t, { rows, extra }).then((file) =>
+          readMbtiles(file, { selection }),
+        ),
+      /declared zoom range/,
+    );
+});
+
 test('raster reader rejects unsupported formats, duplicate/out-of-range/noninteger coordinates and oversized blobs', async (t) => {
   for (const options of [
     { format: 'pbf' },

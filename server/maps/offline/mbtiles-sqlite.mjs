@@ -326,6 +326,14 @@ process.on('message', async (message) => {
         (meta.has('maxzoom') && Number(meta.get('maxzoom')) !== maxZoom))
     )
       error('MBTiles declared zoom range differs from its tile inventory');
+    if (
+      selection &&
+      ((meta.has('minzoom') && minZoom < Number(meta.get('minzoom'))) ||
+        (meta.has('maxzoom') && maxZoom > Number(meta.get('maxzoom'))))
+    )
+      error(
+        'MBTiles selected tile contradicts the original declared zoom range',
+      );
     await send({
       op: 'header',
       value: {
