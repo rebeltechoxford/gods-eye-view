@@ -194,6 +194,37 @@ changing credentials preserves an account's public map cache. Freeing retired
 space is an explicit administrator maintenance task while the host is stopped;
 there is no automatic account-data migration or deletion.
 
+## Browser account and offline lifecycle
+
+The browser resolves its authenticated account before creating the globe,
+opening retained map databases or loading its TAK identity. Named identities
+and IndexedDB map libraries use the authenticated opaque storage scope. An
+observer sees a receive-only label and disabled publication controls while
+retaining local drafts, imports, navigation and explicitly chosen exports.
+
+Saving the offline application explicitly approves the current account scope
+for this browser. A genuine network outage can restore that approved scope's
+saved public map and local device identity; tactical contacts, chat, fixes and
+SA state are not restored. A reachable server's 401/403, malformed response or
+changed account never falls back to a previous approval. Removing the saved
+application or signing out removes its offline account approval; separately
+saved maps remain available after signing in to their owning account again.
+
+A new account announcement retires older tabs: it stops GPS/SA and sockets,
+clears tactical stores, preview geometry, private fields and disclosure
+permissions, and aborts pending map operations. This retirement never posts
+logout against another tab's new cookie. Scope-bound HTTP and WSS rejection
+also covers a disconnected old tab before it receives an account announcement.
+Sign-out clears private state synchronously before its scope-bound revocation
+request. If that request cannot reach the host, the cleared page offers to
+reopen/sign in; it does not claim that the server session was revoked.
+
+These namespaces provide logical account separation inside the application.
+They do not encrypt local maps or identities, prevent access through browser
+developer tools, or protect an unlocked phone/browser profile from another
+person using that same profile. Device access controls and private-host
+certificate trust remain operator responsibilities.
+
 ## TAK Server groups and verification
 
 TAK Server uses X.509 client/server authentication; its official

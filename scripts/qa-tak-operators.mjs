@@ -268,6 +268,17 @@ async function prepare(context, label) {
     unloads.push({ label, ...value }),
   );
   await page.evaluateOnNewDocument(() => {
+    window.__qaOperatorTransitions = [];
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'gev.tak.operator-active.v1') {
+        window.__qaOperatorTransitions.push({
+          at: Date.now(),
+          value: event.newValue,
+        });
+        if (window.__qaOperatorTransitions.length > 32)
+          window.__qaOperatorTransitions.shift();
+      }
+    });
     window.__qaLogoutInvocations = [];
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (url, options) => {
@@ -805,11 +816,35 @@ try {
             resolve({ opened, frames, timeout: true });
           }, 10000);
         });
+        const shell = (type) =>
+          new Promise((resolve, reject) => {
+            const channel = new MessageChannel();
+            const timer = setTimeout(() => {
+              channel.port1.close();
+              reject(new Error('Worker context binding timed out'));
+            }, 5000);
+            channel.port1.onmessage = ({ data }) => {
+              if (data.progress) return;
+              clearTimeout(timer);
+              channel.port1.close();
+              resolve(data);
+            };
+            navigator.serviceWorker.controller.postMessage(
+              { type, storageScope: scope },
+              [channel.port2],
+            );
+          });
+        const shellBefore = await shell('GEV_SHELL_STATUS');
+        const shellDenied = await shell('GEV_SHELL_SAVE');
+        const shellAfter = await shell('GEV_SHELL_STATUS');
         return {
           maps: maps.status,
           mapCode: (await maps.json()).code,
           logout: logout.status,
           ws,
+          shellDenied,
+          shellUnchanged:
+            JSON.stringify(shellBefore) === JSON.stringify(shellAfter),
           active: JSON.parse(localStorage.getItem('gev.tak.operator-active.v1'))
             .identity,
         };
@@ -820,8 +855,17 @@ try {
       assert.equal(checks.ws.opened, false);
       assert.equal(checks.ws.frames, 0);
       assert.equal(checks.ws.timeout, undefined);
+      assert.equal(checks.shellDenied.ok, false);
+      assert.equal(checks.shellDenied.sessionExpired, true);
+      assert.equal(checks.shellUnchanged, true);
       assert(checks.active.startsWith(alphaScope + ':'));
-      return { mapDenied: 409, logoutDenied: 409, webSocketOpened: false };
+      return {
+        mapDenied: 409,
+        logoutDenied: 409,
+        webSocketOpened: false,
+        workerContextDenied: true,
+        retainedShellUnchanged: true,
+      };
     },
   );
   await step(
@@ -1101,6 +1145,17 @@ try {
       );
       await connect(bravo);
       await section(bravo, 'network');
+      const finalSignout = await bravo.evaluate(() => ({
+        context: window.__godsEyeView.takClient.operatorContext(),
+        active: JSON.parse(localStorage.getItem('gev.tak.operator-active.v1')),
+        button: document.querySelector('[data-tak-logout]').textContent,
+      }));
+      assert.equal(finalSignout.context.retired, false);
+      assert.equal(
+        finalSignout.active.identity,
+        `${bravoScope}:bravo:observer`,
+      );
+      assert.equal(finalSignout.button, 'Sign out');
       await tap(bravo, '[data-tak-logout]');
       await bravo.waitForFunction(() => location.pathname === '/login', {
         timeout,
@@ -1131,6 +1186,25 @@ try {
   );
 } catch (error) {
   errors.push(scrub(error.stack || error));
+  for (const page of pages) {
+    if (!page.isClosed())
+      console.log(
+        'failure state ' +
+          scrub(
+            JSON.stringify(
+              await page
+                .evaluate(() => ({
+                  path: location.pathname,
+                  context: window.__godsEyeView?.takClient?.operatorContext(),
+                  active: localStorage.getItem('gev.tak.operator-active.v1'),
+                  logout: window.__qaLogoutInvocations,
+                  transitions: window.__qaOperatorTransitions,
+                }))
+                .catch(() => ({})),
+            ),
+          ),
+      );
+  }
   for (let i = 0; i < pages.length; i++)
     if (!pages[i].isClosed())
       await pages[i]
@@ -1152,6 +1226,11 @@ try {
       {
         scenarios: results,
         errors,
+        fixtureDiagnostics: interceptions.map((item, index) => ({
+          page: index,
+          diagnostics: item.diagnostics,
+          cancellations: item.cancellations,
+        })),
         touches,
         scope:
           'Synthetic loopback HTTPS/mTLS browser acceptance; no native TAK or physical-phone interoperability claim',
