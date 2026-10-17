@@ -312,6 +312,11 @@ async function stateSnapshot(page) {
       fix: tak.client.fix(),
       sa: tak.client.saEnabled(),
       privacy: tak.privacy(),
+      disclosure: [...document.querySelectorAll('[data-tak-disclosure]')].some(
+        (el) => el.checked,
+      ),
+      packageConsent: document.querySelector('[data-tak-package-authorize]')
+        .checked,
       activeGps: window.__qaGps.active(),
       privateInputs: [
         ...document.querySelectorAll(
@@ -352,6 +357,8 @@ async function finishExpiredNavigation(page, baseline, expectExpired = true) {
   assert.equal(snapshot.activeGps, false);
   assert.equal(snapshot.privateInputs, false);
   assert.equal(snapshot.privacy.authorized, false);
+  assert.equal(snapshot.disclosure, false);
+  assert.equal(snapshot.packageConsent, false);
   assert.equal(snapshot.markerShare, false);
   assert.equal(snapshot.emergency, 'false');
   assert.equal(new URL(page.url()).pathname, '/login');
@@ -415,6 +422,11 @@ async function preparePage() {
           fix: tak.client.fix() ? true : null,
           sa: tak.client.saEnabled(),
           privacy: tak.privacy(),
+          disclosure: [
+            ...document.querySelectorAll('[data-tak-disclosure]'),
+          ].some((el) => el.checked),
+          packageConsent: document.querySelector('[data-tak-package-authorize]')
+            .checked,
           activeGps: window.__qaGps.active(),
           sessionExpired: tak.client.link().sessionExpired,
           privateInputs: [
@@ -1058,6 +1070,12 @@ try {
         }
         document.querySelector('[data-tak-xml]').value =
           'SYNTHETIC PRIVATE INPUT';
+        document.querySelector('[data-tak-nav-input]').value = '34.37, -89.52';
+        document.querySelector('[data-tak-nav-label]').value =
+          'SYNTHETIC WAYPOINT';
+        document.querySelector('[data-tak-package-name]').value =
+          'SYNTHETIC PACKAGE';
+        document.querySelector('[data-tak-package-authorize]').checked = true;
       });
       await openSection(page, 'network');
       await touch(page, '[data-tak-logout]');
@@ -1070,6 +1088,8 @@ try {
       assert.equal(logoutSnapshot.activeGps, false);
       assert.equal(logoutSnapshot.privateInputs, false);
       assert.equal(logoutSnapshot.privacy.authorized, false);
+      assert.equal(logoutSnapshot.disclosure, false);
+      assert.equal(logoutSnapshot.packageConsent, false);
       assert.equal(logoutSnapshot.markerShare, false);
       assert.equal(logoutSnapshot.emergency, 'false');
       const [code, reason] = await observerClosed;
@@ -1102,6 +1122,12 @@ try {
         });
         document.querySelector('[data-tak-xml]').value =
           'SYNTHETIC EXPIRING INPUT';
+        document.querySelector('[data-tak-nav-input]').value = '34.37, -89.52';
+        document.querySelector('[data-tak-nav-label]').value =
+          'SYNTHETIC WAYPOINT';
+        document.querySelector('[data-tak-package-name]').value =
+          'SYNTHETIC PACKAGE';
+        document.querySelector('[data-tak-package-authorize]').checked = true;
       });
       const baseline = unloadSnapshots.length;
       nowMs += SESSION_TTL_MS + 1;

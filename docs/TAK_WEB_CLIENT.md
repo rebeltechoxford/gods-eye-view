@@ -94,8 +94,12 @@ supported interoperability mode.
 Builders cover self SA/PPLI, spot markers, broadcast GeoChat, own-marker delete,
 ping and emergency/cancel. Parsing a type or preserving an unknown detail
 extension does not implement its complete ATAK workflow. Directed/group chat,
-mission packages/data sync, attachments, drawing/route editing, full 2525 symbols,
-offline field resilience and native plugins remain outside this foundation.
+server mission/data sync, drawing/route editing, full 2525 symbols and native
+plugins remain outside this foundation. Local mission ZIP import/export and
+selected attachment downloads are implemented with bounded validation and
+per-download consent; see [mission packages](TAK_MISSION_PACKAGES.md).
+DD/DMS/MGRS/UTM entry, waypoint focus/local markers and horizontal WGS84
+range/true bearing are implemented; see [navigation](TAK_FIELD_NAVIGATION.md).
 USGS raster downloads are implemented on both the server and browser/device,
 with bounded verified packs, backup/import and an explicitly saved app shell.
 Closed-server browser launch/rendering is tested; physical iPhone WebKit storage
@@ -107,6 +111,9 @@ required. The wrapper does not establish native TAK or background GPS parity.
 Browser connection, gateway submission, upstream queue/write and real peer
 receipt are different states. Never describe `LIVE`, a successful send return
 value or an echoing fixture as proof that an operational peer received data.
+The submissions panel now reports correlated pending, queued, submitted,
+rejected and expired states. Submitted confirms a local transport write only;
+see [delivery and cancellation semantics](TAK_DELIVERY.md).
 
 ## Privacy boundary
 

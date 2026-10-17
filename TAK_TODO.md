@@ -47,23 +47,29 @@ running.
    subscriptions, replay and revocation before shared multiuser operation. Public
    hosting remains outside the authorized scope. Preserve
    server-side object ownership and denied impersonation/deletion.
-2. **Delivery state and synchronization.** A successful WebSocket write is a
-   gateway submission, not a peer receipt. Add compatible peer acknowledgements
-   where available, visible queued/rejected/delivered states and recovery without
-   rebroadcasting unshared imports or expired data.
+2. **Delivery state and synchronization.** Correlated pending/queued/submitted/
+   rejected/expired states are implemented. Submitted confirms a local transport
+   write, not a peer receipt. Add compatible peer acknowledgements where available
+   and explicit durable recovery without rebroadcasting unshared imports or
+   expired data. Cancellation cannot retract bytes already written; a failed
+   cancellation control closes the browser connection.
 3. **Chat.** Current scope is broadcast GeoChat. Add directed/group recipients,
    authorization, receipts and explicit durable-history policy. Validate with
    each supported peer. Unsupported directed/group chat must remain refused.
 4. **Shared drawings and routes.** Implement supported TAK object types,
    editing/ownership/conflict/delete behavior and roundtrips. Existing GEV
    annotations and public directions remain independent capabilities to preserve.
-5. **Mission/data packages and attachments.** Add safe archive/manifest handling,
-   authorized file transfer, bounded decompression, path/type/hash validation,
-   scoped storage, sync conflicts and real-client acceptance.
-6. **Coordinate/navigation tools.** Define the supported DD/DMS/MGRS/UTM and
-   altitude datum/uncertainty behavior; add range/bearing, waypoint/route tools,
-   precision tests and camera arbitration. Existing coordinate readouts alone
-   do not establish the whole ATAK navigation workflow.
+5. **Mission/data packages and attachments.** Bounded local ZIP/manifest import,
+   contact application, selected export and attachment downloads are implemented,
+   with path/type/CRC/hash checks and explicit per-export consent. Add authorized
+   server file transfer, scoped durable storage, mission sync/conflicts and
+   real-client acceptance. Unsupported archive/attachment forms remain refused;
+   geometry-bearing contacts currently render their position only.
+6. **Coordinate/navigation tools.** DD/DMS/MGRS/UTM entry, validation, shared
+   camera focus, local markers and WGS84 horizontal range/true bearing are
+   implemented. Add waypoint/route workflows, UPS polar grids, altitude datum
+   conversion, magnetic bearings and appropriate uncertainty/sensor support.
+   Preserve the distinction between operator position, fresh GPS and map center.
 7. **GPS/offline field behavior.** The first retained-map slice adds bounded
    USGS raster packs on server and device, verified copy/resume, backups and an
    explicit app-shell download. Eight synthetic production Chromium scenarios

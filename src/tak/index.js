@@ -8,6 +8,7 @@ import {
   fetchGatewaySession,
 } from './transport.js';
 import { createTakPanel } from './ui.js';
+import { createMissionPackagePanel } from './packagesUi.js';
 import { createGeolocation } from './geolocation.js';
 import { createMobileSession } from './mobile.js';
 import { logoutOperatorSession } from './session.js';
@@ -77,6 +78,7 @@ export function initTakWebClient({
   let gatewayReady;
   let expiredRedirected = false;
   let navigation = null;
+  let packages = null;
   const mobile = createMobileSession();
   const geolocation = createGeolocation();
 
@@ -97,6 +99,7 @@ export function initTakWebClient({
     mobile,
     async logout() {
       navigation?.clearPrivateInputs();
+      packages?.clearPrivateInputs();
       await logoutOperatorSession(globalThis.fetch, controller.signal);
       window.location.replace('/login');
     },
@@ -132,6 +135,11 @@ export function initTakWebClient({
     gpsActive: () => geolocation.isActive(),
     subscribeMapCenter: (listener) =>
       viewer.camera.moveEnd.addEventListener(listener),
+  });
+  packages = createMissionPackagePanel({
+    container: document.getElementById('tak-web-panel'),
+    client,
+    markPrivate: () => markTakDataPrivate(viewer),
   });
   let mapBootstrap = null;
   let mapBootstrapAt = 0;
@@ -190,6 +198,7 @@ export function initTakWebClient({
       authorizeTakDisclosure(viewer, false);
       panel.clearPrivateInputs();
       navigation.clearPrivateInputs();
+      packages.clearPrivateInputs();
       window.location.replace('/login');
     }
     if (client.store.count() || client.store.chats().length || client.fix())
@@ -226,6 +235,7 @@ export function initTakWebClient({
     overlay,
     savedMaps,
     navigation,
+    packages,
     privacy: () => takPrivacyState(viewer),
     destroy() {
       controller.abort();
@@ -238,6 +248,7 @@ export function initTakWebClient({
       geolocation.destroy();
       savedMaps?.destroy();
       navigation.destroy();
+      packages.destroy();
       mapBootstrap = null;
       panel.destroy();
       overlay.destroy();
