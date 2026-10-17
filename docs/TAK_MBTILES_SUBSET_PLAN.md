@@ -1,8 +1,8 @@
 # Bounded MBTiles area/zoom subsets
 
-The bounded backend/portable increment is implemented on
-`feature/tak-mbtiles-subsets`; phone controls and actual subset browser acceptance
-are still pending. The real published
+The bounded backend, portable record and phone controls are implemented on
+`feature/tak-mbtiles-subsets`, with synthetic and retained-source browser
+acceptance below. The real published
 [NOAA check](TAK_MBTILES_NOAA_CHECK.md) rejected the complete 36,691,968-byte
 archive at the unchanged 5,000-tile limit. A subset must not raise that limit or
 make an oversized original file admissible.
@@ -17,7 +17,7 @@ sparse selection whose theoretical grid exceeds 5,000 even if fewer tiles are
 present; explain that refusal instead of raising a budget or scanning arbitrary
 coverage to invent a preview.
 
-The UI should offer an explicit **Limit import to area and zooms entered above**
+The UI offers an unchecked-by-default **Limit import to area and zooms entered above**
 checkbox, using the existing West/East/South/North and min/max zoom fields. The
 existing **Use 10 km around map center** action can populate them. Do not label
 that action as the current viewport extent. A later real-view-rectangle helper
@@ -183,7 +183,8 @@ selected flat/normalized reads, original source metadata, multi-zoom and
 dateline ranges, low-zoom overlap, empty/sparse selections, duplicate/malformed
 rows, oversized potential grids, exact backups, quotas, paused-write revocation,
 actual named HTTPS scope isolation and existing offline regressions. Node
-26.7.0 passed **28 reader/import cases** through its built-in SQLite API.
+26.7.0 passed **29 reader/import cases** through its built-in SQLite API,
+including source-range contradiction checks added after the initial sweep.
 
 The unmodified production reader then accepted the same retained NOAA file on
 both runtimes: exactly `10/130/351`, PNG 3,836 bytes and the same tile/source
@@ -193,10 +194,56 @@ including whole-file integrity check were 201 ms on Node 24 and 195 ms on Node
 these reader checks. Evidence is retained under ignored
 `.gev-cache/noaa-mbtiles-compatibility/production-subset-{24,26}.json`.
 
-This establishes backend format compatibility for that selection, not the
-forthcoming file-input/server/device/outage browser path or physical-phone
-acceptance. The source's observed 2024 dates remain explicit and unverified for
-current navigation.
+The source's observed 2024 dates remain explicit and unverified for current
+navigation.
+
+## Phone-sized browser acceptance
+
+`node scripts/qa-mbtiles.mjs --subset` passed **6/6 production HTTPS/Chromium
+cases** at 2026-10-17 04:16:03 UTC (Node 24.19.0, Chrome 152, 390-pixel
+viewport). Its explicit subset UI retained three exact raster rows from a
+four-row source; the out-of-zoom row was not copied. Original source zoom
+metadata, whole-file SHA/size, source notices and the separate selection survived
+server/device copy and a real closed-listener fresh-page outage. Existing pixel,
+TMS, sparse-gap, cancellation, disclosure, 44-pixel control and scoped-logout
+checks remained in force. The default command retains whole-file UI behavior.
+The uploader's eight focused tests also passed, including a selection snapshot
+that cannot change while the asynchronous file header is read.
+
+A separate ignored scratch smoke then used the **same single retained NOAA
+file**, through the actual file input, checkbox and area/zoom controls. It passed
+**3/3 stages** at 2026-10-17 04:18:49 UTC: full 36,691,968-byte scoped HTTPS
+upload, verified server/device copy of exactly `10/130/351`, actual Cesium canvas
+rendering, then a stopped real listener and fresh-page saved-app/map reopening.
+No second provider download occurred. The original `SG_AREA` name and source
+0–13 zoom metadata, full source hash, requested AOI, subset label and explicit
+May 2024/unverified-currentness notice remained available offline.
+
+Actual retained tile textures were attached to four rendered geometry tiles;
+the decoded image contained 127 colors and 382 dark line/label pixels. Both
+online and outage screenshots visibly showed the curved service-area boundary
+and clipped **Forster Se…** label, with blank coverage beyond the retained tile.
+Screenshots and a bounded unobstructed crop confirmed visible ink against its
+white raster background. Initial fresh offline camera framing used the requested
+AOI center (−134°, 49°, approximately 13.7 km camera height), before the explicit
+visual inspection view. All 30 GEV layers remained registered, terrain stayed
+ellipsoid, no public fallback was requested, and private-map capture/sharing
+remained blocked. Browser/server processes closed cleanly.
+
+The first scratch attempt stopped at an overly broad direct framebuffer-count
+assertion although its screenshot showed the curve. That failed measurement is
+retained separately; the accepted run uses actual captured screenshot pixels
+and matching retained imagery texture coordinates. The production renderer was
+not changed for the probe. Accepted local artifacts are
+`qa-artifacts/mbtiles-subset/results.json` and
+`qa-artifacts/mbtiles-noaa-subset-accepted/{results.json,01-noaa-online-canvas.png,02-noaa-offline-canvas.png}`.
+
+This source is the observed **SG_AREA service-area overlay**, not evidence that
+every NOAA regional MBTiles package contains a current navigational chart.
+The metadata/HTTP 2024 versus advertised weekly-update discrepancy remains
+unresolved. No surveyed geographic correctness, operational route safety,
+physical-phone storage/background behavior or native application acceptance is
+claimed. The real-source smoke used a synthetic account and phone emulation.
 
 Primary references: [MBTiles 1.3](https://github.com/mapbox/mbtiles-spec/blob/master/1.3/spec.md),
 [SQLite query planning](https://sqlite.org/queryplanner.html),
