@@ -92,10 +92,13 @@ protobuf is currently recognized/refused rather than decoded and is not a
 supported interoperability mode.
 
 Builders cover self SA/PPLI, spot markers, broadcast GeoChat, own-marker delete,
-ping and emergency/cancel. Parsing a type or preserving an unknown detail
-extension does not implement its complete ATAK workflow. Directed/group chat,
-server mission/data sync, drawing/route editing, full 2525 symbols and native
-plugins remain outside this foundation. Local mission ZIP import/export and
+ping, emergency/cancel and a bounded line/polygon/route subset. The drawing
+editor renders real geometry, supports ordered waypoint edits and requires an
+explicit sharing choice; see [drawings and routes](TAK_DRAWINGS_ROUTES.md).
+Parsing a type or preserving an unknown detail extension does not implement its
+complete ATAK workflow. Directed/group chat, server mission/data sync, broader
+native shape types, route guidance, full 2525 symbols and native plugins remain
+outside this foundation. Local mission ZIP import/export and
 selected attachment downloads are implemented with bounded validation and
 per-download consent; see [mission packages](TAK_MISSION_PACKAGES.md).
 DD/DMS/MGRS/UTM entry, waypoint focus/local markers and horizontal WGS84
