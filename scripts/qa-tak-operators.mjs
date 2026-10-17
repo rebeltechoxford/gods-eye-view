@@ -1000,7 +1000,26 @@ try {
       await startApp(port);
       await login(bravo, 'bravo');
       await connect(bravo);
+      await peerUpdate('bravo');
+      await bravo.waitForFunction(
+        () => !!window.__godsEyeView.takClient.client.store.get('PEER-BRAVO'),
+        { timeout },
+      );
       await bravo.evaluate(() => {
+        const tak = window.__godsEyeView.takClient;
+        tak.client.addMarker({
+          callsign: 'PRIVATE BRAVO BEFORE LOGOUT',
+          lat: 34.3,
+          lon: -89.5,
+          broadcast: false,
+        });
+        tak.client.setFix({ lat: 34.3, lon: -89.5, source: 'USER' });
+        for (const input of document.querySelectorAll(
+          '[data-tak-disclosure]',
+        )) {
+          input.checked = true;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         const $ = (selector) => document.querySelector(selector);
         $('[data-drawing-kind]').value = 'route';
         $('[data-drawing-new]').click();
@@ -1024,6 +1043,10 @@ try {
         ),
         2,
       );
+      const beforeLogout = await snapshot(bravo);
+      assert(beforeLogout.contacts.length >= 2);
+      assert.equal(beforeLogout.fix, true);
+      assert.equal(beforeLogout.privacy.authorized, true);
       await section(bravo, 'network');
       const posts = logoutPosts;
       await tap(bravo, '[data-tak-logout]');
