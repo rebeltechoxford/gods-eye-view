@@ -12,6 +12,9 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { OfflinePackError } from './errors.js';
+import { createMbtilesImporter } from './mbtiles-import.js';
+export { OfflinePackError } from './errors.js';
 import {
   createOfflineManifest,
   validateOfflineManifest,
@@ -35,13 +38,6 @@ export const OFFLINE_SERVER_LIMITS = Object.freeze({
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
-export class OfflinePackError extends Error {
-  constructor(code, message, status = 400) {
-    super(message);
-    this.code = code;
-    this.status = status;
-  }
-}
 const failure = (code, message, status) =>
   new OfflinePackError(code, message, status);
 
@@ -69,6 +65,7 @@ export async function createOfflinePackStore({
   },
   limits: suppliedLimits = {},
   forbiddenRoots = [],
+  readMbtilesImpl,
 } = {}) {
   const limits = Object.fromEntries(
     Object.entries(OFFLINE_SERVER_LIMITS).map(([key, maximum]) => {
@@ -257,6 +254,27 @@ export async function createOfflinePackStore({
     extra +
     packs.size * limits.manifestBytes * 2 +
     limits.concurrency * limits.tileBytes;
+  const reserve = (bytes) => {
+    if (closed) throw failure('CLOSED', 'Offline map store is closed', 503);
+    if (
+      !Number.isSafeInteger(bytes) ||
+      bytes < 0 ||
+      footprint(bytes) > limits.totalBytes
+    )
+      throw failure(
+        'DISK_LIMIT',
+        'Offline map source and output exceed the available store quota',
+        413,
+      );
+    pendingBytes += bytes;
+    let released = false;
+    return () => {
+      if (!released) {
+        released = true;
+        pendingBytes -= bytes;
+      }
+    };
+  };
   async function inspectTile(record, key) {
     const file = tilePath(record.manifest.id, key);
     let bytes;
@@ -484,9 +502,77 @@ export async function createOfflinePackStore({
     queue.push(record);
     kick();
   }
+  let importer;
   try {
-    for (const entry of await entries(root, limits.packs + 1)) {
+    importer = await createMbtilesImporter({
+      root,
+      limits,
+      now,
+      reserve,
+      writeImpl,
+      readMbtilesImpl,
+      isClosed: () => closed,
+      commit: (stage, value, { releaseOutput, isAuthorized }) =>
+        serial(async () => {
+          if (closed)
+            throw failure('CLOSED', 'Offline map store is closed', 503);
+          const manifest = validateOfflineManifest(value, {
+            requireReady: true,
+          });
+          if (
+            manifest.schemaVersion !== 2 ||
+            packs.has(manifest.id) ||
+            packs.size >= limits.packs
+          )
+            throw failure(
+              'PACK_LIMIT',
+              'Imported map cannot be added to this pack library',
+              413,
+            );
+          if ((await isAuthorized()) !== true)
+            throw failure('ACCESS', 'MBTiles import authorization ended', 401);
+          await safeDirectory(stage);
+          const target = packPath(manifest.id);
+          try {
+            await lstat(target);
+            throw failure(
+              'UNSAFE_STORE',
+              'Imported pack target already exists',
+              503,
+            );
+          } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+          }
+          await rename(stage, target);
+          if (closed || (await isAuthorized()) !== true) {
+            await rename(target, stage);
+            throw failure(
+              'ACCESS',
+              'MBTiles import authorization ended before commit',
+              401,
+            );
+          }
+          releaseOutput();
+          payloadBytes += manifest.downloadedBytes;
+          const plan = planOfflineTiles(manifest);
+          packs.set(manifest.id, {
+            manifest,
+            plan,
+            keys: new Set(plan.map((tile) => tile.key)),
+            writes: Promise.resolve(),
+            pending: 0,
+          });
+          return copy(manifest);
+        }),
+    });
+    for (const entry of await entries(root, limits.packs + 2)) {
       if (entry.name === '.lock') continue;
+      if (
+        entry.name === '.imports' &&
+        entry.isDirectory() &&
+        !entry.isSymbolicLink()
+      )
+        continue;
       if (
         !UUID.test(entry.name) ||
         !entry.isDirectory() ||
@@ -534,6 +620,7 @@ export async function createOfflinePackStore({
       await reconcile(record);
     }
   } catch (error) {
+    await importer?.close();
     await lock.close();
     await unlink(lockFile);
     throw error;
@@ -544,8 +631,23 @@ export async function createOfflinePackStore({
     limits,
     list: () =>
       [...packs.values()].map((record) => {
-        const { tiles: _tiles, ...summary } = snapshot(record);
-        return summary;
+        const {
+          tiles: _tiles,
+          plannedKeys: _keys,
+          provenance,
+          ...summary
+        } = snapshot(record);
+        return provenance
+          ? {
+              ...summary,
+              credit: provenance.sourceTitle,
+              provenance: {
+                format: provenance.format,
+                importedAt: provenance.importedAt,
+                edition: provenance.edition,
+              },
+            }
+          : summary;
       }),
     get: (id) => snapshot(recordOf(id)),
     stats: () => ({
@@ -554,10 +656,20 @@ export async function createOfflinePackStore({
       active: active ? 1 : 0,
       payloadBytes,
       reservedBytes: footprint(),
+      imports: importer.count(),
     }),
-    create: (input) =>
+    createImport: (input, options) =>
+      serial(() => importer.create(input, options)),
+    getImport: (id) => importer.get(id),
+    uploadImport: (id, request, options) =>
+      importer.upload(id, request, options),
+    cancelImport: (id) => importer.cancel(id),
+    deleteImport: (id) => importer.delete(id),
+    create: (input, { isAuthorized = () => true } = {}) =>
       serial(async () => {
         if (closed) throw failure('CLOSED', 'Offline map store is closed', 503);
+        if ((await isAuthorized()) !== true)
+          throw failure('ACCESS', 'Offline map authorization ended', 401);
         if (packs.size >= limits.packs)
           throw failure('PACK_LIMIT', 'Offline map pack limit reached', 413);
         if (queue.length >= limits.queuedJobs)
@@ -611,8 +723,13 @@ export async function createOfflinePackStore({
         packs.set(manifest.id, record);
         try {
           await persist(record);
+          if (closed || (await isAuthorized()) !== true)
+            throw failure('ACCESS', 'Offline map authorization ended', 401);
         } catch (error) {
           packs.delete(manifest.id);
+          await unlink(path.join(packPath(manifest.id), 'manifest.json')).catch(
+            () => {},
+          );
           await unlink(
             path.join(packPath(manifest.id), 'manifest.json.part'),
           ).catch(() => {});
@@ -630,6 +747,15 @@ export async function createOfflinePackStore({
         if (active === record || queue.includes(record))
           return snapshot(record);
         await reconcile(record);
+        if (
+          record.manifest.schemaVersion === 2 &&
+          record.manifest.state !== 'ready'
+        )
+          throw failure(
+            'IMPORT_SOURCE_REQUIRED',
+            'Reimport the original MBTiles file to repair missing or corrupt imported tiles',
+            409,
+          );
         if (record.manifest.state !== 'ready') enqueue(record);
         return snapshot(record);
       }),
@@ -708,6 +834,7 @@ export async function createOfflinePackStore({
       active?.controller?.abort();
       await active?.task;
       await operations;
+      await importer.close();
       await Promise.all(
         [...packs.values()].map((record) => record.writes.catch(() => {})),
       );

@@ -3,9 +3,10 @@
 Status: **local web application with optional named private HTTPS operators**.
 The implementation adds bounded CoT XML, contact/marker/chat workflows and an
 opt-in local gateway to GEV. The synthetic lab exercises actual local TCP and
-WebSocket transport. Real TAK Server, ATAK-CIV, iTAK and WinTAK interoperability
-has not been established by that lab or the fixture suite. Complete ATAK parity
-is not claimed.
+WebSocket transport. A separate [official TAK Server core acceptance run](TAK_REAL_SERVER_ACCEPTANCE.md)
+passed marker/correction/broadcast-chat and rejection checks with synthetic TLS
+peers and a documented local bind patch. ATAK-CIV, iTAK, WinTAK and physical EUD
+acceptance remain open. Complete ATAK parity is not claimed.
 
 Start with [HOW_TO_RUN.md](../HOW_TO_RUN.md). Scope and evidence live in the
 [feature matrix](TAK_FEATURE_MATRIX.md), [implementation plan](TAK_IMPLEMENTATION_PLAN.md)

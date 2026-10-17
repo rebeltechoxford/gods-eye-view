@@ -1,5 +1,10 @@
 import * as Cesium from 'cesium';
-import { planOfflineTiles, OFFLINE_LIMITS } from './schema.js';
+import {
+  planOfflineTiles,
+  OFFLINE_LIMITS,
+  OFFLINE_IMPORTED_SOURCE,
+} from './schema.js';
+import { uploadMbtiles, MBTILES_IMPORT_API } from './mbtilesUpload.js';
 import { openOfflinePackStore, openExistingOfflinePackStore } from './store.js';
 import { offlineSource } from './imagery.js';
 import {
@@ -135,7 +140,7 @@ export function createSavedMaps({
   root.className = 'tak-web-section';
   root.dataset.takSection = 'maps';
   root.innerHTML = `<summary>SAVED MAPS / OFFLINE</summary>
-    <p class="tak-web-hint">Download USGS Topo to the server and this device. These are raster maps; 3D elevation is separate. Other sources need their own approved packages.</p>
+    <p class="tak-web-hint">Download USGS Topo to the server and this device. These are raster maps; 3D elevation is separate. Import an authorized local MBTiles raster file below for other sources.</p>
     <form data-offline-form>
       <input data-offline-name maxlength="80" placeholder="Saved area name" aria-label="Saved area name" value="My topographic area" required>
       <div class="tak-web-row"><label>West<input data-offline-west type="number" step="any" min="-180" max="180" required></label><label>East<input data-offline-east type="number" step="any" min="-180" max="180" required></label></div>
@@ -147,7 +152,21 @@ export function createSavedMaps({
       <p class="tak-web-hint">Saved areas and the offline app remain until deleted. Anyone using this browser profile can open them. Device storage may be removed by the OS; keep a server copy or export a backup.</p>
       <button type="submit" data-offline-action>Download area</button>
     </form>
-    <button type="button" data-offline-cancel hidden>Cancel download</button>
+    <form data-mbtiles-form>
+      <h4>IMPORT LOCAL MBTILES</h4>
+      <p class="tak-web-hint">256 px PNG/JPEG Web Mercator raster only. No vector tiles or 3D terrain. Uploads have a 15-second server deadline; interrupted uploads require the original file again.</p>
+      <label class="tak-web-hint">Local MBTiles file<input type="file" accept=".mbtiles,application/vnd.sqlite3" data-mbtiles-file required></label>
+      <input data-mbtiles-name maxlength="80" placeholder="Saved map name" aria-label="Imported saved map name" required>
+      <input data-mbtiles-source maxlength="512" placeholder="Source / publisher" aria-label="Imported map source or publisher" required>
+      <textarea data-mbtiles-license maxlength="8192" placeholder="License / permission notice" aria-label="Imported map license or permission notice" required></textarea>
+      <input data-mbtiles-edition maxlength="512" placeholder="Edition / effective date (optional)" aria-label="Imported map edition or effective date">
+      <input data-mbtiles-url maxlength="2048" type="url" placeholder="Source URL (optional; never fetched)" aria-label="Imported map informational source URL">
+      <label class="tak-web-check"><input type="checkbox" data-mbtiles-rights required> I am authorized to copy and retain this map and its notices.</label>
+      <label class="tak-web-check"><input type="checkbox" data-mbtiles-phone checked> Also retain on this device and save the offline app</label>
+      <p class="tak-web-hint">This assertion records your permission; it does not verify the license or authorize AI, screenshots, sharing or recording. File contents and source notices remain private.</p>
+      <button type="submit" data-offline-action data-mbtiles-submit>Import MBTiles</button>
+    </form>
+    <button type="button" data-offline-cancel hidden>Cancel current operation</button>
     <p role="status" aria-live="polite" data-offline-status></p>
     <div class="tak-web-row"><button type="button" data-offline-refresh data-offline-action>Refresh saved maps</button><button type="button" data-offline-shell data-offline-action>Save app for offline launch</button></div>
     <p class="tak-web-hint" data-offline-shell-state>Offline launch has not been checked on this device.</p>
@@ -159,10 +178,14 @@ export function createSavedMaps({
   const lifetime = new AbortController();
   let task = null;
   let packId = null;
+  let importId = null;
+  let selectedFile = null;
+  let retired = false;
   let storePromise = null;
   let destroyed = false;
   const accountContext = getResolvedOperatorContext();
-  const accountCurrent = () => isOperatorContextCurrent(accountContext);
+  const accountCurrent = () =>
+    !retired && isOperatorContextCurrent(accountContext);
   const getStore = () => {
     if (!accountCurrent())
       return Promise.reject(new Error('Sign in before opening saved maps'));
@@ -172,6 +195,8 @@ export function createSavedMaps({
     }));
   };
   const unsubscribeAccount = subscribeOperatorContextInvalidation(() => {
+    retired = true;
+    selectedFile = null;
     task?.abort(new DOMException('Operator account changed', 'AbortError'));
     lifetime.abort();
     for (const stack of controller.getStacks())
@@ -179,16 +204,18 @@ export function createSavedMaps({
         controller.removeLocalSource(stack.id);
     void storePromise?.then((store) => store.close()).catch(() => {});
     $('[data-offline-list]').replaceChildren();
-    for (const input of root.querySelectorAll('input')) {
+    for (const input of root.querySelectorAll('input, textarea')) {
+      input.disabled = true;
       if (input.type === 'checkbox') input.checked = false;
       else input.value = '';
     }
     for (const button of root.querySelectorAll('button'))
       button.disabled = true;
-    status('Account changed. Reopen the application to use saved maps.');
+    $('[data-offline-status]').textContent =
+      'Account changed. Reopen the application to use saved maps.';
   });
   const status = (text) => {
-    if (!destroyed) $('[data-offline-status]').textContent = text;
+    if (!destroyed && !retired) $('[data-offline-status]').textContent = text;
   };
   const numeric = (selector) => {
     const value = $(selector).value.trim();
@@ -232,11 +259,19 @@ export function createSavedMaps({
   }
   async function api(
     url,
-    { method = 'GET', body, signal = lifetime.signal, timeoutMs = 15_000 } = {},
+    {
+      method = 'GET',
+      body,
+      rawBody,
+      signal = lifetime.signal,
+      timeoutMs = 15_000,
+    } = {},
   ) {
     if (!accountCurrent()) throw new Error('Saved-map account context changed');
     signal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
     const headers = await getAccessHeaders(signal);
+    signal.throwIfAborted();
+    if (!accountCurrent()) throw new Error('Saved-map account context changed');
     const response = await fetch(url, {
       method,
       credentials: 'same-origin',
@@ -245,9 +280,17 @@ export function createSavedMaps({
       signal,
       headers: {
         ...headers,
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(rawBody
+          ? { 'Content-Type': 'application/vnd.sqlite3' }
+          : body
+            ? { 'Content-Type': 'application/json' }
+            : {}),
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(rawBody
+        ? { body: rawBody }
+        : body
+          ? { body: JSON.stringify(body) }
+          : {}),
     });
     if (
       response.status === 401 ||
@@ -267,6 +310,8 @@ export function createSavedMaps({
     } catch {
       throw new Error('Saved maps are unavailable on this server');
     }
+    signal.throwIfAborted();
+    if (!accountCurrent()) throw new Error('Saved-map account context changed');
     if (!response.ok)
       throw new Error(
         value.error || `Map request refused (${response.status})`,
@@ -297,7 +342,7 @@ export function createSavedMaps({
       }),
     );
     status(
-      `Showing saved ${manifest.name}. Outside its area/detail, tiles remain blank. Acquired ${manifest.acquiredAt || manifest.updatedAt}.`,
+      `Showing saved ${manifest.name}. Outside its area/detail, tiles remain blank. ${manifest.provenance ? `Imported ${manifest.provenance.importedAt}. Edition: ${manifest.provenance.edition || 'not supplied'}.` : `Acquired ${manifest.acquiredAt || manifest.updatedAt}.`}`,
     );
   }
   async function copyToDevice(manifest, signal) {
@@ -354,6 +399,7 @@ export function createSavedMaps({
     for (const button of root.querySelectorAll('[data-offline-action]'))
       button.disabled = true;
     $('[data-offline-import]').disabled = true;
+    $('[data-mbtiles-file]').disabled = true;
     $('[data-offline-cancel]').hidden = false;
     try {
       markPrivate();
@@ -362,16 +408,22 @@ export function createSavedMaps({
       if (error.sessionExpired) onSessionExpired();
       status(
         current.signal.aborted
-          ? 'Download interrupted. Retained partial copies can be resumed.'
-          : error.message,
+          ? importId
+            ? 'MBTiles import interrupted. Reselect the original file to retry.'
+            : 'Download interrupted. Retained partial copies can be resumed.'
+          : importId
+            ? `${error.message}. Reselect the original MBTiles file for a new import; ready copies remain available below.`
+            : error.message,
       );
     } finally {
       if (task === current) task = null;
       packId = null;
+      importId = null;
       if (!destroyed && accountCurrent()) {
         for (const button of root.querySelectorAll('[data-offline-action]'))
           button.disabled = false;
         $('[data-offline-import]').disabled = false;
+        $('[data-mbtiles-file]').disabled = false;
         $('[data-offline-cancel]').hidden = true;
       }
     }
@@ -379,6 +431,7 @@ export function createSavedMaps({
   function button(parent, text, action) {
     const element = document.createElement('button');
     element.type = 'button';
+    element.disabled = !!task;
     element.textContent = text;
     element.dataset.offlineAction = '';
     element.addEventListener('click', () => void run(action), {
@@ -417,6 +470,24 @@ export function createSavedMaps({
       const label = document.createElement('p');
       label.textContent = `${pack.name} · server ${entry.server?.state || 'unavailable'} · device ${entry.local?.state || 'absent'} · ${size(pack.downloadedBytes || 0)}`;
       row.append(label);
+      if (pack.sourceId === OFFLINE_IMPORTED_SOURCE)
+        button(row, 'Source / license / edition', async (nextSignal) => {
+          const full =
+            entry.local || (await api(`${API}/${id}`, { signal: nextSignal }));
+          nextSignal.throwIfAborted();
+          if (!accountCurrent())
+            throw new Error('Saved-map account context changed');
+          let notice = row.querySelector('[data-mbtiles-notice]');
+          if (!notice) {
+            notice = document.createElement('p');
+            notice.dataset.mbtilesNotice = '';
+            notice.className = 'tak-web-hint';
+            notice.style.whiteSpace = 'pre-wrap';
+            row.append(notice);
+          }
+          const p = full.provenance;
+          notice.textContent = `Source: ${p.sourceTitle}\nLicense / permission: ${p.license}\nEdition / effective date: ${p.edition || 'not supplied'}\nImported: ${p.importedAt}\nOriginal SHA-256: ${p.sha256}\nInformational URL (not fetched): ${full.sourceUrl || 'not supplied'}`;
+        });
       if (entry.local?.state === 'ready') {
         button(row, 'Show saved map', (nextSignal) =>
           show(entry.local, nextSignal),
@@ -448,7 +519,13 @@ export function createSavedMaps({
             await refresh(nextSignal);
           },
         );
-      else if (entry.server && entry.server.state !== 'downloading')
+      else if (entry.server?.sourceId === OFFLINE_IMPORTED_SOURCE) {
+        const hint = document.createElement('p');
+        hint.className = 'tak-web-hint';
+        hint.textContent =
+          'Incomplete imported map: reselect the original MBTiles file above. It cannot be repaired from USGS or the source URL.';
+        row.append(hint);
+      } else if (entry.server && entry.server.state !== 'downloading')
         button(row, 'Resume server download', async (nextSignal) => {
           await api(`${API}/${id}/resume`, {
             method: 'POST',
@@ -489,9 +566,97 @@ export function createSavedMaps({
       status(`Device copies are available below. Server: ${serverError}`);
     else if (!entries.size) status('No saved maps yet.');
     const quota = await store.estimate();
+    signal?.throwIfAborted();
+    if (!accountCurrent()) throw new Error('Saved-map account context changed');
     $('[data-offline-shell-state]').textContent =
       `Browser storage: ${size(quota?.usage || 0)} used / ${size(quota?.quota || 0)} quota. Save the application as well as maps for disconnected launch.`;
   }
+  $('[data-mbtiles-file]').addEventListener(
+    'change',
+    (event) => {
+      markPrivate();
+      selectedFile = event.target.files?.[0] || null;
+      $('[data-mbtiles-rights]').checked = false;
+      status(
+        selectedFile
+          ? `Selected ${size(selectedFile.size)}. Supply source notices and permission before import.`
+          : 'Select the original MBTiles file.',
+      );
+    },
+    { signal: lifetime.signal },
+  );
+  $('[data-mbtiles-form]').addEventListener('input', markPrivate, {
+    signal: lifetime.signal,
+  });
+  $('[data-mbtiles-form]').addEventListener(
+    'submit',
+    (event) => {
+      event.preventDefault();
+      if (task || !accountCurrent()) return;
+      const file = selectedFile;
+      const metadata = {
+        name: $('[data-mbtiles-name]').value.trim(),
+        sourceTitle: $('[data-mbtiles-source]').value.trim(),
+        license: $('[data-mbtiles-license]').value.trim(),
+        edition: $('[data-mbtiles-edition]').value.trim(),
+        sourceUrl: $('[data-mbtiles-url]').value.trim(),
+        authorized: $('[data-mbtiles-rights]').checked,
+      };
+      const deviceCopy = $('[data-mbtiles-phone]').checked;
+      selectedFile = null;
+      $('[data-mbtiles-file]').value = '';
+      $('[data-mbtiles-rights]').checked = false;
+      void run(async (signal) => {
+        status('Checking selected MBTiles file…');
+        const job = await uploadMbtiles({
+          file,
+          metadata,
+          request: api,
+          signal,
+          isCurrent: accountCurrent,
+          onJob: (id) => {
+            importId = id;
+          },
+          onProgress: (progress) =>
+            status(
+              `MBTiles ${progress.state}: ${size(progress.receivedBytes)} / ${size(progress.fileBytes)} uploaded · ${progress.completedTiles}/${progress.plannedTiles} tiles.`,
+            ),
+        });
+        importId = null;
+        const manifest = await api(`${API}/${job.packId}`, { signal });
+        await refresh(signal);
+        if (deviceCopy) {
+          await copyToDevice(manifest, signal);
+          try {
+            await shellMessage('GEV_SHELL_SAVE', (p) =>
+              status(
+                `Saving offline app: ${p.completed}/${p.total} files · ${size(p.bytes)}.`,
+              ),
+            );
+            signal.throwIfAborted();
+            activateOfflineOperatorContext();
+            status(
+              'Imported map, source notices, server/device copies and offline app ready. Test this device disconnected.',
+            );
+          } catch (error) {
+            if (error.sessionExpired || signal.aborted) throw error;
+            status(
+              `Imported map copies ready; offline launch needs attention: ${error.message}`,
+            );
+          }
+        } else
+          status(
+            'Imported server map ready. Save a device copy for disconnected use.',
+          );
+        await api(`${MBTILES_IMPORT_API}/${job.id}`, {
+          method: 'DELETE',
+          signal,
+        }).catch(() => {});
+        await refresh(signal);
+      });
+    },
+    { signal: lifetime.signal },
+  );
   $('[data-offline-form]').addEventListener(
     'submit',
     (event) => {
@@ -660,6 +825,11 @@ export function createSavedMaps({
     root,
     destroy() {
       destroyed = true;
+      selectedFile = null;
+      for (const input of root.querySelectorAll('input, textarea')) {
+        if (input.type === 'checkbox') input.checked = false;
+        else input.value = '';
+      }
       task?.abort();
       lifetime.abort();
       unsubscribe();

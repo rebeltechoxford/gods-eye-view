@@ -17,6 +17,14 @@ const escape = (value) =>
   );
 const localSources = new WeakSet();
 export const isOfflineSource = (source) => localSources.has(source);
+const acquisitionCredit = (pack) =>
+  pack.schemaVersion === 2
+    ? `Imported ${escape(pack.provenance.importedAt)}${pack.provenance.edition ? ` · Edition ${escape(pack.provenance.edition)}` : ''}`
+    : `Downloaded ${escape(pack.acquiredAt)}`;
+
+// Identical static/provider markup lets Cesium deduplicate this full notice.
+const savedCredit = (pack) =>
+  `<span class="gev-saved-map-credit" tabindex="0" role="region" aria-label="Saved map attribution">${escape(pack.credit)} · Saved map: ${escape(pack.name)} · ${acquisitionCredit(pack)} · Flat ellipsoid terrain</span>`;
 
 /** A local-only imagery source. Coverage misses never become online requests. */
 export function createOfflineImageryProvider(
@@ -46,10 +54,7 @@ export function createOfflineImageryProvider(
     hasAlphaChannel: true,
     tileDiscardPolicy: undefined,
     errorEvent: new sdk.Event(),
-    credit: new sdk.Credit(
-      `${escape(pack.credit)} · Saved map: ${escape(pack.name)} · Downloaded ${escape(pack.acquiredAt)} · Flat ellipsoid terrain`,
-      true,
-    ),
+    credit: new sdk.Credit(savedCredit(pack), true),
     getTileCredits() {
       return undefined;
     },
@@ -110,7 +115,7 @@ export function offlineSource(manifest, store, sdk = Cesium) {
       requiresIon: false,
     }),
     available: true,
-    credit: `${escape(pack.credit)} · Downloaded ${escape(pack.acquiredAt)} · Flat ellipsoid terrain`,
+    credit: savedCredit(pack),
     imagery: () => createOfflineImageryProvider({ manifest: pack, store }, sdk),
     terrain: Object.freeze({
       id: 'offline-ellipsoid',

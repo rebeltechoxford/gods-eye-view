@@ -401,6 +401,36 @@ export async function startTakHttpsServer({
         scope === authenticated?.storageScope)
     );
   }
+  // The request socket may close after staging. The continuation retains its
+  // original session object and generation, never a later browser cookie.
+  function createMapContinuationAuthorization(req, expectedPrincipal = null) {
+    const id = sessionId(req),
+      pinned = sessions.get(id);
+    const principalId = pinned?.principal,
+      generation = pinned?.generation;
+    const scope = multiOperator
+      ? principals.get(principalId)?.storageScope
+      : null;
+    if (
+      !pinned ||
+      (multiOperator &&
+        (principalId !== expectedPrincipal ||
+          !scope ||
+          req.headers['x-tak-storage-scope'] !== scope))
+    )
+      return () => false;
+    return () => {
+      pruneSessions();
+      if (sessions.get(id) !== pinned) return false;
+      if (!multiOperator) return true;
+      const principal = principals.get(principalId);
+      return (
+        principal?.enabled === true &&
+        principal.generation === generation &&
+        principal.storageScope === scope
+      );
+    };
+  }
   const middlewares = connect();
   const server = https.createServer(
     {
@@ -597,6 +627,8 @@ export async function startTakHttpsServer({
                     requireOrigin: mutation,
                   })
                 : { ok: false, status: 401 },
+            createContinuationAuthorization: (request) =>
+              createMapContinuationAuthorization(request, id),
             shellManifest: () =>
               (shellManifestPromise ||= createOfflineShellManifest(
                 distRoot,
@@ -625,6 +657,8 @@ export async function startTakHttpsServer({
                 requireOrigin: mutation,
               })
             : { ok: false, status: 401 },
+        createContinuationAuthorization: (request) =>
+          createMapContinuationAuthorization(request),
         shellManifest: () =>
           (shellManifestPromise ||= createOfflineShellManifest(distRoot).catch(
             (error) => {

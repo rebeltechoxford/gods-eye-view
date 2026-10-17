@@ -257,12 +257,14 @@ to produce those local results.
 
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is
-`output/ios/3afdc368/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`output/ios/8c96791c/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
 `provenance.json` and a simulator screenshot. The same package is in the
-[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38996827171)
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38999554419)
 while GitHub retains it. Its SHA-256 is
-`a2521bd41b339872bfcd4810b60dd9e22e6e17a90ee3f82dc3dcafe9c2733fe0`.
-This development revision passed all six review checks. The archive was built
+`71ab99f7e74c1e9efb3321410f5e10b6a18b14da823441506620f1e8dbea5867`.
+Its PR test-merge `34edc257` has the same file tree as development `8c96791c`.
+The iOS job passed; a separate fresh browser CI run exposed an intermittent
+fixture-interception failure still under investigation. The archive was built
 with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
 establish a physical-phone or configured-private-endpoint result.
 
@@ -293,7 +295,7 @@ On the built private HTTPS app, open **TAK → SAVED MAPS / OFFLINE**. Use the
 minimum/maximum zoom; the panel counts tiles before requesting anything. The
 first supported source is USGS Topographic. This downloads raster map images,
 not 3D elevation meshes. Google 3D remains an online base; other imagery and
-charts have separate download permissions and import work.
+charts have separate download permissions. Authorized local MBTiles raster imports are available below.
 
 Leave **Also retain on this device** checked, then choose **Download area**.
 The server retains verified tiles on disk; the browser copies and verifies a
@@ -301,6 +303,30 @@ separate pack in IndexedDB, selects it on the same GEV globe, and saves the
 built app/Cesium workers for disconnected launch. Watch the separate map/app
 results. A partial copy is not ready. Use Cancel, then Refresh and Resume or
 Save to this device to reuse verified retained tiles after interruption.
+
+For a local raster package, use **IMPORT LOCAL MBTILES** in the same panel.
+Select the original `.mbtiles` file, enter a map name, source/publisher and the
+license or permission notice; supply its edition/effective date when known.
+An optional source URL is retained as text and never fetched. Explicitly check
+permission to copy and retain this particular file, then choose **Import
+MBTiles**. The default creates server and device copies and saves the offline
+app. **Source / license / edition** shows the retained notices and original
+file SHA-256. These notices survive `.gevmap` backups.
+
+Named accounts default to 128 MiB per pack and 256 MiB per account. During
+import the original SQLite file and normalized output both need reserved space.
+
+Only standalone, checkpointed SQLite MBTiles with 256 px PNG/JPEG Web Mercator
+raster tiles are supported. Limits remain 5,000 tiles, plus account/file/space
+budgets; vectors, 512 px tiles, terrain and GeoTIFF are unsupported. The server
+has a 15-second upload deadline and five-second inactivity limit. Cancelled or
+failed uploads require reselecting the original file and permission checkbox;
+there is no byte-upload resume. A completed server copy remains usable if a
+later device copy fails: use **Save to this device** or **Verify / refresh device
+copy**. Incomplete imported packs require the original file again; the USGS
+resume action does not repair them. Whole NOAA chart bundles can exceed the
+5,000-tile limit and are not automatically cropped or accepted. Read the
+[MBTiles format, permissions and limits](docs/TAK_MBTILES_IMPORT.md).
 
 Limits are 5,000 tiles and 512 MiB per pack, 32 packs and 2 GiB per store, with
 four concurrent upstream requests. Download smaller adjacent areas when the
@@ -354,6 +380,7 @@ loopback HTTPS servers and synthetic fixtures; run them sequentially:
 ```sh
 npm run qa:tak:private
 npm run qa:maps:offline
+npm run qa:maps:mbtiles
 ```
 
 Their reports and screenshots are written under `qa-artifacts/`. The latest

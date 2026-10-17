@@ -199,6 +199,10 @@ test('an old subresource invalid ID requires the exact owning document to be rep
   ]) {
     const f = fixture(async (command, _args, client) => {
       if (command === 'Fetch.fulfillRequest') {
+        client.emit('Page.frameStartedNavigating', {
+          frameId: mode === 'different-frame' ? 'other-frame' : 'frame-1',
+          loaderId: 'new-loader',
+        });
         client.emit('Page.frameNavigated', {
           frame: {
             id: mode === 'different-frame' ? 'other-frame' : 'frame-1',
@@ -243,7 +247,125 @@ test('an old subresource invalid ID requires the exact owning document to be rep
     await hook.dispose();
     assert.equal(f.client.listenerCount('Network.requestWillBeSent'), 0);
     assert.equal(f.client.listenerCount('Page.frameNavigated'), 0);
+    assert.equal(f.client.listenerCount('Page.frameStartedNavigating'), 0);
   }
+});
+
+test('a delayed document commit needs a matching navigation initiated before the failed command', async () => {
+  await Promise.all(
+    [
+      'page-init',
+      'document-network-init',
+      'no-init',
+      'late-init',
+      'other-frame',
+      'abandoned',
+      'error-document',
+      'different-commit',
+      'document',
+      'commit-before-pause',
+      'disposed',
+    ].map(async (mode) => {
+      let commitTimer;
+      const frame = { id: 'frame-1', loaderId: 'new-loader' };
+      const f = fixture(async (command, _args, client) => {
+        if (command === 'Fetch.fulfillRequest') {
+          if (!['no-init', 'late-init', 'commit-before-pause'].includes(mode)) {
+            if (mode === 'document-network-init')
+              client.emit('Network.requestWillBeSent', {
+                requestId: 'new-document',
+                type: 'Document',
+                frameId: 'frame-1',
+                loaderId: 'new-loader',
+                request: { url: 'https://127.0.0.1/new-page', method: 'GET' },
+              });
+            else
+              client.emit('Page.frameStartedNavigating', {
+                frameId: mode === 'other-frame' ? 'other-frame' : 'frame-1',
+                loaderId: 'new-loader',
+              });
+          }
+          if (mode !== 'abandoned')
+            commitTimer = setTimeout(() => {
+              if (mode === 'late-init')
+                client.emit('Page.frameStartedNavigating', {
+                  frameId: 'frame-1',
+                  loaderId: 'new-loader',
+                });
+              client.emit('Page.frameNavigated', {
+                frame: {
+                  ...frame,
+                  ...(mode === 'error-document'
+                    ? {
+                        unreachableUrl: 'https://failure.invalid/',
+                        url: 'chrome-error://chromewebdata/',
+                      }
+                    : {}),
+                  ...(mode === 'different-commit'
+                    ? { loaderId: 'unrelated-loader' }
+                    : {}),
+                },
+              });
+            }, 350);
+          throw new Error(
+            'Protocol error (Fetch.fulfillRequest): Invalid InterceptionId.',
+          );
+        }
+        return {};
+      });
+      const hook = await interceptFixtures(f.page, {
+        origin: 'https://127.0.0.1',
+        handle: (request) => request.respond({ body: 'x' }),
+      });
+      f.client.emit('Network.requestWillBeSent', {
+        requestId: 'network-1',
+        frameId: 'frame-1',
+        loaderId: 'old-loader',
+        request: pause().request,
+      });
+      if (mode === 'commit-before-pause') {
+        f.client.emit('Page.frameStartedNavigating', {
+          frameId: 'frame-1',
+          loaderId: 'new-loader',
+        });
+        f.client.emit('Page.frameNavigated', { frame });
+      }
+      f.client.emit('Fetch.requestPaused', {
+        ...pause(),
+        frameId: 'frame-1',
+        resourceType: mode === 'document' ? 'Document' : 'Image',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      assert.equal(
+        hook.errors.length,
+        1,
+        `${mode}: unresolved invalid IDs must remain visible to final guards`,
+      );
+      assert.deepEqual(hook.cancellations, []);
+      if (mode === 'disposed') await hook.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 2050));
+      clearTimeout(commitTimer);
+      if (['page-init', 'document-network-init'].includes(mode)) {
+        assert.deepEqual(hook.errors, []);
+        assert.deepEqual(hook.cancellations, [
+          {
+            networkId: 'network-1',
+            error: 'document-replaced',
+            loaderId: 'old-loader',
+            replacementLoaderId: 'new-loader',
+          },
+        ]);
+      } else if (mode === 'disposed') {
+        assert.deepEqual(hook.errors, []);
+        assert.deepEqual(hook.cancellations, []);
+      } else {
+        assert.equal(hook.errors.length, 1, mode);
+        assert.deepEqual(hook.cancellations, [], mode);
+      }
+      await hook.dispose();
+      assert.equal(f.client.listenerCount('Page.frameStartedNavigating'), 0);
+    }),
+  );
 });
 
 test('optional renderer abort proof excuses only the exact invalid ID, never other protocol failures', async () => {

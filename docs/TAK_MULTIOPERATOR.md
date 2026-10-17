@@ -252,8 +252,50 @@ and identity isolation, observer rejection, own-principal reconnect/queue
 state, logout/expiry, credential rotation, invalid-reload queue cancellation,
 session caps, cache ownership and eight retained storage reservations.
 
-No operational TAK Server or physical EUD was connected. Genuine server group
-membership, operator provisioning and real peer interoperability require an
-authorized server and its issued per-user credentials. Browser account-switch
-and offline-restoration acceptance belong to the integrated browser gate and
-must be recorded separately from this server test evidence.
+The integrated Windows browser verification on 2026-10-16 passed **8 named
+operator scenarios**, **12 private HTTPS/PWA scenarios** and **8 offline-map
+scenarios**, using Node **24.19.0**, Chromium **152.0.7977.75** and an emulated
+390 × 844 touch viewport. It used the built production app, native login forms,
+real loopback HTTPS/WSS and two distinct synthetic mutual-TLS client
+identities. Web markers reached the correct synthetic TLS stream and peer
+contacts returned to the correct account. The gates verified separate identity
+and map libraries, observer UI and raw-socket rejection, old-tab cleanup,
+wrong-scope HTTP/WSS and worker-save rejection before account announcement,
+unchanged retained app generation, approved-only outage recovery, online 401
+before viewer/TAK/IndexedDB initialization, populated drawing/privacy cleanup
+before sign-out, failed revocation recovery and actual native sign-out 303.
+
+All three accepted runs recorded **zero unexpected app, render or interception
+errors**. Their cancellation/proof diagnostic arrays were empty: no request
+error was waived in these accepted runs. The optional cancellation classifier
+separately passed **26 focused tests**, including duplicate/concurrent IDs,
+sequential same-URL requests, other frames/contexts, strict active intervals
+and native-method restoration. The account-context suite passed **35 tests**,
+including delayed storage events after a fresh account was authenticated.
+
+Accepted local evidence is under `qa-artifacts/tak-operators-accepted`,
+`qa-artifacts/tak-private-operators-accepted` and
+`qa-artifacts/tak-offline-operators`; each contains `results.json` and phone
+screenshots. These ignored, generated artifacts contain synthetic data and no
+login tokens, cookies, certificate keys or copied credential files. Reproduce
+the browser gates against a production build with:
+
+```sh
+node scripts/qa-tak-operators.mjs
+npm run qa:tak:private
+npm run qa:maps:offline
+```
+
+Repository CI at `6c8a11a2` also passed **6,750 ordinary tests with one existing
+skip** plus **14 allocation checks** on Ubuntu/Node 24.14.0
+([job evidence](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38998834430/job/117297367238)).
+The earlier local Windows baseline was **6,721 ordinary passes with ten existing
+platform skips**, plus the same 14 allocation checks. Counts are qualified by
+platform and checkpoint rather than presented as one universal total.
+
+These browser runs connected no operational TAK Server or physical EUD.
+Genuine server group membership, operator provisioning and real peer
+interoperability still require an authorized server and its issued per-user
+credentials. The test browser trusted only its ephemeral synthetic leaf SPKI;
+this does not verify physical-device certificate installation, foreground GPS
+permissions or reliable background tracking.

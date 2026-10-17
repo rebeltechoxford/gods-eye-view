@@ -2266,7 +2266,8 @@
       "src/tak/navigationWorkflow.js",
       "src/tak/navigationUi.js",
       "src/tak/navigationCamera.js",
-      "src/tak/navigation.css"
+      "src/tak/navigation.css",
+      "src/maps/offline/mbtilesUpload.js"
     ],
     "external": [
       "hls.js",

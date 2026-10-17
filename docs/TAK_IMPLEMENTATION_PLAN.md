@@ -1,6 +1,6 @@
 # God's Eye View × TAK implementation and acceptance plan
 
-Updated: 2026-10-16. Work is integrated into `dev/tak-web-foundation` in
+Updated: 2026-10-17 UTC. Work is integrated into `dev/tak-web-foundation` in
 `rebeltechoxford/gods-eye-view`; `main` is outside this work's execution authority.
 The fetched/inspected starting checkpoint is
 `aee71aba3e39f908c4df4cf797108ab472b9ee4d`. Local candidate code is evidence to
@@ -139,7 +139,8 @@ The additive hardening now registers authenticated device identity and enforces
 own-device/own-marker action policy for one operator. Dev/lab stays on loopback;
 the production Node host additionally permits an explicit private HTTPS listener
 with a pinned authority and authenticated secure-cookie session. Distinct users,
-roles and TAK Server groups remain planned.
+roles were subsequently added in the named-operator milestone below. Broader
+TAK Server membership and revocation acceptance remain open.
 
 The prototype audit also replaced native Cesium text with shared overlay cards,
 added navigation ownership and timed stale refresh, repaired rolling chat and
@@ -480,11 +481,82 @@ requirement. Its fixture handling requires exact Chrome request/document or
 renderer-abort evidence before classifying a canceled request; unmatched IDs,
 other frames and unrelated protocol failures still fail the gate.
 
+## Official TAK Server core transport acceptance
+
+The actual GEV gateway at `6c8a11a2` passed eight checks through official TAK
+Server `5.7-RELEASE-14` core on 2026-10-17 UTC: verified mutual TLS and three
+certificate rejection cases, web-protocol marker delivery, peer correction
+back to GEV, broadcast GeoChat/reply and separation from an independently
+configured server group. Peers were synthetic TLS clients. The server used a
+documented loopback bind patch; its complete WAR build failed. Source hashes,
+runtime versions, exact evidence, confinement and cleanup are recorded in
+[real-server acceptance](TAK_REAL_SERVER_ACCEPTANCE.md). This advances server
+transport acceptance without claiming native-client or stock-distribution
+acceptance.
+
+A subsequent real-server experiment found that one shared TLS stream maps only
+its first endpoint UID. Separate device streams routed independently, but the
+experimental `t-x-c-t` endpoint control entered latest-SA replay at its protocol
+placeholder point. It must not become an implicit position-free registration
+feature. Directed chat requires a reviewed device-routing and explicit-presence
+design; broadcast remains the supported chat mode.
+
+Named-account PR #10 merged as `8c96791c` after all five CI jobs passed. The new
+PR #6 iOS job `38999554419` passed archive/payload/policy and iPhone 17 simulator
+checks; test-merge `34edc257` has the same file tree as dev. The downloaded IPA
+hash is recorded in the run guide. Fresh repository CI `38999554396` passed
+Node 24, Node 26 and Windows, but the named-account browser gate failed with
+unmatched `Fetch.fulfillRequest: Invalid InterceptionId` errors. That failure
+is retained and under investigation; the earlier 28 local browser passes do
+not erase it.
+
+## Local MBTiles integration, 2026-10-17 UTC
+
+The phone workflow now accepts an authorized local raster MBTiles file, retains
+its original hash and source/license/edition notices, and creates private server
+and device copies through the existing saved-map library. Uploads, SQLite work,
+quotas and continuation authorization are bounded; cancellation waits for active
+writes, and unconfirmed worker termination quarantines staging. Supported input
+and exclusions are recorded in [the import contract](TAK_MBTILES_IMPORT.md).
+
+The integrated Windows Node 24.19 runner passed **6,783 ordinary tests**, ten
+existing platform skips, zero failures and all **14 allocation checks**. Setup
+doctor, formatting (1,452 source files), import/package boundaries, published
+layer tokens, production build and embedded-panel build passed. Local evidence
+is in `.gev-cache/mbtiles-full-unit.log`, `mbtiles-format.log`,
+`mbtiles-build.log` and `mbtiles-panel-build.log`. Existing large-bundle warnings
+remain visible; no threshold was changed.
+
+All **six** production Chromium phone scenarios passed after the final saved-map
+credit fix: actual File/HTTPS import, source notices and server/device retention,
+Cesium pixels/TMS inversion/sparse blank coverage, cancellation, real stopped-
+server fresh-page reopening, and logout clearing private form data before its
+request. The 390 × 844 viewport retained all 30 GEV registrations. The complete
+long notice remains keyboard-scrollable and unobstructed, verified by nine
+interior hit tests and screenshot review. These are synthetic Chromium results,
+not physical-phone acceptance. `npm run qa:maps:mbtiles` now runs in CI.
+
+The browser-fixture correction requires navigation initiation before a failed
+interception and a matching successful document commit before retiring its old
+request. Twenty-seven focused regressions include mismatched/late/unrelated
+navigation failures; unmatched protocol errors still fail. The earlier candidate
+passed all five jobs in [CI run 39000173643](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39000173643).
+That run predates the complete UI and final causal correction; a fresh final-head
+run is required before merging [PR #11](https://github.com/rebeltechoxford/gods-eye-view/pull/11).
+
+A complete real NOAA MBTiles bundle exceeded the unchanged 5,000-tile cap. A
+small read-only experiment extracted one valid tile under the same resource
+limits, but production area/zoom selection is a separate increment described in
+[the subset plan](TAK_MBTILES_SUBSET_PLAN.md). Neither test establishes source
+currency, operational chart coverage, 3D terrain or a license to retain arbitrary
+commercial map data.
+
 ## Current external prerequisites
 
-No authorized live TAK Server credentials, certificate material or real-client
-devices are established by this inventory. These constrain only live-server,
-peer and hardware acceptance. Local protocol, gateway TLS/auth failures,
+The official-source local server lab used fresh synthetic credentials; no
+operational credentials or real-client devices are established by this inventory.
+These constrain only operational-server, native-peer and hardware acceptance.
+Local protocol, gateway TLS/auth failures,
 privacy, lifecycle, browser operation and the existing GEV regression work can
 continue without them. Do not contact arbitrary systems to fill the gap.
 
