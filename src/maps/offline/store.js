@@ -10,6 +10,12 @@ import {
 import { exportOfflinePack, readOfflinePack } from './file.js';
 
 const DB_NAME = 'gev-offline-maps-v1';
+export function offlineDatabaseName(storageScope = null) {
+  if (storageScope === null) return DB_NAME;
+  if (typeof storageScope !== 'string' || !/^[a-f0-9]{64}$/.test(storageScope))
+    throw new Error('Invalid offline map account scope');
+  return `${DB_NAME}-${storageScope}`;
+}
 const requestResult = (request) =>
   new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -30,16 +36,16 @@ const bytesOf = (value) =>
     : value instanceof ArrayBuffer
       ? new Uint8Array(value)
       : null;
-let shared = null;
+const shared = new Map();
 
 /** IndexedDB transactions keep each tile and its manifest progress atomic. */
 export async function openIndexedDbDriver(
   indexedDBRef,
-  { existingOnly = false } = {},
+  { existingOnly = false, storageScope = null } = {},
 ) {
   if (!indexedDBRef?.open)
     throw new Error('Persistent offline map storage is unavailable');
-  const request = indexedDBRef.open(DB_NAME, 1);
+  const request = indexedDBRef.open(offlineDatabaseName(storageScope), 1);
   request.onupgradeneeded = () => {
     if (existingOnly) {
       request.transaction.abort();
@@ -116,12 +122,14 @@ export async function createOfflinePackStore({
   storageManager = globalThis.navigator?.storage,
   now = () => new Date().toISOString(),
   onClose = () => {},
+  isCurrent = () => true,
 }) {
   let closed = false,
     mutation = Promise.resolve(),
     active = null;
   const ensure = () => {
     if (closed) throw new Error('Offline map store is closed');
+    if (!isCurrent()) throw new Error('Offline map account context changed');
   };
   const serial = (fn) => {
     const task = mutation.then(() => {
@@ -134,11 +142,14 @@ export async function createOfflinePackStore({
   const readManifest = async (id) => {
     ensure();
     const value = await driver.manifest(validatePackId(id));
+    ensure();
     return value ? validateOfflineManifest(value) : null;
   };
   const listPacks = async () => {
     ensure();
-    return (await driver.list()).map((value) => validateOfflineManifest(value));
+    const values = await driver.list();
+    ensure();
+    return values.map((value) => validateOfflineManifest(value));
   };
   async function checkSpace(next, previous = 0) {
     const packs = await listPacks();
@@ -186,6 +197,7 @@ export async function createOfflinePackStore({
     const meta = manifest?.tiles[key];
     if (!meta) return null;
     const tile = await driver.tile(manifest.id, key);
+    ensure();
     if (!tile) return null;
     const bytes = bytesOf(tile.bytes);
     validateTileBytes(bytes, tile.contentType);
@@ -195,6 +207,7 @@ export async function createOfflinePackStore({
       (await hashTile(bytes)) !== meta.sha256
     )
       throw new Error('Saved map tile failed integrity validation');
+    ensure();
     return { bytes, contentType: meta.contentType };
   }
   async function getTile(id, key) {
@@ -414,6 +427,7 @@ export async function createOfflinePackStore({
     async getSelectedPackId() {
       ensure();
       const id = await driver.selected();
+      ensure();
       return id ? validatePackId(id) : null;
     },
     async setSelectedPackId(id) {
@@ -455,47 +469,65 @@ export async function createOfflinePackStore({
 export function openOfflinePackStore({
   indexedDB = globalThis.indexedDB,
   storageManager = globalThis.navigator?.storage,
+  storageScope = null,
+  isCurrent = () => true,
 } = {}) {
-  if (!shared)
-    shared = openIndexedDbDriver(indexedDB)
-      .then((driver) =>
-        createOfflinePackStore({
-          driver,
-          storageManager,
-          onClose: () => {
-            shared = null;
-          },
+  const name = offlineDatabaseName(storageScope);
+  if (!isCurrent())
+    return Promise.reject(new Error('Offline map account context changed'));
+  if (!shared.has(name))
+    shared.set(
+      name,
+      openIndexedDbDriver(indexedDB, { storageScope })
+        .then((driver) =>
+          createOfflinePackStore({
+            driver,
+            storageManager,
+            isCurrent,
+            onClose: () => {
+              shared.delete(name);
+            },
+          }),
+        )
+        .catch((error) => {
+          shared.delete(name);
+          throw error;
         }),
-      )
-      .catch((error) => {
-        shared = null;
-        throw error;
-      });
-  return shared;
+    );
+  return shared.get(name);
 }
 
 /** Read opt-in state without creating any database during ordinary app boot. */
 export async function openExistingOfflinePackStore({
   indexedDB = globalThis.indexedDB,
   storageManager = globalThis.navigator?.storage,
+  storageScope = null,
+  isCurrent = () => true,
 } = {}) {
+  const name = offlineDatabaseName(storageScope);
+  if (!isCurrent()) throw new Error('Offline map account context changed');
   if (!indexedDB?.databases) return null;
   const entries = await indexedDB.databases();
-  if (!entries.some((entry) => entry.name === DB_NAME)) return null;
-  if (!shared)
-    shared = openIndexedDbDriver(indexedDB, { existingOnly: true })
-      .then((driver) =>
-        createOfflinePackStore({
-          driver,
-          storageManager,
-          onClose: () => {
-            shared = null;
-          },
+  if (!isCurrent()) throw new Error('Offline map account context changed');
+  if (!entries.some((entry) => entry.name === name)) return null;
+  if (!shared.has(name))
+    shared.set(
+      name,
+      openIndexedDbDriver(indexedDB, { existingOnly: true, storageScope })
+        .then((driver) =>
+          createOfflinePackStore({
+            driver,
+            storageManager,
+            isCurrent,
+            onClose: () => {
+              shared.delete(name);
+            },
+          }),
+        )
+        .catch((error) => {
+          shared.delete(name);
+          throw error;
         }),
-      )
-      .catch((error) => {
-        shared = null;
-        throw error;
-      });
-  return shared;
+    );
+  return shared.get(name);
 }

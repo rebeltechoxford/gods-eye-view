@@ -2,6 +2,13 @@ import * as Cesium from 'cesium';
 import { planOfflineTiles, OFFLINE_LIMITS } from './schema.js';
 import { openOfflinePackStore, openExistingOfflinePackStore } from './store.js';
 import { offlineSource } from './imagery.js';
+import {
+  getResolvedOperatorContext,
+  isOperatorContextCurrent,
+  subscribeOperatorContextInvalidation,
+  activateOfflineOperatorContext,
+  clearOfflineOperatorContext,
+} from '../../tak/operatorContext.js';
 
 const API = '/api/maps/offline/packs';
 const size = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
@@ -143,7 +150,32 @@ export function createSavedMaps({
   let packId = null;
   let storePromise = null;
   let destroyed = false;
-  const getStore = () => (storePromise ||= openOfflinePackStore());
+  const accountContext = getResolvedOperatorContext();
+  const accountCurrent = () => isOperatorContextCurrent(accountContext);
+  const getStore = () => {
+    if (!accountCurrent())
+      return Promise.reject(new Error('Sign in before opening saved maps'));
+    return (storePromise ||= openOfflinePackStore({
+      storageScope: accountContext.storageScope,
+      isCurrent: accountCurrent,
+    }));
+  };
+  const unsubscribeAccount = subscribeOperatorContextInvalidation(() => {
+    task?.abort(new DOMException('Operator account changed', 'AbortError'));
+    lifetime.abort();
+    for (const stack of controller.getStacks())
+      if (stack.id.startsWith('offline-'))
+        controller.removeLocalSource(stack.id);
+    void storePromise?.then((store) => store.close()).catch(() => {});
+    $('[data-offline-list]').replaceChildren();
+    for (const input of root.querySelectorAll('input')) {
+      if (input.type === 'checkbox') input.checked = false;
+      else input.value = '';
+    }
+    for (const button of root.querySelectorAll('button'))
+      button.disabled = true;
+    status('Account changed. Reopen the application to use saved maps.');
+  });
   const status = (text) => {
     if (!destroyed) $('[data-offline-status]').textContent = text;
   };
@@ -191,6 +223,7 @@ export function createSavedMaps({
     url,
     { method = 'GET', body, signal = lifetime.signal, timeoutMs = 15_000 } = {},
   ) {
+    if (!accountCurrent()) throw new Error('Saved-map account context changed');
     signal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
     const headers = await getAccessHeaders(signal);
     const response = await fetch(url, {
@@ -206,6 +239,7 @@ export function createSavedMaps({
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     if (response.status === 401) onSessionExpired();
+    if (!accountCurrent()) throw new Error('Saved-map account context changed');
     if (response.status === 204) return null;
     const bytes = await responseBytes(
       response,
@@ -290,6 +324,10 @@ export function createSavedMaps({
   }
   async function run(action) {
     if (task || destroyed) return;
+    if (!accountCurrent()) {
+      status('Sign in before opening saved maps');
+      return;
+    }
     task = new AbortController();
     const current = task;
     for (const button of root.querySelectorAll('[data-offline-action]'))
@@ -309,7 +347,7 @@ export function createSavedMaps({
     } finally {
       if (task === current) task = null;
       packId = null;
-      if (!destroyed) {
+      if (!destroyed && accountCurrent()) {
         for (const button of root.querySelectorAll('[data-offline-action]'))
           button.disabled = false;
         $('[data-offline-import]').disabled = false;
@@ -349,6 +387,8 @@ export function createSavedMaps({
       entries.set(pack.id, entry);
     }
     const list = $('[data-offline-list]');
+    signal?.throwIfAborted();
+    if (!accountCurrent()) throw new Error('Saved-map account context changed');
     list.replaceChildren();
     for (const [id, entry] of entries) {
       const pack = entry.local || entry.server;
@@ -362,6 +402,9 @@ export function createSavedMaps({
         );
         button(row, 'Export backup', async (nextSignal) => {
           const blob = await store.exportPack(id, { signal: nextSignal });
+          nextSignal.throwIfAborted();
+          if (!accountCurrent())
+            throw new Error('Saved-map account context changed');
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
           link.download = `${id}.gevmap`;
@@ -465,6 +508,8 @@ export function createSavedMaps({
                 `Saving offline app: ${p.completed}/${p.total} files · ${size(p.bytes)}.`,
               ),
             );
+            signal.throwIfAborted();
+            activateOfflineOperatorContext();
             status(
               'Server map, device map and offline app ready. Export a backup and test this device disconnected.',
             );
@@ -510,12 +555,14 @@ export function createSavedMaps({
   $('[data-offline-shell]').addEventListener(
     'click',
     () =>
-      void run(async () => {
+      void run(async (signal) => {
         const saved = await shellMessage('GEV_SHELL_SAVE', (p) =>
           status(
             `Saving offline app: ${p.completed}/${p.total} files · ${size(p.bytes)}.`,
           ),
         );
+        signal.throwIfAborted();
+        activateOfflineOperatorContext();
         status(
           `Offline application saved (${size(saved.totalBytes)}). Save a map and test disconnected launch on this device.`,
         );
@@ -527,6 +574,7 @@ export function createSavedMaps({
     () =>
       void run(async () => {
         await shellMessage('GEV_SHELL_DELETE');
+        clearOfflineOperatorContext({ invalidateContext: false });
         status(
           'Offline application removed. Saved maps remain separately stored.',
         );
@@ -567,10 +615,18 @@ export function createSavedMaps({
   const unsubscribe = controller.subscribe((state) => {
     if (state.activeId?.startsWith('offline-')) return;
     const expectedGeneration = controller.getSwitchGeneration();
-    void (storePromise || openExistingOfflinePackStore())
+    if (!accountCurrent()) return;
+    void (
+      storePromise ||
+      openExistingOfflinePackStore({
+        storageScope: accountContext.storageScope,
+        isCurrent: accountCurrent,
+      })
+    )
       .then((store) => {
         if (
           !destroyed &&
+          accountCurrent() &&
           store &&
           controller.getSwitchGeneration() === expectedGeneration &&
           !controller.getActiveId()?.startsWith('offline-')
@@ -586,6 +642,8 @@ export function createSavedMaps({
       task?.abort();
       lifetime.abort();
       unsubscribe();
+      unsubscribeAccount();
+      void storePromise?.then((store) => store.close()).catch(() => {});
       root.remove();
     },
   };
