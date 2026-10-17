@@ -162,6 +162,7 @@ export function validateMbtilesImportRequest(value) {
     'license',
     'edition',
     'authorized',
+    'selection',
   ]);
   if (
     Object.keys(value).some((key) => !allowed.has(key)) ||
@@ -188,6 +189,9 @@ export function validateMbtilesImportRequest(value) {
     license: plainText(value.license, 8192, 'license or permission notice'),
     edition: plainText(value.edition ?? '', 512, 'edition', { empty: true }),
     authorized: true,
+    ...(value.selection === undefined
+      ? {}
+      : { selection: validateMbtilesSelection(value.selection) }),
   };
 }
 export function validateImportProvenance(value) {
@@ -205,6 +209,7 @@ export function validateImportProvenance(value) {
     'tileScheme',
     'tileSize',
     'permission',
+    'selection',
   ]);
   if (
     Object.keys(value).some((key) => !allowed.has(key)) ||
@@ -269,6 +274,9 @@ export function validateImportProvenance(value) {
     license: value.license,
     edition: value.edition,
     metadata,
+    ...(value.selection === undefined
+      ? {}
+      : { selection: validateMbtilesSelection(value.selection) }),
   };
 }
 function importedPlan(value) {
@@ -379,6 +387,109 @@ export function planOfflineTiles(value) {
   if (!tiles.length) fail('empty tile plan');
   return tiles;
 }
+/** An import selection is a bounded potential grid, not permission to scan an unlimited sparse area. */
+export function validateMbtilesSelection(value) {
+  record(value, 'MBTiles selection');
+  if (
+    Object.keys(value).some(
+      (key) => !['bounds', 'minZoom', 'maxZoom'].includes(key),
+    )
+  )
+    fail('unknown MBTiles selection field');
+  const result = {
+    bounds: boundsOf(value.bounds),
+    minZoom: integer(
+      value.minZoom,
+      0,
+      OFFLINE_SOURCE.maxZoom,
+      'selection minimum zoom',
+    ),
+    maxZoom: integer(
+      value.maxZoom,
+      value.minZoom,
+      OFFLINE_SOURCE.maxZoom,
+      'selection maximum zoom',
+    ),
+  };
+  planOfflineTiles(result);
+  return result;
+}
+/** Disjoint, bounded, parameterized-query rectangles in original MBTiles TMS coordinates. */
+export function mbtilesSelectionRanges(value) {
+  const byZoom = new Map();
+  for (const { z, x, y } of planOfflineTiles(validateMbtilesSelection(value))) {
+    let row = byZoom.get(z);
+    if (!row) byZoom.set(z, (row = { xs: new Set(), y0: y, y1: y }));
+    row.xs.add(x);
+    row.y0 = Math.min(row.y0, y);
+    row.y1 = Math.max(row.y1, y);
+  }
+  const ranges = [];
+  for (const [z, { xs, y0, y1 }] of byZoom) {
+    let previous;
+    for (const x of [...xs].sort((a, b) => a - b)) {
+      if (previous && x === previous.x1 + 1) previous.x1 = x;
+      else {
+        previous = {
+          z,
+          x0: x,
+          x1: x,
+          r0: 2 ** z - 1 - y1,
+          r1: 2 ** z - 1 - y0,
+        };
+        ranges.push(previous);
+      }
+    }
+  }
+  return ranges;
+}
+/** The smallest circular tile envelope preserves antimeridian coverage without stretching across the globe. */
+export function importedTileBounds(keys) {
+  if (
+    !Array.isArray(keys) ||
+    !keys.length ||
+    keys.length > OFFLINE_LIMITS.maxTiles
+  )
+    fail('invalid imported tile bounds');
+  const intervals = [];
+  let south = MERCATOR_LATITUDE,
+    north = -MERCATOR_LATITUDE;
+  for (const key of keys) {
+    const { z, x, y } = parseTileKey(key),
+      n = 2 ** z;
+    const latitude = (v) =>
+      (Math.atan(Math.sinh(Math.PI * (1 - (2 * v) / n))) * 180) / Math.PI;
+    intervals.push([(360 * x) / n, (360 * (x + 1)) / n]);
+    south = Math.min(south, latitude(y + 1));
+    north = Math.max(north, latitude(y));
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const interval of intervals) {
+    const last = merged.at(-1);
+    if (last && interval[0] <= last[1])
+      last[1] = Math.max(last[1], interval[1]);
+    else merged.push([...interval]);
+  }
+  let largest = -1,
+    end,
+    start;
+  for (let i = 0; i < merged.length; i++) {
+    const next =
+      merged[(i + 1) % merged.length][0] + (i + 1 === merged.length ? 360 : 0);
+    if (next - merged[i][1] > largest) {
+      largest = next - merged[i][1];
+      start = next % 360;
+      end = merged[i][1];
+    }
+  }
+  return {
+    west: largest === 0 ? -180 : start - 180,
+    south: Math.max(-MERCATOR_LATITUDE, south),
+    east: largest === 0 ? 180 : end - 180,
+    north: Math.min(MERCATOR_LATITUDE, north),
+  };
+}
 /** Sparse imports retain their exact keys; missing coverage never means an online fallback. */
 export function createImportedManifest({
   id,
@@ -488,6 +599,22 @@ export function validateOfflineManifest(value, { requireReady = false } = {}) {
           },
     );
   if (value.plannedTiles !== plan.length) fail('tile plan count differs');
+  if (provenance?.selection) {
+    const selected = new Set(
+      planOfflineTiles(provenance.selection).map((tile) => tile.key),
+    );
+    if (plan.some((tile) => !selected.has(tile.key)))
+      fail('imported tile outside selection');
+    const envelope = importedTileBounds(value.plannedKeys);
+    // Transcendental latitude results may differ by a few ULPs across phone
+    // engines. This sub-millimetre tolerance is not an arbitrary coverage edit.
+    if (
+      Object.keys(envelope).some(
+        (key) => Math.abs(bounds[key] - envelope[key]) > 1e-9,
+      )
+    )
+      fail('imported subset bounds differ from tile envelope');
+  }
   if (!STATES.has(value.state) || (requireReady && value.state !== 'ready'))
     fail('pack is not ready or has invalid state');
   iso(value.createdAt, 'creation time');

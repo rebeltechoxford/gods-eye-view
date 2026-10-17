@@ -1,7 +1,8 @@
 # Bounded MBTiles area/zoom subsets
 
-Proposal for the next increment after the full-file raster-import milestone.
-No production subset path is implemented by this document. The real published
+The bounded backend/portable increment is implemented on
+`feature/tak-mbtiles-subsets`; phone controls and actual subset browser acceptance
+are still pending. The real published
 [NOAA check](TAK_MBTILES_NOAA_CHECK.md) rejected the complete 36,691,968-byte
 archive at the unchanged 5,000-tile limit. A subset must not raise that limit or
 make an oversized original file admissible.
@@ -155,7 +156,47 @@ import/browser rendering. The observed 2024 source-date discrepancy remains.
 Scratch code, selected-tile PNG and JSON evidence are local under ignored
 `.gev-cache/noaa-mbtiles-compatibility/`. They are not shipped. All workers
 exited; no listener, browser or retained server-store copy was started by this
-experiment. A production implementation still needs the acceptance above.
+experiment. It preceded the production implementation below.
+
+## Implemented backend and focused evidence
+
+Import creation now accepts the optional closed `selection` object above.
+Whole-file omission and version 1 USGS behavior are unchanged. The request is
+validated before job reservation and again before the worker starts; the parent
+also rejects a worker key outside the selected plan. Full-file SHA-256 and byte
+reservation remain in force. Version 2 provenance retains the requested
+selection, original metadata and source hash; full manifests and bounded list
+summaries expose the selected extent/zooms. The actual sparse tile envelope is
+validated independently, including antimeridian wrapping. Latitude comparisons
+allow only 1e-9 degrees for cross-engine transcendental rounding.
+
+The child reuses one prepared six-parameter statement over disjoint TMS ranges,
+with one global row allowance and unchanged process/heap/IPC limits. Selected
+imports use the stronger whole-database integrity check. A real corrupt-index
+fixture changes one valid index cell while leaving its table intact:
+`quick_check(1)` still says `ok`, an indexed lookup silently misses the row, and
+`integrity_check(1)` rejects it before import. This tests the actual SQLite file
+format rather than substituting a success/failure response.
+
+At this backend freeze, Node 24.19.0 passed **84 focused cases**, including
+selected flat/normalized reads, original source metadata, multi-zoom and
+dateline ranges, low-zoom overlap, empty/sparse selections, duplicate/malformed
+rows, oversized potential grids, exact backups, quotas, paused-write revocation,
+actual named HTTPS scope isolation and existing offline regressions. Node
+26.7.0 passed **28 reader/import cases** through its built-in SQLite API.
+
+The unmodified production reader then accepted the same retained NOAA file on
+both runtimes: exactly `10/130/351`, PNG 3,836 bytes and the same tile/source
+hashes recorded above, with original source maximum zoom 13 retained. Durations
+including whole-file integrity check were 201 ms on Node 24 and 195 ms on Node
+26 in these local runs. No second download or full source copy was used for
+these reader checks. Evidence is retained under ignored
+`.gev-cache/noaa-mbtiles-compatibility/production-subset-{24,26}.json`.
+
+This establishes backend format compatibility for that selection, not the
+forthcoming file-input/server/device/outage browser path or physical-phone
+acceptance. The source's observed 2024 dates remain explicit and unverified for
+current navigation.
 
 Primary references: [MBTiles 1.3](https://github.com/mapbox/mbtiles-spec/blob/master/1.3/spec.md),
 [SQLite query planning](https://sqlite.org/queryplanner.html),
