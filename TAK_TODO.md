@@ -94,9 +94,13 @@ running.
    storage/restart/eviction acceptance before broad field claims. Local authorized
    MBTiles import now has a phone file form, source/license notices, bounded raw
    upload, cancel/reselect, server/device copies and saved-app integration; see
-   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Broader chart
-   acceptance remains: a real NOAA bundle exceeded the unchanged 5,000-tile cap,
-   and FAA GeoTIFF conversion/import is unsupported. Add 3D elevation packs
+   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Explicit area/zoom
+   selection now imports bounded subsets from larger files; six synthetic phone
+   scenarios and a retained NOAA `SG_AREA` file passed actual import, rendering
+   and stopped-server reopening. The source was a service-area overlay with
+   observed 2024 dates, so current chart coverage remains unverified. Whole-file,
+   selected-cell and account limits remain unchanged. FAA GeoTIFF conversion/
+   import is unsupported. Add 3D elevation packs
    separately from rendered topographic maps. Add unsent tactical queue reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.

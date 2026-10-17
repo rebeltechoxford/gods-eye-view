@@ -6,6 +6,8 @@ import {
   OFFLINE_LIMITS,
   parseTileKey,
   validateTileBytes,
+  validateMbtilesSelection,
+  planOfflineTiles,
 } from '../../../src/maps/offline/schema.js';
 
 export const MBTILES_READER_LIMITS = Object.freeze({
@@ -24,9 +26,13 @@ export async function readMbtiles(
     timeoutMs = MBTILES_READER_LIMITS.timeoutMs,
     forkImpl = fork,
     stopTimeoutMs = 2000,
+    selection,
   } = {},
 ) {
   signal?.throwIfAborted();
+  if (selection !== undefined) selection = validateMbtilesSelection(selection);
+  const selected =
+    selection && new Set(planOfflineTiles(selection).map((tile) => tile.key));
   if (
     !Number.isSafeInteger(maxBytes) ||
     maxBytes < 100 ||
@@ -178,6 +184,13 @@ export async function readMbtiles(
                 throw new Error('Invalid MBTiles tile inventory');
               header = message.value;
               for (const key of header.plannedKeys) parseTileKey(key);
+              if (
+                selected &&
+                header.plannedKeys.some((key) => !selected.has(key))
+              )
+                throw new Error(
+                  'MBTiles reader returned a tile outside selection',
+                );
               planned = new Set(header.plannedKeys);
               if (planned.size !== header.plannedKeys.length)
                 throw new Error('Duplicate MBTiles tile inventory');
@@ -217,6 +230,11 @@ export async function readMbtiles(
         })
         .catch(finish);
     });
-    child.send({ op: 'start', file, maxBytes });
+    child.send({
+      op: 'start',
+      file,
+      maxBytes,
+      ...(selection ? { selection } : {}),
+    });
   });
 }

@@ -11,6 +11,10 @@ const ROOT_FILES = new Set([
   'manifest.webmanifest',
   'favicon.svg',
   'logo.svg',
+  'mic.svg',
+  'pin.svg',
+  'location.svg',
+  'visual-presets.svg',
 ]);
 const DIRECTORIES = new Set([
   'assets',

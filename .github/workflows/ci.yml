@@ -157,6 +157,9 @@ jobs:
       - name: Local MBTiles file, phone retention and disconnected rendering gate
         run: npm run qa:maps:mbtiles
 
+      - name: Selected MBTiles area and zooms through the same phone workflow
+        run: npm run qa:maps:mbtiles -- --subset --artifact-dir qa-artifacts/mbtiles-subset
+
       - name: Start the isolated synthetic CoT lab
         run: |
           npm run tak:lab > tak-lab.log 2>&1 &
