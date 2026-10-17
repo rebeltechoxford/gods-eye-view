@@ -1287,11 +1287,21 @@ try {
       const baseline = unloadSnapshots.length;
       const responseBaseline = expiredShellResponses.length;
       nowMs += SESSION_TTL_MS + 1;
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout }),
+      const [loginResponse] = await Promise.all([
+        // Sharing/camera updates can replace the current hash during expiry.
+        // Only the required new login document establishes this barrier.
+        page.waitForNavigation({
+          waitUntil: 'domcontentloaded',
+          timeout,
+          ignoreSameDocumentNavigation: true,
+        }),
         tap(page, '[data-offline-shell]'),
       ]);
+      assert(loginResponse, 'Session expiry must load a new login document');
+      assert.equal(loginResponse.status(), 200);
+      assert.equal(new URL(loginResponse.url()).pathname, '/login');
       assert.equal(new URL(page.url()).pathname, '/login');
+      await page.waitForSelector('input[name="token"]', { visible: true });
       const deadline = Date.now() + timeout;
       while (unloadSnapshots.length <= baseline && Date.now() < deadline)
         await new Promise((resolve) => setTimeout(resolve, 10));
