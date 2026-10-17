@@ -58,6 +58,8 @@ export function createServerLink({
   now = Date.now,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
+  dialAdmission,
+  handshakeMs = 15_000,
 }) {
   const counters = {
     rx: 0,
@@ -80,6 +82,16 @@ export function createServerLink({
   let blocked = false;
   let expiryTimer = null;
   const writing = new Set();
+  let cancelAdmission = null;
+  let handshake = null;
+  let generation = 0;
+  function releaseHandshake(expected) {
+    if (!handshake || handshake.generation !== expected) return;
+    const lease = handshake;
+    handshake = null;
+    clearTimer(lease.timer);
+    lease.release();
+  }
   function outcome(entry, state, reason) {
     if (entry.finished) return;
     if (state !== 'queued') entry.finished = true;
@@ -158,7 +170,16 @@ export function createServerLink({
     if (closed || timer !== null) return;
     state = 'reconnecting';
     report();
-    const delay = backoff;
+    if (closed) return;
+    const delay = dialAdmission
+      ? Math.max(
+          backoff,
+          Math.min(
+            SERVER_BACKOFF_MS.max,
+            dialAdmission.retryDelay(backoff, SERVER_BACKOFF_MS.max),
+          ),
+        )
+      : backoff;
     backoff = Math.min(SERVER_BACKOFF_MS.max, backoff * 2);
     timer = setTimer(() => {
       timer = null;
@@ -225,11 +246,55 @@ export function createServerLink({
     blocked = false;
     framer.reset();
     expire();
+    const attempt = ++generation;
+    if (dialAdmission) {
+      let admitted = false;
+      const cancel = dialAdmission.request(
+        (release) => {
+          admitted = true;
+          cancelAdmission = null;
+          if (closed || generation !== attempt) {
+            release();
+            return;
+          }
+          const lease = { generation: attempt, release, timer: null };
+          handshake = lease;
+          lease.timer = setTimer(
+            () => {
+              if (closed || generation !== attempt || handshake !== lease)
+                return;
+              lastError = 'TLS_HANDSHAKE_TIMEOUT';
+              releaseHandshake(attempt);
+              if (socket) socket.destroy();
+              else scheduleReconnect();
+            },
+            Math.max(1, Math.min(15_000, handshakeMs)),
+          );
+          lease.timer?.unref?.();
+          connectSocket(attempt);
+        },
+        () => {
+          if (closed || generation !== attempt) return;
+          releaseHandshake(attempt);
+          lastError = 'CONNECT_FAILED';
+          socket?.destroy();
+          scheduleReconnect();
+        },
+      );
+      if (!admitted) cancelAdmission = cancel;
+      if (!cancel) {
+        lastError = 'DIAL_CAPACITY';
+        scheduleReconnect();
+      }
+    } else connectSocket(attempt);
+  }
+  function connectSocket(attempt) {
     let s;
     try {
       s = (connect || defaultConnect)(config);
     } catch (error) {
       lastError = error?.code || 'CONNECT_FAILED';
+      releaseHandshake(attempt);
       scheduleReconnect();
       return;
     }
@@ -239,6 +304,7 @@ export function createServerLink({
     s.setTimeout?.(SERVER_IDLE_TIMEOUT_MS);
     s.on(config.protocol === 'tls' ? 'secureConnect' : 'connect', () => {
       if (closed || socket !== s) return;
+      releaseHandshake(attempt);
       if (config.protocol === 'tls' && s.authorized !== true) {
         lastError = 'TLS_UNAUTHORIZED';
         s.destroy();
@@ -261,14 +327,23 @@ export function createServerLink({
         framer.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
     });
     s.on('timeout', () => {
+      if (dialAdmission && (closed || socket !== s || generation !== attempt))
+        return;
       lastError = 'IDLE_TIMEOUT';
       s.destroy();
     });
     s.on('error', (error) => {
+      if (dialAdmission && (closed || socket !== s || generation !== attempt))
+        return;
       lastError = error?.code || 'CONNECTION_FAILED';
+      if (dialAdmission) {
+        releaseHandshake(attempt);
+        s.destroy();
+      }
     });
     s.on('close', () => {
       if (socket !== s) return;
+      releaseHandshake(attempt);
       for (const entry of writing)
         outcome(
           entry,
@@ -364,6 +439,10 @@ export function createServerLink({
     close() {
       if (closed) return;
       closed = true;
+      const attempt = generation++;
+      cancelAdmission?.();
+      cancelAdmission = null;
+      releaseHandshake(attempt);
       state = 'closed';
       if (timer !== null) clearTimer(timer);
       timer = null;

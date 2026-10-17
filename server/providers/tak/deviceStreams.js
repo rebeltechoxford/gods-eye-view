@@ -5,6 +5,7 @@ import {
   serializeCotEvent,
 } from '../../../src/tak/protocol/cot.js';
 import { createRateLimiter } from '../../../src/tak/protocol/router.js';
+import { deviceDialAdmission, DEVICE_DIAL_LIMITS } from './dialAdmission.js';
 
 export const DEVICE_STREAM_LIMITS = Object.freeze({
   principal: 4,
@@ -80,6 +81,7 @@ export function createDeviceStreamPool({
     rx: 0,
     invalid: 0,
     wireLimited: 0,
+    aggregateLimited: 0,
     deliveryLimited: 0,
     duplicate: 0,
   };
@@ -94,6 +96,17 @@ export function createDeviceStreamPool({
       'reconnects',
       'discarded',
     ].map((key) => [key, 0]),
+  );
+  const aggregateFrames = createRateLimiter({
+    rate: DEVICE_STREAM_LIMITS.wireRate * DEVICE_STREAM_LIMITS.principal,
+    burst: DEVICE_STREAM_LIMITS.wireBurst * DEVICE_STREAM_LIMITS.principal,
+    now,
+  });
+  const aggregateBytes = byteBudget(
+    now,
+    DEVICE_STREAM_LIMITS.wireBytesPerSecond *
+      DEVICE_STREAM_LIMITS.principal *
+      2,
   );
 
   const validRef = (record) => {
@@ -209,6 +222,17 @@ export function createDeviceStreamPool({
       counters.wireLimited++;
       return;
     }
+    if (
+      !aggregateFrames.take() ||
+      !aggregateBytes(
+        bytes,
+        DEVICE_STREAM_LIMITS.wireBytesPerSecond *
+          DEVICE_STREAM_LIMITS.principal,
+      )
+    ) {
+      counters.aggregateLimited++;
+      return;
+    }
     let event, normalized;
     try {
       event = parseCotEvent(xml);
@@ -294,6 +318,8 @@ export function createDeviceStreamPool({
       stream.link = createServer({
         config,
         now,
+        dialAdmission: deviceDialAdmission,
+        handshakeMs: DEVICE_DIAL_LIMITS.handshakeMs,
         onXml: (xml) => ingress(stream, xml),
         onStatus(status) {
           if (closed || stream.closed) return;

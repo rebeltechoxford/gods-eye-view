@@ -513,6 +513,40 @@ test('four distinct wire floods have explicit aggregate work and fixed retained-
   assert.equal(status.deliveryLimited, 0);
 });
 
+test('principal ingress burst survives rapid authorized stream replacement instead of resetting per generation', (t) => {
+  const f = fixture(t),
+    members = Array.from({ length: 4 }, () => f.join());
+  let wires = [];
+  function replace() {
+    wires = [];
+    for (const member of members) {
+      f.pool.stopPresence(member.ref);
+      assert.equal(f.presence(member), true);
+      wires.push(f.links.at(-1));
+    }
+  }
+  for (let generation = 0; generation < 3; generation++) {
+    replace();
+    for (let index = 0; index < 4; index++)
+      for (let i = 0; i < 500; i++)
+        wires[index].hooks.onXml(
+          serializeCotEvent(f.marker(`churn-${generation}-${index}-${i}`)),
+        );
+  }
+  assert.equal(f.received.length, 4000);
+  assert.equal(f.pool.status().aggregateLimited, 2000);
+  f.advance(1000);
+  replace();
+  for (let index = 0; index < 4; index++)
+    for (let i = 0; i < 201; i++)
+      wires[index].hooks.onXml(
+        serializeCotEvent(f.marker(`churn-refill-${index}-${i}`)),
+      );
+  assert.equal(f.received.length, 4800);
+  assert.equal(f.pool.status().aggregateLimited, 2004);
+  assert.ok(f.pool.status().replay <= DEVICE_STREAM_LIMITS.replayEntries);
+});
+
 test('aggregate pending cap, exact owner cancellation, reconnect epoch and late completion are bounded', (t) => {
   const f = fixture(t, { queued: true }),
     a = f.join(),

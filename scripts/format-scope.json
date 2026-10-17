@@ -1000,6 +1000,8 @@
   "src/tooling/takDeviceStreams.test.mjs",
   "src/tooling/takDeviceGateway.test.mjs",
   "server/providers/tak/deviceStreams.js",
+  "server/providers/tak/dialAdmission.js",
+  "src/tooling/takDialAdmission.test.mjs",
   "docs/TAK_DEVICE_STREAMS.md",
   "scripts/qa-tak.mjs",
   "scripts/tak-lab.mjs",
