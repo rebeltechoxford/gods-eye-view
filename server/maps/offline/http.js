@@ -63,7 +63,8 @@ export function createOfflineMapsHandler({
         chunks.push(chunk);
       }
     } finally {
-      req.setTimeout(0);
+      // The timeout above may already have destroyed and detached the socket.
+      req.socket?.setTimeout(0);
     }
     try {
       return JSON.parse(Buffer.concat(chunks).toString('utf8'));

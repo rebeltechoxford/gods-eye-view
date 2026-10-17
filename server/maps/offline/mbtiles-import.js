@@ -501,7 +501,8 @@ export async function createMbtilesImporter({
         } finally {
           clearInterval(monitor);
           controller.signal.removeEventListener('abort', stopRequest);
-          request.setTimeout?.(0);
+          // A logout or timeout may already have detached the socket.
+          request.socket?.setTimeout(0);
           await handle?.close().catch(() => {});
           try {
             if (job.quarantined)

@@ -1,5 +1,9 @@
 # Changelog
 
+- Logging out or timing out during an MBTiles upload or a saved-map request no
+  longer throws while resetting the request timeout on a socket that is
+  already detached.
+
 - Decode TAK protocol v1 (protobuf) mesh datagrams instead of dropping them,
   and let a TAK Server uplink negotiate v1 with `TAK_SERVER_PROTOBUF=1`
   (default XML). Every v1 event passes the existing CoT validation; negotiation
