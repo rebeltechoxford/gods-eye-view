@@ -414,16 +414,19 @@ body.recording-mode .tak-web-root {
     content: '▾';
   }
 }
-.tak-saved-map-list {
+.tak-saved-map-list,
+.tak-road-pack-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.tak-saved-map-list li {
+.tak-saved-map-list li,
+.tak-road-pack-list li {
   border-top: 1px solid #ffffff26;
   padding: 10px 0;
 }
-.tak-saved-map-list button {
+.tak-saved-map-list button,
+.tak-road-pack-list button {
   margin: 4px 4px 4px 0;
 }
 [data-tak-section='maps'] .tak-web-row > label {

@@ -1,4 +1,6 @@
 import { createDirectionsSource } from '../layers/directions/source.js';
+import { createOfflineFirstDirectionsSource } from '../routing/offlineSource.js';
+import { offlineRouting } from '../routing/deviceRouting.js';
 import { createRecentImagerySource } from '../layers/recentImagery/source.js';
 import { createOpenFreeMapSource } from '../sources/openFreeMap.js';
 import {
@@ -30,7 +32,11 @@ export function createStandaloneLayerSources(overrides = {}) {
   const mapTiles = createOpenFreeMapSource();
   const defaults = {
     ...createReferenceSources(),
-    directions: createDirectionsSource(),
+    // Driving inside an installed road pack routes on the device, offline.
+    directions: createOfflineFirstDirectionsSource({
+      online: createDirectionsSource(),
+      offline: offlineRouting,
+    }),
     'recent-imagery': createRecentImagerySource(),
     flights: createFlightSource(),
     military: createMilitarySource(),

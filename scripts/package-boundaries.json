@@ -2267,7 +2267,18 @@
       "src/tak/navigationUi.js",
       "src/tak/navigationCamera.js",
       "src/tak/navigation.css",
-      "src/maps/offline/mbtilesUpload.js"
+      "src/maps/offline/mbtilesUpload.js",
+      "src/routing/offlineSource.js",
+      "src/routing/deviceRouting.js",
+      "src/routing/offlineEngine.js",
+      "src/routing/packStore.js",
+      "src/routing/packManifest.js",
+      "src/routing/router.js",
+      "src/routing/roadPack.js",
+      "src/routing/osmRoads.js",
+      "src/routing/offlineDirections.js",
+      "src/routing/route.worker.js",
+      "src/routing/roadPacksUi.js"
     ],
     "external": [
       "hls.js",
