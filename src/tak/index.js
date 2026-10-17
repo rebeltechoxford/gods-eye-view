@@ -91,6 +91,13 @@ export function initTakWebClient({
   let logoutController = null;
   let gatewayInfo = accountContext?.gateway || {
     enabled: false,
+    ...(accountContext?.multiOperator
+      ? {
+          multiOperator: true,
+          principal: accountContext.principal,
+          role: accountContext.role,
+        }
+      : {}),
     reason:
       accountContext?.reason ||
       (accountContext?.online === false

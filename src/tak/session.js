@@ -25,7 +25,7 @@ export async function logoutOperatorSession(
   });
   if (!response.ok) {
     const error = new Error(
-      'Server sign-out could not be confirmed. Local tactical data was cleared; retry while connected.',
+      'Server sign-out could not be confirmed. Local tactical data was cleared. Reopen while connected to sign in or try signing out again.',
     );
     error.accountChanged =
       response.status === 409 &&

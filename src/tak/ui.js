@@ -639,7 +639,7 @@ export function createTakPanel({
     } catch (error) {
       report(
         error?.message ||
-          'Server sign-out could not be confirmed; retry while connected.',
+          'Server sign-out could not be confirmed; reopen while connected.',
         true,
       );
     } finally {
