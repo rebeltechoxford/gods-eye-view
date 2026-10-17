@@ -1,6 +1,6 @@
 # God's Eye View × TAK: web client foundation
 
-Status: **local web application and single-operator gateway foundation**.
+Status: **local web application with optional named private HTTPS operators**.
 The implementation adds bounded CoT XML, contact/marker/chat workflows and an
 opt-in local gateway to GEV. The synthetic lab exercises actual local TCP and
 WebSocket transport. Real TAK Server, ATAK-CIV, iTAK and WinTAK interoperability
@@ -53,7 +53,7 @@ panel as a replacement application.
 
 ## Gateway access and authorization
 
-The current gateway serves **one local operator**, not multiple users. Enabling
+The development gateway serves one local operator. Enabling
 it requires `TAK_GATEWAY=1` and a valid random `TAK_GATEWAY_TOKEN` of 24–128
 allowed characters. Dev/lab browser upgrades require a direct loopback socket,
 matching loopback host/port, same Origin, no forwarding headers, `tak.v1` and
@@ -67,8 +67,19 @@ The authenticated session registers a `GEV-<UUIDv4>` device identity before
 publishing. The gateway enforces its supported own-device/own-marker namespace
 and action policy. Arbitrary imported events, identity impersonation and
 modification/deletion of other devices' objects are refused. All browsers using
-this token still belong to the same local operator; user accounts, roles and
-TAK Server group isolation remain future work.
+this token still belong to the same local operator.
+
+The private HTTPS host can instead use `TAK_GATEWAY_USERS_FILE` for up to eight
+named accounts with independent mTLS upstream identities, routers, replay,
+ownership tables and submission queues. The server derives authority from the
+authenticated HttpOnly cookie and rejects publishing by receive-only accounts.
+It also requires matching expected account scope on map requests, logout and
+WebSocket upgrades, preventing a stale tab from acquiring a new cookie's
+authority. Credential/role changes revoke affected sessions and sockets.
+Client identity and device map namespaces are scoped, with explicit approval
+before offline restoration. See [named operator setup and limits](TAK_MULTIOPERATOR.md).
+TAK Server groups remain an administrator-controlled, separately tested boundary;
+certificate separation alone does not establish group membership or isolation.
 
 `npm run tak:lab` creates a transient random token and enables an explicit
 local-session bootstrap at `POST /api/tak/session`. The panel requests it only

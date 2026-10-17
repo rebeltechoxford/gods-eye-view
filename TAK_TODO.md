@@ -41,12 +41,14 @@ running.
 
 ## Finish the collaboration product
 
-1. **Multiuser authorization and TAK groups.** The current gateway serves one
-   authenticated operator, using loopback token access or a private HTTPS
-   cookie session. Add proper users/roles, group-scoped reads,
-   subscriptions, replay and revocation before shared multiuser operation. Public
-   hosting remains outside the authorized scope. Preserve
-   server-side object ownership and denied impersonation/deletion.
+1. **Multiuser authorization and TAK groups.** Named private HTTPS accounts now
+   have separate issued mTLS identities, gateway/replay/ownership/queue state,
+   operator/receive-only roles, revocable sessions and scoped device/server map
+   storage. Browser requests bind their expected account to the server cookie;
+   stale tabs cannot switch authority with that cookie. Complete actual TAK
+   Server IN/OUT group provisioning, group-revocation acceptance and physical
+   EUD account-switch/offline tests. Distinct certificates or CoT team tags do
+   not prove server group isolation. Public hosting remains outside scope.
 2. **Delivery state and synchronization.** Correlated pending/queued/submitted/
    rejected/expired states are implemented. Submitted confirms a local transport
    write, not a peer receipt. Add compatible peer acknowledgements where available

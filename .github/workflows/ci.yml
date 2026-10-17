@@ -148,6 +148,9 @@ jobs:
       - name: Private HTTPS, session and phone PWA gate
         run: node scripts/qa-tak-private.mjs
 
+      - name: Named operator isolation, scope binding and offline gate
+        run: node scripts/qa-tak-operators.mjs
+
       - name: Retained map, backup and disconnected application gate
         run: npm run qa:maps:offline
 
