@@ -47,6 +47,24 @@ node scripts/qa-tak-packages.mjs --url http://127.0.0.1:4174
 
 Evidence is written to `qa-artifacts/tak-packages/`. It contains synthetic data only. Server mission creation, attachment-to-marker associations, signed packages, arbitrary file import handlers, persistent tactical storage and peer/server package transfer are outside this implementation.
 
+The combined integration passed all eight browser scenarios on Windows,
+Node 24.19.0 and Chrome 152 at 2026-10-17 01:29 UTC. The actual touch/file/download
+controls verified the 150-row contact chooser and 127-selection limit, stable
+rows, Python DEFLATE fixture inspection, rejected-input atomicity, local-only
+application, explicitly selected exports, consumed per-export consent, pending
+file-read cancellation and teardown. The saved phone screenshot was inspected.
+Evidence: `qa-artifacts/field-packages-final/` and
+`.gev-cache/field-packages-final.log`. No physical phone or real TAK client was
+used for this acceptance run.
+
+An independent Python 3.12 `zipfile` / `ElementTree` / `hashlib` check also
+passed 36 assertions against a current-API export containing one synthetic
+contact and one selected TXT attachment. It validated ZIP CRCs, the version-2
+manifest and UUID, exact entry selection, UID/callsign/coordinates/HAE, text
+bytes and manifest/export SHA-256 values without using this app's ZIP reader.
+Evidence is in `.gev-cache/mission-format-independent-20261017/`. This checks
+file-format consistency, not acceptance by an operational TAK client.
+
 ## Format and licensing references
 
 This is an original implementation using format facts from the official [ATAK-CIV MissionPackageManifest](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/main/atak/ATAK/app/src/main/java/com/atakmap/android/missionpackage/file/MissionPackageManifest.java), [MissionPackageContent](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/main/atak/ATAK/app/src/main/java/com/atakmap/android/missionpackage/file/MissionPackageContent.java), and [MissionPackageManifestAdapter](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/main/atak/ATAK/app/src/main/java/com/atakmap/android/missionpackage/file/MissionPackageManifestAdapter.java) definitions, plus the published [PKWARE ZIP APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT). ATAK-CIV's [GPL licensing](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/main/LICENSE.md) was reviewed: no ATAK source, archive fixture, imagery, plugin or third-party ZIP implementation is copied or bundled. No dependency or license change is introduced. The fixture and all new code are original repository material under the repository license.

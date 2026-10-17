@@ -38,4 +38,17 @@ An exact request-ID/payload repeat returns the cached result without republishin
 
 On Node 24, the focused delivery, client, transport, router, gateway and TLS suite passed **86 tests** before the focused checkpoint. It exercises real loopback WebSocket authorization/rejection and a real TCP outage → queue → reconnect → write callback, request idempotency, unknown browser attribute stripping, rejection of received foreign CoT re-submission, cancellation/disconnect/expiry, queue coalescing and capacity, immediately revoked writer checks, failed/late write callbacks, metadata limits and cleanup, transport framing/backpressure (including failed cancellation), and existing genuine local mutual-TLS trust/hostname/expired/client-certificate rejection tests. TLS fixtures are generated locally; no operational credentials or peer system is used.
 
-These tests do not establish real ATAK/iTAK/WinTAK receipt or TAK Server application acceptance. The milestone does not implement peer ACK correlation, recipient-specific delivery, chat receipts, a durable offline send queue or end-user device background delivery. Those require a documented peer protocol and an authorized real-peer acceptance test. The integrated browser gate should additionally verify the visible submission rows, local-only action behavior, and clearing on session expiry; the focused checkpoint does not claim a new browser run.
+The combined synthetic browser gate subsequently passed all 12 scenarios on
+Windows/Node 24.19/Chrome 152 at 2026-10-17 01:30 UTC. It used actual controls to
+import/create local contacts before connecting, verified no automatic send,
+and correlated the shared-marker row and broadcast chat with a successful
+local server write and an explicit unconfirmed-peer-receipt label. The
+production HTTPS gate separately passed all 12 session/phone scenarios,
+including private-state cleanup. Evidence: `qa-artifacts/field-tak-final/`
+and `qa-artifacts/field-private-final/`.
+
+These tests do not establish real ATAK/iTAK/WinTAK receipt or TAK Server
+application acceptance. The milestone does not implement peer ACK correlation,
+recipient-specific delivery, chat receipts, a durable offline send queue or
+end-user device background delivery. Those require a documented peer protocol
+and an authorized real-peer acceptance test.
