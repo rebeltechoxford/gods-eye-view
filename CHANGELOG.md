@@ -1,5 +1,14 @@
 # Changelog
 
+- Decode TAK protocol v1 (protobuf) mesh datagrams instead of dropping them,
+  and let a TAK Server uplink negotiate v1 with `TAK_SERVER_PROTOBUF=1`
+  (default XML). Every v1 event passes the existing CoT validation; negotiation
+  control never reaches browsers. The codec has no new dependency and matches
+  an independent Google protobuf oracle byte for byte. `npm run tak:lab --
+--protobuf` and `npm run qa:tak -- --lab --protobuf` exercise the negotiated
+  link in the browser. Real ATAK/WinTAK/iTAK and TAK Server v1 acceptance is
+  still required; see `docs/TAK_PROTOCOL_V1.md`.
+
 - Add an authenticated, loopback-only TAK gateway with verified TLS uplinks,
   bounded transport and device-owned marker authorization. The additive TAK
   panel supports contacts/trails, explicit self position broadcast, markers,

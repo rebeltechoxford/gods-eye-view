@@ -551,6 +551,33 @@ limits, but production area/zoom selection is a separate increment described in
 currency, operational chart coverage, 3D terrain or a license to retain arbitrary
 commercial map data.
 
+## TAK protocol v1 lab run
+
+TAK Protocol Version 1 (protobuf) receive on the mesh and opt-in TAK Server
+stream negotiation are described, with scope and limits, in
+[TAK_PROTOCOL_V1.md](TAK_PROTOCOL_V1.md). Recorded on 2026-10-17 UTC with Node
+`24.14.0` on Linux x64:
+
+- The codec decodes four payloads built by an independent Google protobuf
+  `7.36.1` oracle from the published TAK descriptors, and re-encodes them
+  byte-identically, including mesh and stream framing.
+- Full unit suite: **6,857 passed**, one existing skip, zero failures (6,806
+  before this change). Formatting, import/package boundaries, setup doctor, the
+  layer-token check against `origin/main` and the production build passed.
+- `npm run tak:lab -- --protobuf` with
+  `npm run qa:tak -- --url http://127.0.0.1:4174 --lab --protobuf` passed all
+  **12** Chromium scenarios (Chromium `141.0.7390.37`, 07:46Z). The gate
+  requires the server uplink to report a negotiated `v1` encoding and the panel
+  to show `TAK protocol v1`.
+  The lab's marker correction and chat reply therefore crossed binary frames
+  both ways through the real gateway. The same `--protobuf` gate against the
+  XML-only lab failed at that wait, as intended.
+- The official TAK Server 5.7 negotiation and conversion source was read and
+  the codec aligned to it. That source was not built or run here.
+
+These are synthetic results. Real ATAK-CIV, WinTAK and iTAK v1 mesh traffic and
+a running TAK Server v1 negotiation remain open in [TAK_TODO.md](../TAK_TODO.md).
+
 ## Current external prerequisites
 
 The official-source local server lab used fresh synthetic credentials; no

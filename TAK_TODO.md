@@ -104,10 +104,15 @@ running.
    and georeferencing metadata with limits/cleanup. Add hardware bridges where
    required. Existing public CCTV/HLS and Local ADS-B do not constitute general
    TAK video, MANET, Meshtastic/LoRa or ATAK plugin support.
-9. **Broader protocol and symbology coverage.** Add TAK protocol-v1 protobuf
-   handling, a documented supported MIL-STD-2525 symbol subset and extensions
-   only when tested/licensed. Current affiliation frames are a limited visual
-   treatment. Android APKs/JNI/plugins are not browser modules.
+9. **Broader protocol and symbology coverage.** TAK protocol v1 is now
+   decoded on the mesh and negotiable on TAK Server links with
+   `TAK_SERVER_PROTOBUF=1` ([scope and evidence](docs/TAK_PROTOCOL_V1.md)).
+   Observe a real v1 mesh (ATAK-CIV, WinTAK, iTAK separately) and a real TAK
+   Server negotiation before claiming interoperability. Mesh send stays XML;
+   registered detail extensions are unsupported and partial decodes are only
+   counted. Add a documented supported MIL-STD-2525 symbol subset and
+   extensions only when tested/licensed. Current affiliation frames are a
+   limited visual treatment. Android APKs/JNI/plugins are not browser modules.
 
 ## Preserve, measure and harden
 

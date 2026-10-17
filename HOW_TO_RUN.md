@@ -162,8 +162,15 @@ LAN mesh UDP is an opt-in gateway bridge, configured with `TAK_MESH=1` and
 `TAK_MESH_INTERFACE=<authorized-interface-IPv4>`. Browser JavaScript does not
 open raw UDP sockets. Enable it only on an authorized TAK segment. Mesh and TAK
 Server do not bridge to each other unless `TAK_BRIDGE=1` is explicitly set.
-Protocol-v1 protobuf, private/group chat and native plugins remain unsupported
-unless listed otherwise in [TAK_TODO.md](TAK_TODO.md).
+The mesh link decodes TAK protocol v1 (protobuf) datagrams as well as XML and
+sends XML, which every TAK client must accept. To let an authorized TAK Server
+switch the streaming connection to v1 when it offers it, add
+`TAK_SERVER_PROTOBUF=1` and use one of its `tls` streaming inputs (TAK Server
+5.7 does not offer v1 on `stcp`/`tcp`, and `prototls` inputs are unsupported);
+the default stays XML. The TAK panel's uplink line shows v1 counts and the
+negotiated server encoding. Scope, evidence and limits are in
+[TAK_PROTOCOL_V1.md](docs/TAK_PROTOCOL_V1.md). Private/group chat and native
+plugins remain unsupported unless listed otherwise in [TAK_TODO.md](TAK_TODO.md).
 
 ## Run the private HTTPS console on an EUD
 
