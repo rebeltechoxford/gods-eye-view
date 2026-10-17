@@ -39,7 +39,12 @@ function fixture(fetchImpl = async () => response(status()), options = {}) {
     hasLegacyShell: async () => false,
     ...options,
   });
-  const event = (value, key = OPERATOR_ACTIVE_KEY) => {
+  const event = (value, key = OPERATOR_ACTIVE_KEY, { queued = false } = {}) => {
+    if (!queued) {
+      if (key === null) values.clear();
+      else if (value === null) values.delete(key);
+      else values.set(key, value);
+    }
     const e = new Event('storage');
     Object.assign(e, { key, newValue: value, storageArea: storage });
     events.dispatchEvent(e);
@@ -238,11 +243,39 @@ test('storage changes retire old-tab access once, including in-flight initial re
   slow.resolve(response(status()));
   assert.equal((await resolved).storageAllowed, false);
   assert.equal(
-    pending.values.has(OPERATOR_ACTIVE_KEY),
-    false,
+    JSON.parse(pending.values.get(OPERATOR_ACTIVE_KEY)).identity,
+    `${B}:bravo:operator`,
     'retired old response must not publish its old account over the new tab',
   );
   pending.manager.destroy();
+});
+
+test('queued old logout/account events cannot retire a freshly authenticated matching context', async () => {
+  const f = fixture(async () => response(status(B, 'bravo', 'observer')));
+  const context = await f.manager.resolve();
+  let invalidations = 0;
+  f.manager.subscribe(() => invalidations++);
+  for (const oldValue of [
+    null,
+    JSON.stringify({ identity: `${A}:alpha:operator` }),
+  ]) {
+    f.event(oldValue, OPERATOR_ACTIVE_KEY, { queued: true });
+    assert.equal(invalidations, 0);
+    assert.equal(f.manager.isCurrent(context), true);
+  }
+  // Even a stale matching event must observe a genuine newer account change.
+  f.values.set(
+    OPERATOR_ACTIVE_KEY,
+    JSON.stringify({ identity: `${A}:alpha:operator` }),
+  );
+  f.event(
+    JSON.stringify({ identity: `${B}:bravo:observer` }),
+    OPERATOR_ACTIVE_KEY,
+    { queued: true },
+  );
+  assert.equal(invalidations, 1);
+  assert.equal(f.manager.isCurrent(context), false);
+  f.manager.destroy();
 });
 
 test('destroy removes storage listeners; local sign-out retires access and keeps map bytes separate', async () => {

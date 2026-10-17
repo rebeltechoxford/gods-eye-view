@@ -247,12 +247,15 @@ export function createOperatorContextManager({
       (event.storageArea && event.storageArea !== storage)
     )
       return;
+    // Storage events are queued. A newer page may have authenticated and
+    // published its context before an older logout event reaches this page.
+    // Read the current record rather than treating historical event data as
+    // authority; isCurrent() uses this same synchronous storage boundary.
+    const currentRecord = read(OPERATOR_ACTIVE_KEY);
+    const raw = currentRecord === undefined ? event.newValue : currentRecord;
     let next;
     try {
-      next =
-        event.newValue?.length <= MAX_RECORD_LENGTH
-          ? JSON.parse(event.newValue)
-          : null;
+      next = raw?.length <= MAX_RECORD_LENGTH ? JSON.parse(raw) : null;
     } catch {
       next = null;
     }
