@@ -4,7 +4,15 @@ import net from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { createCotStreamFramer } from '../src/tak/protocol/stream.js';
+import {
+  TAK_PROTOCOL_CONTROL_TYPES,
+  cotEventToTakPayload,
+  createTakStreamReader,
+  encodeTakStreamFrame,
+  mayBeTakProtocolControl,
+  readTakProtocolControl,
+  takPayloadToCot,
+} from '../src/tak/protocol/takProto.js';
 import {
   parseCotEvent,
   serializeCotEvent,
@@ -23,67 +31,130 @@ const peerIdentity = Object.freeze({
   team: 'Cyan',
   role: 'Team Member',
 });
-const frame = (event) =>
-  '<?xml version="1.0" encoding="UTF-8"?>\n' + serializeCotEvent(event);
+const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n';
+const frame = (event) => XML_DECLARATION + serializeCotEvent(event);
+const PROTOCOL_UID = 'SYNTHETIC-LAB-PROTOCOL-NEGOTIATION';
 
-/** No LAN/public bind, real peer, operational position, credential or certificate is used. */
-export async function startTakLab({ port = 4174, log = console } = {}) {
+/** Synthetic peer side of the published streaming negotiation. */
+function protocolControl(type, control) {
+  const time = new Date().toISOString();
+  const stale = new Date(Date.now() + 60_000).toISOString();
+  return `${XML_DECLARATION}<event version="2.0" uid="${PROTOCOL_UID}" type="${type}" time="${time}" start="${time}" stale="${stale}" how="m-g"><point lat="0.0" lon="0.0" hae="0.0" ce="999999" le="999999"/><detail><TakControl>${control}</TakControl></detail></event>`;
+}
+
+/**
+ * No LAN/public bind, real peer, operational position, credential or certificate is used.
+ * With `protobuf`, the peer offers TAK protocol v1 and switches the connection
+ * to binary stream frames when the gateway requests it (TAK_SERVER_PROTOBUF=1).
+ */
+export async function startTakLab({
+  port = 4174,
+  log = console,
+  protobuf = false,
+} = {}) {
   const sockets = new Set();
-  const counters = { received: 0, returned: 0 };
+  const counters = { received: 0, returned: 0, negotiated: 0 };
   const peer = net.createServer((socket) => {
     sockets.add(socket);
-    socket.setEncoding('utf8');
     socket.on('error', () => {});
     socket.on('close', () => sockets.delete(socket));
+    let encoding = 'xml';
     function send(event) {
       if (socket.destroyed || socket.writableLength > 256 * 1024) return;
-      socket.write(frame(event));
+      socket.write(
+        encoding === 'v1'
+          ? encodeTakStreamFrame(cotEventToTakPayload(event))
+          : frame(event),
+      );
       counters.returned++;
     }
-    const framer = createCotStreamFramer({
-      onEvent(xml) {
-        let event;
+    function negotiate(xml) {
+      const control = readTakProtocolControl(xml);
+      if (control?.kind !== 'request' || encoding !== 'xml') return;
+      const accept = protobuf && control.versions.includes(1);
+      socket.write(
+        protocolControl(
+          TAK_PROTOCOL_CONTROL_TYPES.response,
+          `<TakResponse status="${accept}"/>`,
+        ),
+      );
+      if (!accept) return;
+      // The gateway sends nothing between its request and this response.
+      encoding = 'v1';
+      counters.negotiated++;
+      reader.hold();
+      reader.acceptProtobuf();
+    }
+    const reader = createTakStreamReader({
+      onPayload(payload) {
         try {
-          event = parseCotEvent(xml);
+          const { xml } = takPayloadToCot(payload);
+          if (xml) receive(xml);
         } catch {
-          return;
-        }
-        counters.received++;
-        const kind = cotKind(event.type);
-        if (
-          (kind === 'marker' || kind === 'sa') &&
-          event.point &&
-          event.uid !== peerIdentity.uid
-        ) {
-          // A visible, newer peer correction proves the return path in the lab.
-          send(
-            buildMarker(
-              peerIdentity,
-              {
-                uid: event.uid,
-                callsign:
-                  `${event.detail.callsign || 'Marker'} (lab peer)`.slice(
-                    0,
-                    120,
-                  ),
-                ...event.point,
-                type: event.type,
-                remarks:
-                  'Synthetic local peer received this event and returned this correction.',
-              },
-              { nowMs: Math.max(Date.now(), event.timeMs + 1) },
-            ),
-          );
-        } else if (kind === 'chat') {
-          send(
-            buildChat(peerIdentity, {
-              message: `SYNTHETIC peer received: ${(event.detail.remarks?.text || '').slice(0, 3000)}`,
-            }),
-          );
+          // A malformed synthetic frame is ignored like malformed XML.
         }
       },
+      onXml(xml) {
+        if (mayBeTakProtocolControl(xml)) {
+          try {
+            negotiate(xml);
+          } catch {
+            // Invalid control events are ignored.
+          }
+          return;
+        }
+        receive(xml);
+      },
+      onError: () => socket.destroy(),
     });
-    socket.on('data', (chunk) => framer.push(chunk));
+    function receive(xml) {
+      let event;
+      try {
+        event = parseCotEvent(xml);
+      } catch {
+        return;
+      }
+      counters.received++;
+      const kind = cotKind(event.type);
+      if (
+        (kind === 'marker' || kind === 'sa') &&
+        event.point &&
+        event.uid !== peerIdentity.uid
+      ) {
+        // A visible, newer peer correction proves the return path in the lab.
+        send(
+          buildMarker(
+            peerIdentity,
+            {
+              uid: event.uid,
+              callsign: `${event.detail.callsign || 'Marker'} (lab peer)`.slice(
+                0,
+                120,
+              ),
+              ...event.point,
+              type: event.type,
+              remarks:
+                'Synthetic local peer received this event and returned this correction.',
+            },
+            { nowMs: Math.max(Date.now(), event.timeMs + 1) },
+          ),
+        );
+      } else if (kind === 'chat') {
+        send(
+          buildChat(peerIdentity, {
+            message: `SYNTHETIC peer received: ${(event.detail.remarks?.text || '').slice(0, 3000)}`,
+          }),
+        );
+      }
+    }
+    socket.on('data', (chunk) => reader.push(chunk));
+    if (protobuf)
+      socket.write(
+        protocolControl(
+          TAK_PROTOCOL_CONTROL_TYPES.support,
+          '<TakProtocolSupport version="1"/>',
+        ),
+      );
     send(
       buildSelfSa(peerIdentity, {
         lat: 34.3665,
@@ -104,6 +175,7 @@ export async function startTakLab({ port = 4174, log = console } = {}) {
     'TAK_GATEWAY_LOCAL_BOOTSTRAP',
     'TAK_SERVER',
     'TAK_SERVER_PROTOCOL',
+    'TAK_SERVER_PROTOBUF',
     'TAK_MESH',
     'TAK_BRIDGE',
   ];
@@ -114,6 +186,7 @@ export async function startTakLab({ port = 4174, log = console } = {}) {
     TAK_GATEWAY_LOCAL_BOOTSTRAP: '1',
     TAK_SERVER: `127.0.0.1:${peerPort}`,
     TAK_SERVER_PROTOCOL: 'tcp',
+    TAK_SERVER_PROTOBUF: protobuf ? '1' : '0',
     TAK_MESH: '0',
     TAK_BRIDGE: '0',
   });
@@ -155,7 +228,7 @@ export async function startTakLab({ port = 4174, log = console } = {}) {
       }
     })());
   log.info(
-    `\nGEV × TAK synthetic local lab: http://127.0.0.1:${port}\nOpen TAK > Connect (token is automatic for this local lab).\nCreate a marker with Share enabled, or send chat, to see a synthetic peer reply.\nThis tests real local TCP/WebSocket transport, not ATAK/WinTAK/iTAK interoperability.\nCtrl+C stops both the app and synthetic peer.\n`,
+    `\nGEV × TAK synthetic local lab: http://127.0.0.1:${port}${protobuf ? ' (TAK protocol v1 offered)' : ''}\nOpen TAK > Connect (token is automatic for this local lab).\nCreate a marker with Share enabled, or send chat, to see a synthetic peer reply.\nThis tests real local TCP/WebSocket transport, not ATAK/WinTAK/iTAK interoperability.\nCtrl+C stops both the app and synthetic peer.\n`,
   );
   return { app, peer, counters, close };
 }
@@ -167,7 +240,10 @@ if (
   const port = at >= 0 ? Number(process.argv[at + 1]) : 4174;
   if (!Number.isInteger(port) || port < 1024 || port > 65535)
     throw new Error('--port must be 1024-65535');
-  const lab = await startTakLab({ port });
+  const lab = await startTakLab({
+    port,
+    protobuf: process.argv.includes('--protobuf'),
+  });
   for (const signal of ['SIGINT', 'SIGTERM'])
     process.once(signal, async () => {
       await lab.close();

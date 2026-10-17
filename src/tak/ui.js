@@ -144,18 +144,37 @@ function describeGateway(link, gatewayInfo) {
     : 'Gateway available. Connect to exchange CoT with mesh and TAK Server peers.';
 }
 
-function describeUplinks(link) {
+const SERVER_ENCODINGS = Object.freeze({
+  requested: ' · requesting TAK protocol v1',
+  v1: ' · TAK protocol v1',
+});
+
+/** Gateway uplink summary; protocol counts are gateway observations only. */
+export function describeUplinks(link) {
   const g = link.gateway;
   if (!g || g.enabled === false) return '';
   const parts = [];
+  const mesh = g.mesh;
+  const refused =
+    (mesh?.protobufRejected || 0) + (mesh?.protobufUnsupported || 0);
   parts.push(
-    g.mesh
-      ? `Mesh ${g.mesh.group}: ${g.mesh.state} (rx ${g.mesh.rx} / tx ${g.mesh.tx})`
+    mesh
+      ? `Mesh ${mesh.group}: ${mesh.state} (rx ${mesh.rx} / tx ${mesh.tx}` +
+          (mesh.protobuf ? ` · TAK v1 ${mesh.protobuf}` : '') +
+          (mesh.protobufIncomplete
+            ? ` · partly decoded ${mesh.protobufIncomplete}`
+            : '') +
+          (refused ? ` · refused ${refused}` : '') +
+          ')'
       : 'Mesh: off',
   );
   parts.push(
     g.server
-      ? `Server ${g.server.endpoint}: ${g.server.state}`
+      ? `Server ${g.server.endpoint}: ${g.server.state}` +
+          (SERVER_ENCODINGS[g.server.encoding] || '') +
+          (g.server.protobufIncomplete
+            ? ` · partly decoded ${g.server.protobufIncomplete}`
+            : '')
       : 'TAK Server: off',
   );
   parts.push(`Bridge: ${g.bridge ? 'on' : 'off'} · Browsers: ${g.browsers}`);

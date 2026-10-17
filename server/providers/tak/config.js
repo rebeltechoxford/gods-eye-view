@@ -21,6 +21,7 @@ import { isLocalIpv4 } from '../../../src/data/tapAddress.js';
  * | TAK_SERVER_PROTOCOL          | tls (default) or tcp                                      |
  * | TAK_SERVER_CERT/_KEY/_CA     | PEM client cert, key and CA for mutual TLS                |
  * | TAK_SERVER_P12 / _PASSWORD   | PKCS#12 client bundle (alternative to PEM files)          |
+ * | TAK_SERVER_PROTOBUF=1        | Request TAK protocol v1 when the server offers it         |
  * | TAK_BRIDGE=1                 | Relay mesh <-> TAK Server (default: both feed browsers)   |
  * | TAK_GATEWAY_CALLSIGN         | Callsign of the gateway node itself                       |
  */
@@ -155,7 +156,13 @@ export function readTakGatewayConfig(env = process.env) {
         errors.push(
           'TAK_SERVER tls requires TAK_SERVER_CERT+TAK_SERVER_KEY or TAK_SERVER_P12',
         );
-      else server = Object.freeze({ ...address, protocol, tls });
+      else
+        server = Object.freeze({
+          ...address,
+          protocol,
+          tls,
+          protobuf: flag(env.TAK_SERVER_PROTOBUF),
+        });
     }
   }
 
