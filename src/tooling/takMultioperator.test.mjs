@@ -171,7 +171,8 @@ async function app(t, port) {
   const folder = caseDirectory(),
     value = configuration(port),
     file = writeConfig(folder, value);
-  let time = Date.now();
+  let time = Date.now(),
+    clock = () => time;
   const instance = await startTakHttpsServer({
     env: {
       TAK_GATEWAY_USERS_FILE: file,
@@ -182,7 +183,7 @@ async function app(t, port) {
     distRoot: dist,
     providerPlugins: [],
     port: 0,
-    now: () => time,
+    now: () => clock(),
     offlineMaps: {
       root: path.join(folder, 'maps'),
       fetchImpl: async () => {
@@ -199,6 +200,9 @@ async function app(t, port) {
     now: () => time,
     advance: (ms) => {
       time += ms;
+    },
+    clock: (next) => {
+      clock = next;
     },
   };
 }
@@ -303,6 +307,41 @@ const state = (id, wanted) => (text) =>
   JSON.parse(text).id === id &&
   JSON.parse(text).state === wanted;
 const isXml = (text) => text.startsWith('<');
+
+test('WSS session expiry between the host check and gateway recheck rejects without throwing or changing principal', async (t) => {
+  const peer = await startPeer(t),
+    instance = await app(t, peer.port);
+  const cookie = await login(instance, 'alpha');
+  assert.equal(
+    (await request(instance, '/api/tak/status', { cookie })).status,
+    200,
+  );
+  await waitFor(
+    () => peer.accepted.has('alpha'),
+    'alpha TLS before clock-boundary test',
+  );
+  const expiry = instance.now() + SESSION_TTL_MS;
+  let reads = 0;
+  instance.clock(() => (++reads === 1 ? expiry - 1 : expiry));
+  const ws = connect(instance, cookie);
+  const [, denied] = await once(ws, 'unexpected-response');
+  assert.equal(
+    denied.statusCode,
+    401,
+    'the gateway independently rechecks the expired session',
+  );
+  denied.resume();
+  assert.ok(reads >= 2);
+  assert.equal(
+    (await request(instance, '/api/tak/status', { cookie })).status,
+    401,
+  );
+  assert.equal(
+    (await request(instance, '/login')).status,
+    200,
+    'HTTPS host remains available',
+  );
+});
 
 test('strict named configuration pins distinct client identities, stable opaque scopes, and disables insecure fallback', () => {
   const folder = caseDirectory(),

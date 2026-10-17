@@ -196,8 +196,8 @@ and anonymous/fallback settings. Authorized overlapping groups may correctly
 deliver the same event to several principals. The web gateway cannot infer or
 grant server group membership from team colors, callsigns or untrusted XML.
 
-The focused Node 24 suite passed **57 tests** across the HTTPS host, gateway,
-real local TLS rejection tests and the five named-principal scenarios. These
+The focused Node 24 suite passed **58 tests** across the HTTPS host, gateway,
+real local TLS rejection tests and the six named-principal scenarios. These
 use generated local CAs/client certificates and real loopback HTTPS, WSS and
 mutual-TLS sockets. They verify separate certificate connections, stream/replay
 and identity isolation, observer rejection, own-principal reconnect/queue

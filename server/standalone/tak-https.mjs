@@ -733,22 +733,14 @@ export async function startTakHttpsServer({
     }
     for (const hook of postHooks) await hook();
     server.on('upgrade', (req, socket, head) => {
-      if (
-        !authorizeBrowserRequest(req, policy).ok ||
-        !authenticateSession(req)
-      ) {
+      const authenticated = authenticateSession(req);
+      if (!authorizeBrowserRequest(req, policy).ok || !authenticated) {
         socket.end(
           'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n',
         );
         return;
       }
-      if (
-        !sessionGateway(authenticateSession(req)).handleUpgrade(
-          req,
-          socket,
-          head,
-        )
-      )
+      if (!sessionGateway(authenticated).handleUpgrade(req, socket, head))
         socket.destroy();
     });
     const expiryTimer = setInterval(() => {
