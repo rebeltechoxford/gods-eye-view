@@ -1051,5 +1051,7 @@
   "server/providers/tak/browserGeometry.js",
   "src/tooling/takBrowserGeometry.test.mjs",
   "scripts/qa-tak-drawings.mjs",
-  "docs/TAK_DRAWINGS_ROUTES.md"
+  "docs/TAK_DRAWINGS_ROUTES.md",
+  "src/tooling/takMultioperator.test.mjs",
+  "docs/TAK_MULTIOPERATOR.md"
 ]

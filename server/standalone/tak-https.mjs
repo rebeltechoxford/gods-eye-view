@@ -15,6 +15,16 @@ import { standaloneVoiceTools } from './voiceTools.js';
 import { readTakGatewayConfig } from '../providers/tak/config.js';
 import { createTakGateway } from '../providers/tak/gateway.js';
 import {
+  readTakPrincipals,
+  authenticateTakPrincipal,
+  principalGatewayConfig,
+  MAX_PRINCIPAL_SESSIONS,
+} from '../providers/tak/principals.js';
+import {
+  createPrincipalMapRoots,
+  PRINCIPAL_MAP_LIMITS,
+} from '../providers/tak/principalMaps.js';
+import {
   authorizeBrowserRequest,
   createBrowserAccessPolicy,
   isLoopbackAddress,
@@ -200,7 +210,10 @@ async function readLoginBody(req) {
     req.once('error', reject);
   });
   const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
-  return form.getAll('token').length === 1 ? form.get('token') : null;
+  return form.getAll('token').length === 1 &&
+    form.getAll('principal').length <= 1
+    ? { token: form.get('token'), principal: form.get('principal') }
+    : null;
 }
 
 /** No public listener, reverse proxy, remote bootstrap, or Vite runtime is supported. */
@@ -245,8 +258,23 @@ export async function startTakHttpsServer({
     throw new Error(
       'TAK_HTTPS_CERT and TAK_HTTPS_KEY are required; use a certificate trusted by your EUD',
     );
-  const config = readTakGatewayConfig({ ...env, TAK_GATEWAY: '1' });
-  if (!config.enabled || config.errors.length)
+  const multiOperator = !!String(env.TAK_GATEWAY_USERS_FILE || '').trim();
+  if (
+    multiOperator &&
+    (String(env.TAK_SERVER || '').trim() ||
+      /^(1|true|yes|on)$/i.test(String(env.TAK_MESH || '').trim()) ||
+      /^(1|true|yes|on)$/i.test(String(env.TAK_BRIDGE || '').trim()))
+  )
+    throw new Error(
+      'Named principals cannot share global TAK_SERVER, multicast or bridge configuration',
+    );
+  let principals = multiOperator
+    ? readTakPrincipals(env.TAK_GATEWAY_USERS_FILE)
+    : null;
+  const config = multiOperator
+    ? null
+    : readTakGatewayConfig({ ...env, TAK_GATEWAY: '1' });
+  if (!multiOperator && (!config.enabled || config.errors.length))
     throw new Error(
       config.errors[0] || 'Valid TAK gateway configuration is required',
     );
@@ -260,6 +288,16 @@ export async function startTakHttpsServer({
     throw new Error('HTTPS certificate is not currently valid');
   const assets = await assetInventory(distRoot);
   const sessions = new Map();
+  const principalGateways = new Map();
+  const principalGatewayGenerations = new Map();
+  const principalMapStores = new Map();
+  const principalMapHandlers = new Map();
+  const principalMapRoot = multiOperator
+    ? createPrincipalMapRoots(
+        offlineMaps?.root || defaultOfflinePackRoot(env),
+        [workspaceRoot, distRoot],
+      )
+    : null;
   const sockets = new Set();
   const loginLimiter = createRateLimiter({ rate: 5 / 60, burst: 5, now });
   let gateway;
@@ -268,12 +306,75 @@ export async function startTakHttpsServer({
   let shellManifestPromise;
   let policy;
   let closed = false;
+  function recheckGateways() {
+    gateway?.recheckSessions();
+    for (const instance of principalGateways.values())
+      instance.recheckSessions();
+  }
+  function closeGateways(options) {
+    gateway?.close(options);
+    for (const instance of principalGateways.values()) instance.close(options);
+    principalGateways.clear();
+    principalGatewayGenerations.clear();
+  }
+  function sessionGateway(authenticated) {
+    if (!multiOperator) return gateway;
+    let instance = principalGateways.get(authenticated.principal);
+    if (!instance) {
+      const principal = principals.get(authenticated.principal);
+      if (!principal?.enabled) throw new Error('Principal unavailable');
+      instance = createTakGateway({
+        config: principalGatewayConfig(principal, policy),
+        WebSocketServer,
+        now,
+        authenticateSession,
+      });
+      principalGateways.set(principal.id, instance);
+      principalGatewayGenerations.set(principal.id, principal.generation);
+    }
+    return instance;
+  }
+  function reloadPrincipals() {
+    if (!multiOperator || closed)
+      throw new Error('Named principal reload unavailable');
+    let next;
+    try {
+      next = readTakPrincipals(env.TAK_GATEWAY_USERS_FILE);
+    } catch (error) {
+      principals = new Map();
+      sessions.clear();
+      closeGateways({ sessionExpired: true });
+      throw error;
+    }
+    principals = next;
+    for (const [id, instance] of principalGateways) {
+      if (
+        !principals.get(id)?.enabled ||
+        principalGatewayGenerations.get(id) !== principals.get(id)?.generation
+      ) {
+        instance.close({ sessionExpired: true });
+        principalGateways.delete(id);
+        principalGatewayGenerations.delete(id);
+      }
+    }
+    pruneSessions();
+    recheckGateways();
+    return {
+      enabledPrincipals: [...principals.values()].filter(
+        (principal) => principal.enabled,
+      ).length,
+    };
+  }
   function pruneSessions() {
     const t = now();
     for (const [id, session] of sessions)
       if (
         t - session.created >= SESSION_TTL_MS ||
-        t - session.lastSeen >= SESSION_TTL_MS
+        t - session.lastSeen >= SESSION_TTL_MS ||
+        (multiOperator &&
+          (!principals.get(session.principal)?.enabled ||
+            principals.get(session.principal).generation !==
+              session.generation))
       )
         sessions.delete(id);
   }
@@ -282,7 +383,14 @@ export async function startTakHttpsServer({
     const session = sessions.get(sessionId(req));
     if (!session) return null;
     if (touch) session.lastSeen = now();
-    return { principal: 'local-operator' };
+    if (!multiOperator) return { principal: 'local-operator' };
+    const principal = principals.get(session.principal);
+    return {
+      principal: principal.id,
+      role: principal.role,
+      storageScope: principal.storageScope,
+      multiOperator: true,
+    };
   }
   const middlewares = connect();
   const server = https.createServer(
@@ -348,7 +456,13 @@ export async function startTakHttpsServer({
         // Native form submissions need their same-origin Origin value. Keep
         // the authenticated application on no-referrer and reject null Origin.
         res.setHeader('Referrer-Policy', 'same-origin');
-        return reply(res, 200, LOGIN_PAGE, true);
+        const loginPage = multiOperator
+          ? LOGIN_PAGE.replace(
+              '<form method="post" action="/login">',
+              '<form method="post" action="/login" data-multi-operator="true"><label>Operator name <input name="principal" autocomplete="username" required maxlength="32" pattern="[a-z][a-z0-9-]{0,31}"></label>',
+            )
+          : LOGIN_PAGE;
+        return reply(res, 200, loginPage, true);
       }
       if (req.method !== 'POST')
         return reply(res, 405, { error: 'Method Not Allowed' });
@@ -358,24 +472,48 @@ export async function startTakHttpsServer({
         res.setHeader('Retry-After', '60');
         return reply(res, 429, { error: 'Too many login attempts' });
       }
-      let token;
+      let credentials;
       try {
-        token = await readLoginBody(req);
+        credentials = await readLoginBody(req);
       } catch (error) {
         res.setHeader('Connection', 'close');
         return reply(res, error.message === 'LOGIN_TOO_LARGE' ? 413 : 400, {
           error: 'Invalid login request',
         });
       }
-      if (!matchesToken(token, config.token))
+      const principal = multiOperator
+        ? authenticateTakPrincipal(
+            principals,
+            credentials?.principal,
+            credentials?.token,
+          )
+        : null;
+      if (
+        multiOperator
+          ? !principal
+          : !matchesToken(credentials?.token, config.token)
+      )
         return reply(res, 401, { error: 'Access denied' });
       pruneSessions();
       sessions.delete(sessionId(req));
-      gateway?.recheckSessions();
+      recheckGateways();
       if (sessions.size >= MAX_HTTPS_SESSIONS)
         return reply(res, 503, { error: 'Session limit reached' });
+      if (
+        multiOperator &&
+        [...sessions.values()].filter(
+          (session) => session.principal === principal.id,
+        ).length >= MAX_PRINCIPAL_SESSIONS
+      )
+        return reply(res, 503, { error: 'Principal session limit reached' });
       const id = randomBytes(32).toString('hex');
-      sessions.set(id, { created: now(), lastSeen: now() });
+      sessions.set(id, {
+        created: now(),
+        lastSeen: now(),
+        ...(principal
+          ? { principal: principal.id, generation: principal.generation }
+          : {}),
+      });
       res.setHeader(
         'Set-Cookie',
         `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1000}`,
@@ -398,7 +536,7 @@ export async function startTakHttpsServer({
       if (!authorizeBrowserRequest(req, policy).ok)
         return reply(res, 403, { error: 'Same-origin logout required' });
       sessions.delete(sessionId(req));
-      gateway.recheckSessions();
+      recheckGateways();
       res.setHeader(
         'Set-Cookie',
         `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`,
@@ -406,8 +544,54 @@ export async function startTakHttpsServer({
       res.writeHead(303, { Location: '/login' });
       return res.end();
     }
-    if (gateway.handleHttpRequest(req, res)) return;
+    if (sessionGateway(authenticated).handleHttpRequest(req, res)) return;
     if (isOfflineMapsRequest(req)) {
+      if (multiOperator) {
+        const id = authenticated.principal;
+        let storePromise = principalMapStores.get(id);
+        if (!storePromise) {
+          const limits = { ...offlineMaps?.limits };
+          for (const [key, maximum] of Object.entries(PRINCIPAL_MAP_LIMITS))
+            limits[key] = Math.min(limits[key] ?? maximum, maximum);
+          storePromise = principalMapRoot(id).then((root) =>
+            createOfflinePackStore({
+              ...offlineMaps,
+              root,
+              forbiddenRoots: [workspaceRoot, distRoot],
+              limits,
+            }),
+          );
+          principalMapStores.set(id, storePromise);
+          storePromise.catch(() => {
+            if (principalMapStores.get(id) === storePromise)
+              principalMapStores.delete(id);
+          });
+        }
+        const store = await storePromise;
+        let handler = principalMapHandlers.get(id);
+        if (!handler) {
+          handler = createOfflineMapsHandler({
+            store,
+            now,
+            authorize: (request, { mutation }) =>
+              authenticateSession(request)?.principal === id
+                ? authorizeBrowserRequest(request, policy, {
+                    requireOrigin: mutation,
+                  })
+                : { ok: false, status: 401 },
+            shellManifest: () =>
+              (shellManifestPromise ||= createOfflineShellManifest(
+                distRoot,
+              ).catch((error) => {
+                shellManifestPromise = null;
+                throw error;
+              })),
+          });
+          principalMapHandlers.set(id, handler);
+        }
+        await handler(req, res);
+        return;
+      }
       offlineStorePromise ||= createOfflinePackStore({
         ...offlineMaps,
         root: offlineMaps?.root || defaultOfflinePackRoot(env),
@@ -521,12 +705,13 @@ export async function startTakHttpsServer({
         : certificate.checkHost(hostname))
     )
       throw new Error('HTTPS certificate does not match TAK_BROWSER_ORIGIN');
-    gateway = createTakGateway({
-      config: { ...config, accessPolicy: policy, localBootstrap: false },
-      WebSocketServer,
-      now,
-      authenticateSession,
-    });
+    if (!multiOperator)
+      gateway = createTakGateway({
+        config: { ...config, accessPolicy: policy, localBootstrap: false },
+        WebSocketServer,
+        now,
+        authenticateSession,
+      });
     const plugins =
       providerPlugins ??
       localProviderPlugins({ realtime: { tools: standaloneVoiceTools() } });
@@ -557,11 +742,18 @@ export async function startTakHttpsServer({
         );
         return;
       }
-      if (!gateway.handleUpgrade(req, socket, head)) socket.destroy();
+      if (
+        !sessionGateway(authenticateSession(req)).handleUpgrade(
+          req,
+          socket,
+          head,
+        )
+      )
+        socket.destroy();
     });
     const expiryTimer = setInterval(() => {
       pruneSessions();
-      gateway.recheckSessions();
+      recheckGateways();
     }, 30_000);
     expiryTimer.unref();
     async function close() {
@@ -569,18 +761,39 @@ export async function startTakHttpsServer({
       closed = true;
       clearInterval(expiryTimer);
       sessions.clear();
-      gateway.close();
+      closeGateways();
       await offlineStorePromise?.then((store) => store.close()).catch(() => {});
+      await Promise.all(
+        [...principalMapStores.values()].map((promise) =>
+          promise.then((store) => store.close()).catch(() => {}),
+        ),
+      );
+      principalMapStores.clear();
+      principalMapHandlers.clear();
       await cleanupProviders();
       const finished = new Promise((resolve) => server.close(resolve));
       server.closeIdleConnections?.();
       for (const socket of sockets) socket.destroy();
       await finished;
     }
-    return { server, gateway, origin, close, policy };
+    return {
+      server,
+      gateway: multiOperator
+        ? Object.freeze({ recheckSessions: recheckGateways })
+        : gateway,
+      origin,
+      close,
+      policy,
+      ...(multiOperator ? { reloadPrincipals } : {}),
+    };
   } catch (error) {
-    gateway?.close();
+    closeGateways();
     await offlineStorePromise?.then((store) => store.close()).catch(() => {});
+    await Promise.all(
+      [...principalMapStores.values()].map((promise) =>
+        promise.then((store) => store.close()).catch(() => {}),
+      ),
+    );
     await cleanupProviders();
     for (const socket of sockets) socket.destroy();
     if (server.listening) await new Promise((resolve) => server.close(resolve));
@@ -603,6 +816,19 @@ async function main() {
     `[tak-https] Private HTTPS console ready at ${app.origin}; operator login required.`,
   );
   let stopping = false;
+  if (app.reloadPrincipals)
+    process.on('SIGHUP', () => {
+      try {
+        app.reloadPrincipals();
+        console.info(
+          '[tak-https] Principal configuration reloaded; changed sessions revoked.',
+        );
+      } catch {
+        console.warn(
+          '[tak-https] Principal reload failed; named access revoked until a valid reload or restart.',
+        );
+      }
+    });
   const stop = () => {
     if (!stopping) {
       stopping = true;
