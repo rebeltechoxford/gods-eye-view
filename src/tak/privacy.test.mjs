@@ -6,6 +6,8 @@ import {
   isTakPrivacyBlocked,
   takDisclosureTicket,
   canDiscloseTakData,
+  takDisclosurePermissions,
+  takPrivacyState,
 } from './privacy.js';
 import {
   RealtimeViewport,
@@ -15,6 +17,106 @@ import {
 import { ShareLinkManager } from '../sharelink.js';
 import { RecordingControls } from '../ui/recordingControls.js';
 import { RealtimeConnection } from '../voice/realtimeConnection.js';
+
+test('permissions are independent, unknown uses fail closed, and revoke clears every scope', () => {
+  const viewer = {};
+  markTakDataPrivate(viewer);
+  assert.equal(authorizeTakDisclosure(viewer, true, 'ai'), true);
+  assert.equal(isTakPrivacyBlocked(viewer, 'ai'), false);
+  assert.equal(isTakPrivacyBlocked(viewer, 'sharing'), true);
+  assert.equal(isTakPrivacyBlocked(viewer, 'recording'), true);
+  assert.equal(isTakPrivacyBlocked(viewer), true);
+  assert.equal(isTakPrivacyBlocked(viewer, 'unknown'), true);
+  assert.equal(authorizeTakDisclosure(viewer, true, 'unknown'), false);
+  assert.deepEqual(takPrivacyState(viewer), {
+    private: true,
+    authorized: false,
+  });
+  const copy = takDisclosurePermissions(viewer);
+  copy.sharing = true;
+  assert.equal(isTakPrivacyBlocked(viewer, 'sharing'), true);
+  const ticket = takDisclosureTicket(viewer, 'ai');
+  assert.equal(canDiscloseTakData(ticket), true);
+  authorizeTakDisclosure(viewer, false, 'ai');
+  authorizeTakDisclosure(viewer, true, 'ai');
+  assert.equal(canDiscloseTakData(ticket), false);
+  authorizeTakDisclosure(viewer, true, 'sharing');
+  authorizeTakDisclosure(viewer, true, 'recording');
+  assert.equal(takPrivacyState(viewer).authorized, true);
+  authorizeTakDisclosure(viewer, false);
+  assert.deepEqual(takDisclosurePermissions(viewer), {
+    ai: false,
+    sharing: false,
+    recording: false,
+  });
+});
+
+test('allowing AI sends explicitly authorized images but leaves links and recording blocked', async () => {
+  const prior = globalThis.window;
+  const viewer = {};
+  globalThis.window = { __godsEyeView: { viewer } };
+  markTakDataPrivate(viewer);
+  authorizeTakDisclosure(viewer, true, 'ai');
+  const channel = { readyState: 'open' };
+  const sent = [];
+  const viewport = new RealtimeViewport({
+    readChannel: () => channel,
+    operations: {
+      sendRealtimeEvent: (event) => {
+        sent.push(event);
+        return true;
+      },
+    },
+  });
+  try {
+    assert.equal(
+      await viewport.sendRetainedImage(
+        async () => 'data:image/jpeg;base64,aGVsbG8=',
+        '',
+        'test',
+      ),
+      true,
+    );
+    assert.equal(sent.length, 1);
+    assert.equal(
+      ShareLinkManager.prototype._buildHashParams.call({ viewer }),
+      null,
+    );
+    assert.equal(
+      await ShareLinkManager.prototype.copyLink.call({ viewer }),
+      false,
+    );
+    assert.equal(
+      RecordingControls.prototype.setRecordingMode.call(
+        { hud: { viewer } },
+        true,
+      ),
+      false,
+    );
+    authorizeTakDisclosure(viewer, false, 'ai');
+    authorizeTakDisclosure(viewer, true, 'sharing');
+    assert.equal(
+      await viewport.sendRetainedImage(
+        async () => {
+          throw new Error('must not capture');
+        },
+        '',
+        'test',
+      ),
+      false,
+    );
+    let status;
+    await RealtimeConnection.prototype.start.call({
+      setStatus: (...args) => {
+        status = args;
+      },
+    });
+    assert.equal(status[0], 'error');
+    assert.match(status[1], /TAK privacy/);
+  } finally {
+    globalThis.window = prior;
+  }
+});
 
 test('TAK disclosure is per viewer, sticky and requires session authorization', () => {
   const a = {},

@@ -916,7 +916,7 @@ export class SceneDirector {
    * new shot appended to the selected scene. No-op if no scene is selected.
    */
   captureShot() {
-    if (isTakPrivacyBlocked(this.viewer)) {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
       this._updateStatus(TAK_PRIVACY_MESSAGE);
       return false;
     }
@@ -954,7 +954,7 @@ export class SceneDirector {
    * with the live viewport state. Useful for fine-tuning a shot in-place.
    */
   updateSelectedShot() {
-    if (isTakPrivacyBlocked(this.viewer)) {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
       this._updateStatus(TAK_PRIVACY_MESSAGE);
       return false;
     }
@@ -1946,7 +1946,7 @@ export class SceneDirector {
 
   /** Export the entire project as a timestamped JSON file download. */
   exportProject() {
-    if (isTakPrivacyBlocked(this.viewer)) {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
       this._updateStatus(TAK_PRIVACY_MESSAGE);
       return false;
     }
@@ -2048,7 +2048,7 @@ export class SceneDirector {
 
   /** Download the telemetry metadata from the most recent completed run as JSON. */
   downloadLastRunMetadata() {
-    if (isTakPrivacyBlocked(this.viewer)) {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
       this._updateStatus(TAK_PRIVACY_MESSAGE);
       return false;
     }

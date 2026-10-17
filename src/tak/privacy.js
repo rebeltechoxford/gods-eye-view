@@ -2,7 +2,12 @@
 // clear/hide: the camera and authored scene may still reveal a TAK location.
 const sessions = new WeakMap();
 export const TAK_PRIVACY_MESSAGE =
-  'TAK privacy protection is active. Authorize AI, sharing and recording in the TAK panel for this session first.';
+  'TAK privacy protection is active. Authorize this use in the TAK panel for this page session first.';
+export const TAK_DISCLOSURE_SCOPES = Object.freeze([
+  'ai',
+  'sharing',
+  'recording',
+]);
 
 function currentViewer() {
   return globalThis.window?.__godsEyeView?.viewer;
@@ -14,7 +19,7 @@ function session(viewer = currentViewer()) {
   if (!value) {
     value = {
       private: false,
-      authorized: false,
+      permissions: new Set(),
       revision: 0,
       listeners: new Set(),
     };
@@ -38,30 +43,59 @@ export function markTakDataPrivate(viewer) {
   value.private = true;
   changed(value);
 }
-export function authorizeTakDisclosure(viewer, authorized) {
+/** Omitted scope revokes/grants all; UI grants only a named use. Nothing persists. */
+export function authorizeTakDisclosure(viewer, authorized, scope) {
   const value = session(viewer);
-  if (!value || value.authorized === (authorized === true)) return;
-  value.authorized = authorized === true;
-  changed(value);
+  const scopes = scope === undefined ? TAK_DISCLOSURE_SCOPES : [scope];
+  if (!value || scopes.some((name) => !TAK_DISCLOSURE_SCOPES.includes(name)))
+    return false;
+  let updated = false;
+  for (const name of scopes) {
+    if (value.permissions.has(name) === (authorized === true)) continue;
+    if (authorized === true) value.permissions.add(name);
+    else value.permissions.delete(name);
+    updated = true;
+  }
+  if (updated) changed(value);
+  return true;
 }
 export function takPrivacyState(viewer) {
   const value = session(viewer);
   return {
     private: value?.private === true,
-    authorized: value?.authorized === true,
+    authorized: TAK_DISCLOSURE_SCOPES.every((name) =>
+      value?.permissions.has(name),
+    ),
   };
 }
-export function isTakPrivacyBlocked(viewer) {
+export function takDisclosurePermissions(viewer) {
   const value = session(viewer);
-  return !!value?.private && !value.authorized;
+  return Object.fromEntries(
+    TAK_DISCLOSURE_SCOPES.map((name) => [
+      name,
+      value?.permissions.has(name) === true,
+    ]),
+  );
 }
-export function takDisclosureTicket(viewer) {
+export function isTakPrivacyBlocked(viewer, scope) {
   const value = session(viewer);
-  return { viewer: viewer ?? currentViewer(), revision: value?.revision ?? 0 };
+  if (!value?.private) return false;
+  // An unclassified caller needs every permission. Unknown scope fails closed.
+  return scope === undefined
+    ? TAK_DISCLOSURE_SCOPES.some((name) => !value.permissions.has(name))
+    : !TAK_DISCLOSURE_SCOPES.includes(scope) || !value.permissions.has(scope);
+}
+export function takDisclosureTicket(viewer, scope) {
+  const value = session(viewer);
+  return Object.freeze({
+    viewer: viewer ?? currentViewer(),
+    scope,
+    revision: value?.revision ?? 0,
+  });
 }
 export function canDiscloseTakData(ticket) {
   return (
-    !isTakPrivacyBlocked(ticket?.viewer) &&
+    !isTakPrivacyBlocked(ticket?.viewer, ticket?.scope) &&
     (!ticket || (session(ticket.viewer)?.revision ?? 0) === ticket.revision)
   );
 }

@@ -512,8 +512,8 @@ export class ShareLinkManager {
 
   /** Copy a current-state snapshot with a copy-time timestamp. Returns true on success. */
   async copyLink({ nowMs = Date.now() } = {}) {
-    if (isTakPrivacyBlocked(this.viewer)) return false;
-    const privacy = takDisclosureTicket(this.viewer);
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) return false;
+    const privacy = takDisclosureTicket(this.viewer, 'sharing');
     const params = this._buildHashParams();
     if (!params) return false;
     params.set(SHARE_CREATED_AT_PARAM, String(Math.floor(nowMs / 1000)));
@@ -549,7 +549,8 @@ export class ShareLinkManager {
 
   /** Build a deterministic snapshot without mutating history. */
   _buildHashParams() {
-    if (this._destroyed || isTakPrivacyBlocked(this.viewer)) return null;
+    if (this._destroyed || isTakPrivacyBlocked(this.viewer, 'sharing'))
+      return null;
     const camera = this.viewer.camera;
     const carto = camera.positionCartographic;
     if (!carto) return null;

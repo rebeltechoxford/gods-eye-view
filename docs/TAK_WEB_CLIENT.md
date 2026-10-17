@@ -96,12 +96,13 @@ ping and emergency/cancel. Parsing a type or preserving an unknown detail
 extension does not implement its complete ATAK workflow. Directed/group chat,
 mission packages/data sync, attachments, drawing/route editing, full 2525 symbols,
 offline field resilience and native plugins remain outside this foundation.
-The confirmed next download requirement is a retained copy on both the server
-and phone, including actual disconnected phone launch/rendering. Source
-permissions and acceptance criteria are recorded in
-[the offline map plan](TAK_OFFLINE_MAP_PLAN.md). This proposal does not yet
-provide offline storage. AltStore IPA delivery also needs a native build and
-device acceptance; a browser package does not establish native TAK parity.
+USGS raster downloads are implemented on both the server and browser/device,
+with bounded verified packs, backup/import and an explicitly saved app shell.
+Closed-server browser launch/rendering is tested; physical iPhone WebKit storage
+acceptance remains open. Source permissions and evidence are recorded in
+[the offline map plan](TAK_OFFLINE_MAP_PLAN.md). An unsigned AltStore IPA is built
+and simulator-tested; personal signing and physical device acceptance are still
+required. The wrapper does not establish native TAK or background GPS parity.
 
 Browser connection, gateway submission, upstream queue/write and real peer
 receipt are different states. Never describe `LIVE`, a successful send return
@@ -114,8 +115,11 @@ private fix enters the page, a per-viewer sticky guard blocks AI/voice context
 and imagery, public links, scene capture/export and recording until the
 operator explicitly authorizes disclosure in the panel. Hiding/clearing data
 does not remove the guard because camera/location context can remain sensitive.
-Authorization is page-session-wide and can be revoked. Capture/async operations
-recheck the current permission before returning or publishing results.
+AI / voice providers, public sharing / scene exports, and recording use separate
+permissions for the current page session. Allowing one use does not enable the
+others. Each switch can be revoked independently, or all revoked together;
+captures/async operations recheck both the required permission and its revision
+before returning or publishing results. Sign-out and session expiry revoke all.
 
 Public tool/catalog state excludes raw TAK contacts. Embedded/clean/recording
 views hide TAK controls and fresh embedded pages do not auto-connect. Additional

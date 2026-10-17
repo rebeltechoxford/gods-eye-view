@@ -51,7 +51,7 @@ export class RealtimeConnection {
     return this.readStatus();
   }
   async start({ pushToTalk = false } = {}) {
-    if (isTakPrivacyBlocked()) {
+    if (isTakPrivacyBlocked(undefined, 'ai')) {
       this.setStatus('error', TAK_PRIVACY_MESSAGE);
       return;
     }
@@ -261,7 +261,8 @@ export class RealtimeConnection {
   // attempt has been superseded by a newer start()/stop() — the caller must
   // then `return` immediately without touching shared session state (H7).
   abandonStart(epoch, resources) {
-    if (epoch === this.startEpoch && !isTakPrivacyBlocked()) return false;
+    if (epoch === this.startEpoch && !isTakPrivacyBlocked(undefined, 'ai'))
+      return false;
     // These resources may or may not have been promoted onto `this` yet. If a
     // stop() bumped the epoch it already tore down whatever was promoted; if a
     // *second* start() bumped it, that start owns `this.stream`/`this.pc` now,
@@ -325,7 +326,7 @@ export class RealtimeConnection {
 
   sendRealtimeEvent(message, logEventName = 'client.event') {
     if (
-      isTakPrivacyBlocked() &&
+      isTakPrivacyBlocked(undefined, 'ai') &&
       ![
         'conversation.item.delete',
         'response.cancel',

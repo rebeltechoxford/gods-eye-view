@@ -27,7 +27,7 @@ export function createPointerPicker({
   pickWorldFromScreen = defaultAnnotationResolver.pickWorldFromScreen,
 }) {
   return function pickPointer(x, y) {
-    if (isTakPrivacyBlocked(viewer)) return null;
+    if (isTakPrivacyBlocked(viewer, 'ai')) return null;
     const scene = viewer?.scene;
     const canvas = scene?.canvas;
     if (!scene || !canvas) return null;

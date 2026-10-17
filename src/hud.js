@@ -701,12 +701,12 @@ export class IntelHUD {
    */
   async _updateSummary(animate = false, force = false) {
     const fallbackText = this._composeSummary();
-    if (isTakPrivacyBlocked(this.viewer)) {
+    if (isTakPrivacyBlocked(this.viewer, 'ai')) {
       this._summaryRequest?.abort();
       this._setSummaryText(fallbackText, false);
       return;
     }
-    const privacy = takDisclosureTicket(this.viewer);
+    const privacy = takDisclosureTicket(this.viewer, 'ai');
     if (!this._latestMetrics) {
       this._setSummaryText(fallbackText, animate);
       return;

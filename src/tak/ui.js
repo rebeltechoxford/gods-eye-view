@@ -29,7 +29,13 @@ const PANEL_HTML = `
   <p class="tak-web-hint" data-tak-device-state>Foreground device state…</p>
   <p class="tak-web-explainer" data-tak-gateway>Checking gateway…</p>
   <label class="tak-web-check"><input type="checkbox" data-tak-visible checked/> Show TAK layer on globe</label>
-  <label class="tak-web-check"><input type="checkbox" data-tak-disclosure/> Allow AI, public links, scene exports and recording to include private TAK data and locations for this page session</label>
+  <details class="tak-web-section" data-tak-section="privacy" open>
+    <summary>PRIVATE DATA PERMISSIONS</summary>
+    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="ai"/> Allow AI / voice providers to receive private locations, context and map images for this page session</label>
+    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="sharing"/> Allow public links, scene capture / export and embedded view sharing to include private locations for this page session</label>
+    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="recording"/> Allow recording mode to include private data and locations for this page session</label>
+    <button type="button" data-tak-revoke>Revoke all permissions</button>
+  </details>
   <p class="tak-web-hint" data-tak-privacy>Privacy protection starts when TAK data is loaded.</p>
   <details class="tak-web-section" data-tak-section="phone">
     <summary>PHONE EUD / INSTALL</summary>
@@ -228,7 +234,8 @@ export function createTakPanel({
     $('[data-tak-chat]').replaceChildren();
     $('[data-tak-fix]').textContent = 'No position set.';
     $('[data-tak-sa]').checked = false;
-    $('[data-tak-disclosure]').checked = false;
+    for (const input of root.querySelectorAll('[data-tak-disclosure]'))
+      input.checked = false;
     $('[data-tak-marker-broadcast]').checked = false;
     gpsOn = false;
     const gps = $('[data-tak-gps]');
@@ -437,9 +444,19 @@ export function createTakPanel({
       : 'RAISE 911 ALERT';
     $('[data-tak-visible]').checked = overlay.isVisible();
     const policy = privacy.state();
-    $('[data-tak-disclosure]').checked = policy.authorized;
-    $('[data-tak-privacy]').textContent = policy.authorized
-      ? 'Session authorization is ON. AI, links, exports and recording may reveal tactical data and locations.'
+    const permitted = [];
+    const permissionLabels = {
+      ai: 'AI / voice',
+      sharing: 'links / scenes',
+      recording: 'recording',
+    };
+    for (const input of root.querySelectorAll('[data-tak-disclosure]')) {
+      const scope = input.dataset.takDisclosure;
+      input.checked = policy.permissions?.[scope] === true;
+      if (input.checked) permitted.push(permissionLabels[scope]);
+    }
+    $('[data-tak-privacy]').textContent = permitted.length
+      ? `Allowed this page session: ${permitted.join(', ')}. Other uses stay protected.`
       : policy.private
         ? 'Protected: AI, sharing, scene capture/export and recording are blocked. Clearing or hiding contacts keeps locations protected until reload.'
         : 'Privacy protection starts when TAK data is loaded.';
@@ -467,8 +484,13 @@ export function createTakPanel({
   $('[data-tak-visible]').addEventListener('change', (event) =>
     overlay.setVisible(event.target.checked),
   );
-  $('[data-tak-disclosure]').addEventListener('change', (event) => {
-    privacy.authorize(event.target.checked);
+  for (const input of root.querySelectorAll('[data-tak-disclosure]'))
+    input.addEventListener('change', () => {
+      privacy.authorize(input.checked, input.dataset.takDisclosure);
+      render();
+    });
+  $('[data-tak-revoke]').addEventListener('click', () => {
+    privacy.authorize(false);
     render();
   });
   $('[data-tak-filter]').addEventListener('input', () => renderRoster());

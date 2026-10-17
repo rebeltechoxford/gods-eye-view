@@ -2576,7 +2576,7 @@ export async function getBasemapLabelContext(
   service = defaultGeospatial,
   { cachedOnly = false } = {},
 ) {
-  if (isTakPrivacyBlocked(viewer))
+  if (isTakPrivacyBlocked(viewer, 'ai'))
     return { placeLabels: [], streetLabels: [], nearbyPlaceLabels: [] };
   const { reverseGeocodeCache, nearbyPlacesCache } = cachesFor(service);
   const samples = sampleViewportCartographics(viewer);

@@ -174,9 +174,10 @@ export function createApplicationTools({
   debug.takClient = takClient;
   defer(
     subscribeTakPrivacy(viewer, () => {
-      if (!isTakPrivacyBlocked(viewer)) return;
-      styleManager.hud?._summaryRequest?.abort();
-      styleManager.setRecordingMode(false);
+      if (isTakPrivacyBlocked(viewer, 'ai'))
+        styleManager.hud?._summaryRequest?.abort();
+      if (isTakPrivacyBlocked(viewer, 'recording'))
+        styleManager.setRecordingMode(false);
     }),
   );
   defer(() => takClient.destroy());

@@ -68,11 +68,15 @@ bounded separately; these limits do not promise a frame rate on every EUD.
 
 Loading TAK data or setting a private position activates privacy protection for
 the page session. AI/voice context and imagery, public share links, scene
-capture/export and recording are blocked until the TAK disclosure checkbox is
-explicitly enabled. Hiding or clearing contacts keeps protection active because
-the camera position can still reveal a tactical location. Revoke disclosure by
-clearing the checkbox. The checkbox is a broad session permission; use it only
-when every enabled destination is appropriate for the current data.
+capture/export and recording are blocked until their individual permissions in
+**PRIVATE DATA PERMISSIONS** are explicitly enabled. AI / voice, public links /
+scenes and recording have separate switches; allowing one does not authorize
+the others. Each permission lasts for this page session only. Clear a switch or
+press **Revoke all permissions** to withdraw it. In-flight captures are invalidated
+and protected active voice/recording is stopped when its permission is revoked.
+Hiding or clearing contacts keeps protection active because the camera position
+can still reveal a tactical location. Each category covers its named destinations;
+authorize it only when those destinations are appropriate for the current data.
 
 Embedded/clean/recording views hide TAK controls. Private contacts are kept out
 of the public GEV layer registry and share-state formats.
