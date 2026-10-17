@@ -1063,5 +1063,7 @@
   "docs/TAK_MULTIOPERATOR.md",
   "src/tak/operatorContext.js",
   "src/tak/operatorContext.test.mjs",
-  "scripts/qa-tak-operators.mjs"
+  "scripts/qa-tak-operators.mjs",
+  "src/maps/offline/mbtilesUpload.test.mjs",
+  "scripts/qa-mbtiles.mjs"
 ]
