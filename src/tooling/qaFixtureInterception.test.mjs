@@ -189,3 +189,59 @@ test('an explicitly disposed fixture owner tolerates pending target closure; liv
   assert.match(active.errors[0], /Target closed/);
   await active.dispose();
 });
+
+test('an old subresource invalid ID requires the exact owning document to be replaced after its pause', async () => {
+  for (const mode of [
+    'matching',
+    'different-frame',
+    'missing-loader',
+    'document',
+  ]) {
+    const f = fixture(async (command, _args, client) => {
+      if (command === 'Fetch.fulfillRequest') {
+        client.emit('Page.frameNavigated', {
+          frame: {
+            id: mode === 'different-frame' ? 'other-frame' : 'frame-1',
+            loaderId: 'new-loader',
+          },
+        });
+        throw new Error(
+          'Protocol error (Fetch.fulfillRequest): Invalid InterceptionId.',
+        );
+      }
+      return {};
+    });
+    const hook = await interceptFixtures(f.page, {
+      origin: 'https://127.0.0.1',
+      handle: (request) => request.respond({ body: 'x' }),
+    });
+    f.client.emit('Network.requestWillBeSent', {
+      requestId: 'network-1',
+      frameId: 'frame-1',
+      loaderId: mode === 'missing-loader' ? '' : 'old-loader',
+    });
+    f.client.emit('Fetch.requestPaused', {
+      ...pause(),
+      frameId: 'frame-1',
+      resourceType: mode === 'document' ? 'Document' : 'Other',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (mode === 'matching') {
+      assert.deepEqual(hook.errors, []);
+      assert.deepEqual(hook.cancellations, [
+        {
+          networkId: 'network-1',
+          error: 'document-replaced',
+          loaderId: 'old-loader',
+          replacementLoaderId: 'new-loader',
+        },
+      ]);
+    } else {
+      assert.equal(hook.errors.length, 1, mode);
+      assert.deepEqual(hook.cancellations, [], mode);
+    }
+    await hook.dispose();
+    assert.equal(f.client.listenerCount('Network.requestWillBeSent'), 0);
+    assert.equal(f.client.listenerCount('Page.frameNavigated'), 0);
+  }
+});
