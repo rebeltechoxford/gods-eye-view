@@ -1,0 +1,56 @@
+name: iOS unsigned IPA
+
+on:
+  push:
+    branches: [feature/tak-ios-ipa]
+    paths:
+      [
+        'ios/**',
+        'scripts/build-ios-ipa.sh',
+        '.github/workflows/ios-ipa.yml',
+        'docs/TAK_IOS_IPA.md',
+      ]
+  pull_request:
+    paths:
+      [
+        'ios/**',
+        'scripts/build-ios-ipa.sh',
+        '.github/workflows/ios-ipa.yml',
+        'docs/TAK_IOS_IPA.md',
+      ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unsigned-device-ipa:
+    name: Device IPA and simulator setup smoke
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Compile, validate and package without signing credentials
+        run: bash scripts/build-ios-ipa.sh --smoke
+
+      - name: Upload unsigned device IPA and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: GEVTAK-unsigned-${{ github.sha }}
+          path: |
+            output/ios/GEVTAK-unsigned.ipa
+            output/ios/provenance.json
+            output/ios/SHA256SUMS
+            output/ios/simulator-setup.png
+          if-no-files-found: error
+          retention-days: 7

@@ -1,4 +1,5 @@
 import * as Cesium from 'cesium';
+import { REFERENCE_MAPS } from './referenceCatalog.js';
 export const MAP_STACKS = [
   {
     id: 'photoreal',
@@ -37,4 +38,5 @@ export const MAP_STACKS = [
     kind: 'osm',
     requiresIon: false,
   },
+  ...REFERENCE_MAPS,
 ];

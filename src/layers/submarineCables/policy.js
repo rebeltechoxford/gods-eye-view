@@ -78,7 +78,21 @@ export const CABLE_LABEL_DEPTH_DECISION = Object.freeze({
  */
 
 export const CABLE_GLOBE_STACK_IDS = Object.freeze(
-  new Set(['bing-aerial', 'bing-labels', 'esri-imagery', 'osm']),
+  // Each curated raster/chart source uses the existing terrain globe.
+  new Set([
+    'bing-aerial',
+    'bing-labels',
+    'esri-imagery',
+    'osm',
+    'esri-topo',
+    'esri-terrain',
+    'esri-ocean',
+    'usgs-topo',
+    'noaa-enc',
+    'faa-vfr',
+    'faa-ifr-low',
+    'faa-ifr-high',
+  ]),
 );
 
 /** EntityCluster's private marker collections and their required types. */

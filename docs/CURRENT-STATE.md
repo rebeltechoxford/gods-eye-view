@@ -1,5 +1,38 @@
 # God's Eye View Current State
 
+## Additive TAK foundation — October 16, 2026
+
+`src/tak/` adds session CoT contacts, bounded movement trails, affiliation
+frames/callsign cards in the shared overlay host, self position with explicit
+SA broadcast, local/shared markers, broadcast GeoChat and alerts. Existing GEV
+catalog sources, HUD/camera ownership, voice, scenes and public layers remain
+under their existing owners. TAK is separate from public layer/share tokens.
+
+The optional Node gateway accepts only authenticated browsers on the machine
+running it. It validates real loopback sockets, Origin/Host/port, device identity
+and owned marker commands; multiuser/group hosting is not implemented. Configured
+TAK Server uplinks validate TLS certificates/hostnames and keep all certificate
+material on the server. Mesh and server bridging is explicit. Input, replay,
+rate, connection and outgoing buffers are bounded. Network send status means
+gateway submission; actual peer delivery is not acknowledged.
+
+Loading TAK information activates sticky page-session privacy protection.
+App-owned AI/voice images/context, public view sharing, scene capture/export and
+recording require the operator's explicit session disclosure permission.
+Clear/hide does not silently release protection, because the camera can still
+reveal a private location. Ordinary GEV behavior is unchanged before TAK data
+is used. This policy cannot control manual OS screenshots or third-party map
+providers' observations of requested map areas.
+
+Run `npm run tak:lab` for the app and a synthetic, isolated local TCP peer;
+Connect bootstraps an ephemeral local token. `npm run qa:tak -- --url
+http://127.0.0.1:4174 --lab` exercises the real local transport return path,
+privacy, rendering, mobile/embedded views and teardown. Unit security tests use
+fresh local mTLS certificates. These are local evidence, not acceptance against
+ATAK-CIV/iTAK/WinTAK or a real TAK Server. Run instructions and remaining work
+are in [HOW_TO_RUN.md](../HOW_TO_RUN.md) and [TAK_TODO.md](../TAK_TODO.md); the
+capability inventory is [TAK_FEATURE_MATRIX.md](TAK_FEATURE_MATRIX.md).
+
 Vessel sources can report healthy empty coverage using a current, complete
 snapshot with zero raw rows, a healthy transport and a positive last-message
 time. This clears obsolete contacts and settles startup without manufacturing

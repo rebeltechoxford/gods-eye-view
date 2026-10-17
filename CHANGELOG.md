@@ -1,5 +1,15 @@
 # Changelog
 
+- Add an authenticated, loopback-only TAK gateway with verified TLS uplinks,
+  bounded transport and device-owned marker authorization. The additive TAK
+  panel supports contacts/trails, explicit self position broadcast, markers,
+  broadcast GeoChat and alerts. `npm run tak:lab` starts a synthetic local peer
+  and the real app without external TAK setup; this does not certify real TAK
+  interoperability. Keep private TAK views out of AI, share links, scene exports
+  and recording until session disclosure is explicitly authorized. Repair
+  altitude, stale state, GPS teardown, map focus and embedded-view behavior.
+  See `HOW_TO_RUN.md`, `TAK_TODO.md` and `docs/TAK_FEATURE_MATRIX.md`.
+
 - Treat explicitly current, complete empty vessel coverage as a successful update,
   clearing obsolete contacts while retaining stale or incomplete snapshots.
 

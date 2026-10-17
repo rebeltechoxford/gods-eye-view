@@ -37,7 +37,8 @@ test('the complete Realtime tool payload pins the manifest-generated layer relea
     // omit top-level anyOf (OpenAI rejects it). Contacts list routing preserves
     // requested radius and center authority in descriptions only.
     // Street Level adds its toggle enum values and generated alias hint.
-    '9eb113454c5af5e32e27ffcdc7919d0e4600ba1d204f8f175e071152be41ad0f',
+    // Eight curated reference/chart maps add only set_map_stack enum values.
+    '1c27bd95899bcb41a9ca77b5c5be6aff2a75b2a4c870dc26a035aa82a3c8c9e1',
   );
 });
 
@@ -101,6 +102,10 @@ test('all legacy action arguments are byte-identical after removing the delibera
   // layerManifest.test.mjs; the two shipped right-rail panels are additive.
   const property = (name) =>
     legacy.find((tool) => tool.name === name).parameters.properties;
+  // Curated chart/map sources extend the original five basemap arguments.
+  property('set_map_stack').stack.enum = property(
+    'set_map_stack',
+  ).stack.enum.slice(0, 5);
   delete property('set_layer_visibility').layerId.enum;
   delete property('show_data_layers_menu').layerId.enum;
   delete property('get_entity_context').layerId.enum;

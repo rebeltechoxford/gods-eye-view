@@ -121,6 +121,80 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  tak-browser:
+    # Synthetic contacts only. HTTPS trust is pinned to a temporary test leaf;
+    # the lab binds loopback and never connects to a real TAK system.
+    name: Private TAK and phone browser gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.0
+          cache: npm
+
+      - name: Install locked dependencies and headless Chrome
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Private HTTPS, session and phone PWA gate
+        run: node scripts/qa-tak-private.mjs
+
+      - name: Named operator isolation, scope binding and offline gate
+        run: node scripts/qa-tak-operators.mjs
+
+      - name: Retained map, backup and disconnected application gate
+        run: npm run qa:maps:offline
+
+      - name: Local MBTiles file, phone retention and disconnected rendering gate
+        run: npm run qa:maps:mbtiles
+
+      - name: Start the isolated synthetic CoT lab
+        run: |
+          npm run tak:lab > tak-lab.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            curl -sf http://127.0.0.1:4174/ > /dev/null && exit 0
+            sleep 2
+          done
+          cat tak-lab.log
+          exit 1
+
+      - name: GEV, privacy and two-way synthetic CoT gate
+        run: npm run qa:tak -- --url http://127.0.0.1:4174 --lab
+
+      - name: Phone coordinate and navigation gate
+        run: node scripts/qa-tak-navigation.mjs --url http://127.0.0.1:4174
+
+      - name: Phone mission package file and download gate
+        run: node scripts/qa-tak-packages.mjs --url http://127.0.0.1:4174
+
+      - name: Phone drawing and route geometry gate
+        run: node scripts/qa-tak-drawings.mjs --url http://127.0.0.1:4174
+
+      - name: Curated maps and chart switching gate
+        run: node scripts/qa-reference-maps.mjs --url http://127.0.0.1:4174
+
+      - name: Synthetic lab log
+        if: failure()
+        run: cat tak-lab.log 2>/dev/null || true
+
+      - name: Upload gate evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tak-browser-evidence
+          path: qa-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
   windows-onboarding:
     name: Windows onboarding
     runs-on: windows-latest

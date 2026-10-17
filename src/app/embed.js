@@ -12,6 +12,7 @@
  */
 
 import * as Cesium from 'cesium';
+import { isTakPrivacyBlocked } from '../tak/privacy.js';
 import { announceNavigationAuthority } from '../navigationPolicy.js';
 import { annotationsFromParams, createView } from '../view/index.js';
 
@@ -283,12 +284,17 @@ export function installViews({
     queue = queue.then(async () => {
       if (signal?.aborted) return;
       const steps = await applyView(view, { viewer, dataManager, run, signal });
+      // The parent receives operation status only while private TAK is loaded.
+      // Provider errors may contain a derived map location or request URL.
+      const reported = isTakPrivacyBlocked(viewer, 'sharing')
+        ? steps.map(({ step, ok }) => ({ step, ok }))
+        : steps;
       post(
         {
           type: EMBED_APPLIED_MESSAGE,
           id,
           ok: steps.every((step) => step.ok),
-          steps,
+          steps: reported,
         },
         replyOrigin,
       );

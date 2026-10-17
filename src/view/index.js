@@ -11,6 +11,7 @@ import {
   decodeLayerStateParams,
   encodeLayerStateParams,
 } from '../data/layerState.js';
+import { ALL_MAP_IDS } from '../maps/referenceCatalog.js';
 
 /** Visual styles by internal name, with the name share links use. */
 export const STYLE_URL_NAMES = Object.freeze({
@@ -31,13 +32,7 @@ const STYLES_BY_URL_NAME = Object.freeze(
 
 export const VIEW_STYLES = Object.freeze(Object.keys(STYLE_URL_NAMES));
 
-export const VIEW_MAPS = Object.freeze([
-  'photoreal',
-  'bing-aerial',
-  'bing-labels',
-  'esri-imagery',
-  'osm',
-]);
+export const VIEW_MAPS = ALL_MAP_IDS;
 
 /**
  * What can be followed, the layer that shows it, and where the layer-state

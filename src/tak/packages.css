@@ -1,0 +1,39 @@
+.tak-package-panel p,
+.tak-package-panel li,
+.tak-package-panel label {
+  overflow-wrap: anywhere;
+}
+.tak-package-panel > label:not(.tak-web-check) {
+  display: block;
+  margin: 10px 0;
+}
+.tak-package-panel input:not([type='checkbox']) {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+}
+.tak-package-panel fieldset {
+  min-width: 0;
+  margin: 12px 0;
+  border: 1px solid #4c667a;
+}
+.tak-package-panel [data-tak-package-contacts] {
+  max-height: 180px;
+  overflow: auto;
+}
+.tak-package-panel .tak-web-check,
+.tak-package-panel button {
+  min-height: 44px;
+}
+.tak-package-panel button {
+  max-width: 100%;
+  margin: 4px 4px 4px 0;
+  white-space: normal;
+}
+.tak-package-panel ul {
+  padding-left: 18px;
+}
+.tak-package-hash {
+  font-family: monospace;
+}

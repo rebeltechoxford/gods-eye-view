@@ -4,11 +4,14 @@ export const MAX_COT_DOCUMENT_BYTES = 1024 * 1024;
 export const MAX_COT_EVENTS = 1000;
 
 function safeText(value, maxLength = 128) {
-  return String(value ?? '').trim().slice(0, maxLength);
+  return String(value ?? '')
+    .trim()
+    .slice(0, maxLength);
 }
 
 function finiteCoordinate(value, min, max) {
-  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= min && number <= max
     ? number
@@ -24,37 +27,53 @@ export function cotAffiliation(type) {
   const code = safeText(type).split('-');
   if (code[0] !== 'a') return 'marker';
   switch (code[1]) {
-    case 'f': return 'friendly';
-    case 'h': return 'hostile';
-    case 'n': return 'neutral';
-    case 'u': return 'unknown';
-    default: return 'unknown';
+    case 'f':
+      return 'friendly';
+    case 'h':
+      return 'hostile';
+    case 'n':
+      return 'neutral';
+    case 'u':
+      return 'unknown';
+    default:
+      return 'unknown';
   }
 }
 
 /** Normalize only geographic CoT events. Unusable records are rejected. */
 export function normalizeCotRecord(input, receivedAtMs = Date.now()) {
   if (!input || typeof input !== 'object') return null;
-  const uid = safeText(input.uid, 160);
+  // Never truncate an identity: distinct long UIDs must not become one contact.
+  const uid = String(input.uid ?? '').trim();
   const lat = finiteCoordinate(input.lat, -90, 90);
   const lon = finiteCoordinate(input.lon, -180, 180);
-  if (!uid || lat === null || lon === null) return null;
+  if (!uid || uid.length > 160 || lat === null || lon === null) return null;
   const type = safeText(input.type || 'b-m-p-s-p-i');
   const altitudeM = finiteCoordinate(input.hae, -10000, 1000000);
   const eventTimeMs = parseTimestamp(input.time);
   const staleAtMs = parseTimestamp(input.stale);
   const callsign = safeText(input.callsign || uid, 120);
   return Object.freeze({
-    uid, callsign, type, affiliation: cotAffiliation(type),
-    lat, lon, altitudeM, how: safeText(input.how || 'h-g-i-g-o'),
-    eventTimeMs, staleAtMs, receivedAtMs,
+    uid,
+    callsign,
+    type,
+    affiliation: cotAffiliation(type),
+    lat,
+    lon,
+    altitudeM,
+    how: safeText(input.how || 'h-g-i-g-o'),
+    eventTimeMs,
+    staleAtMs,
+    receivedAtMs,
   });
 }
 
 function childByLocalName(parent, name) {
-  return Array.from(parent?.children || []).find(
-    (node) => node.localName === name,
-  ) || null;
+  return (
+    Array.from(parent?.children || []).find(
+      (node) => node.localName === name,
+    ) || null
+  );
 }
 
 /**
@@ -74,8 +93,9 @@ export function parseCotXml(xml, { parseXml } = {}) {
   if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml)) {
     throw new Error('CoT documents cannot contain DTD or entity declarations.');
   }
-  const parse = parseXml || ((value) =>
-    new DOMParser().parseFromString(value, 'application/xml'));
+  const parse =
+    parseXml ||
+    ((value) => new DOMParser().parseFromString(value, 'application/xml'));
   const document = parse(xml);
   if (!document || typeof document.getElementsByTagName !== 'function') {
     throw new Error('Invalid CoT XML document.');
@@ -95,7 +115,8 @@ export function parseCotXml(xml, { parseXml } = {}) {
   for (const event of eventNodes) {
     const point = childByLocalName(event, 'point');
     const contact = childByLocalName(
-      childByLocalName(event, 'detail'), 'contact',
+      childByLocalName(event, 'detail'),
+      'contact',
     );
     const record = normalizeCotRecord({
       uid: event.getAttribute('uid'),

@@ -1,0 +1,62 @@
+.tak-drawings fieldset {
+  border: 1px solid rgba(100, 196, 255, 0.3);
+  border-radius: 6px;
+  margin: 10px 0;
+  padding: 10px;
+  min-width: 0;
+}
+.tak-drawings input:not([type='checkbox']),
+.tak-drawings select,
+.tak-drawings textarea {
+  width: 100%;
+  min-width: 0;
+}
+.tak-drawings input[type='color'] {
+  height: 44px;
+  padding: 3px;
+}
+.tak-drawings .tak-web-row > label {
+  flex: 1;
+  min-width: 0;
+}
+.tak-drawing-vertices {
+  max-height: 360px;
+  overflow: auto;
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.tak-drawing-vertices li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.tak-drawing-vertex-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.tak-drawing-vertex-actions button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.tak-drawing-route-options {
+  display: grid;
+  gap: 8px;
+}
+.tak-drawings [hidden] {
+  display: none !important;
+}
+@media (max-width: 700px), (pointer: coarse) {
+  .tak-drawings input,
+  .tak-drawings textarea,
+  .tak-drawings select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .tak-drawings button {
+    min-height: 44px;
+  }
+  .tak-drawings .tak-web-row {
+    flex-wrap: wrap;
+  }
+}
