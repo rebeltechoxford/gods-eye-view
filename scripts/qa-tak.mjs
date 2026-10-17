@@ -869,11 +869,47 @@ try {
     await step(
       'explicit authenticated local gateway connect and shared marker submission',
       async () => {
+        // Exercise real local/import UI actions immediately before Connect.
+        // They must never become a reconnect/send outbox.
+        const submissionsBeforeLocal = await page.evaluate(() =>
+          window.__godsEyeView.takClient.client
+            .submissions()
+            .map((item) => item.id),
+        );
+        await importXml(
+          page,
+          cot({
+            uid: 'QA-CONNECT-LOCAL-IMPORT',
+            callsign: 'QA CONNECT IMPORT',
+          }),
+        );
+        await marker(page, 'QA CONNECT LOCAL MARKER', false);
+        const beforeConnect = await page.evaluate(() => ({
+          tx: window.__godsEyeView.takClient.client.counters().tx,
+          submissions: window.__godsEyeView.takClient.client
+            .submissions()
+            .map((item) => item.id),
+        }));
+        assert.deepEqual(
+          beforeConnect.submissions,
+          submissionsBeforeLocal,
+          'imports and unshared markers create no network submission',
+        );
         await section(page, 'network');
         await fill(page, '[data-tak-token]', token);
         await press(page, '[data-tak-connect]');
         await page.waitForFunction(
           () => window.__godsEyeView.takClient.client.link().state === 'open',
+        );
+        assert.deepEqual(
+          await page.evaluate(() => ({
+            tx: window.__godsEyeView.takClient.client.counters().tx,
+            submissions: window.__godsEyeView.takClient.client
+              .submissions()
+              .map((item) => item.id),
+          })),
+          beforeConnect,
+          'identity acknowledgement does not publish existing local/imported data',
         );
         await marker(page, 'QA GATEWAY MARKER', true);
         assert(
@@ -886,6 +922,79 @@ try {
           /gateway|submitted|sent|queued|shared/i,
         );
         if (lab) {
+          await page.waitForFunction(() => {
+            const client = window.__godsEyeView.takClient.client;
+            const marker = client.store
+              .list()
+              .find((contact) =>
+                contact.callsign.startsWith('QA GATEWAY MARKER'),
+              );
+            return (
+              marker &&
+              client
+                .submissions()
+                .some(
+                  (item) =>
+                    item.uid === marker.uid &&
+                    item.state === 'submitted' &&
+                    item.routes.some(
+                      (route) =>
+                        route.id === 'server' && route.state === 'submitted',
+                    ),
+                )
+            );
+          });
+          const submissionId = await page.evaluate(() => {
+            const client = window.__godsEyeView.takClient.client;
+            const marker = client.store
+              .list()
+              .find((contact) =>
+                contact.callsign.startsWith('QA GATEWAY MARKER'),
+              );
+            return client.submissions().find((item) => item.uid === marker.uid)
+              .id;
+          });
+          if (
+            !(await page.$eval(
+              '[data-tak-section="submissions"]',
+              (element) => element.open,
+            ))
+          )
+            await press(page, '[data-tak-section="submissions"] > summary');
+          await page.waitForFunction(
+            (id) =>
+              [...document.querySelectorAll('[data-submission-id]')].some(
+                (row) =>
+                  row.dataset.submissionId === id &&
+                  row.dataset.submissionState === 'submitted' &&
+                  row.getBoundingClientRect().height > 0,
+              ),
+            {},
+            submissionId,
+          );
+          await page.evaluate((id) => {
+            [...document.querySelectorAll('[data-submission-id]')]
+              .find((row) => row.dataset.submissionId === id)
+              .scrollIntoView({ block: 'center' });
+          }, submissionId);
+          const rowText = await page.evaluate(
+            (id) =>
+              [...document.querySelectorAll('[data-submission-id]')].find(
+                (row) => row.dataset.submissionId === id,
+              ).textContent,
+            submissionId,
+          );
+          assert.match(rowText, /QA GATEWAY MARKER/);
+          assert.match(rowText, /SUBMITTED/);
+          assert.match(rowText, /server: submitted/);
+          assert.doesNotMatch(rowText, /delivered|peer acknowledged/i);
+          assert.match(
+            await page.$eval(
+              '[data-tak-section="submissions"]',
+              (element) => element.textContent,
+            ),
+            /Peer receipt is unconfirmed/,
+          );
           await page.waitForFunction(() =>
             window.__godsEyeView.takClient.client.store
               .list()
@@ -915,6 +1024,19 @@ try {
                 (message) =>
                   message.text === 'SYNTHETIC peer received: QA lab roundtrip',
               ),
+          );
+          const chatSubmitted = await page.evaluate(() =>
+            window.__godsEyeView.takClient.client
+              .submissions()
+              .findLast((item) => item.kind === 'chat'),
+          );
+          await page.waitForFunction(
+            (id) =>
+              window.__godsEyeView.takClient.client
+                .submissions()
+                .some((item) => item.id === id && item.state === 'submitted'),
+            {},
+            chatSubmitted.id,
           );
           await press(page, '[data-tak-visible]');
           await captureEvidence(page, 'desktop-lab-return');
