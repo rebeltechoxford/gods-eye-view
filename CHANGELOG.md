@@ -1,5 +1,16 @@
 # Changelog
 
+- EMCON (emissions control): an **EMCON** button above the TAK launcher and in
+  the TAK panel header stops every transmission from the app after a
+  confirmation. The TAK link closes, data feeds freeze with their last data,
+  network layers cannot start and the saved-app worker answers from the device
+  cache only; contacts, markers, field notes, saved maps and offline driving
+  stay usable. The mode survives reloads and follows other tabs; leaving
+  reloads the app. A Chromium gate with server, proxy and DevTools witnesses
+  recorded zero app emissions for 30 s of use and across a reload. Device
+  radios, the browser's own update checks and a field-laptop host are outside
+  its reach; see `docs/TAK_EMCON.md`.
+
 - Offline driving directions: build an OpenStreetMap car road pack at home
   (`scripts/build-road-pack.mjs`), serve it read-only from the private host
   (`GEV_ROAD_PACK_DIR`) and install it on the phone from **TAK → OFFLINE

@@ -613,6 +613,28 @@ These are synthetic browser results. A physical iPhone (storage quota, worker
 memory, eviction, airplane-mode relaunch) remains open in
 [TAK_TODO.md](../TAK_TODO.md).
 
+## EMCON run
+
+Emissions control is described, with its limits, in
+[TAK_EMCON.md](TAK_EMCON.md). Recorded on 2026-10-18 UTC with Node `24.14.0`
+on Linux x64 and Chromium `141.0.7390.37`:
+
+- Nine new unit tests (page guard, persistence, layer freeze, service-worker
+  cache-only mode). Formatting, import/package boundaries, setup doctor and the
+  production build passed.
+- `npm run qa:emcon` passed 7 scenarios against the production build on a
+  non-loopback HTTPS origin. Server log, recording proxy and DevTools network
+  events all recorded zero app requests during 30 s of use under EMCON and
+  across a reload from the saved app; the browser's own service-worker update
+  check and Chromium services are counted separately. An offline drive, a
+  received contact and frozen flights stayed usable.
+- `qa-tak.mjs --lab --protobuf` (12), `qa:maps:offline` (8) and
+  `qa-offline-roads.mjs --https` (6) passed unchanged.
+
+Device radios, browser update checks and the private host's uplinks are out of
+reach of a web page; a physical iPhone in Airplane Mode and a host-side EMCON
+switch remain open in [TAK_TODO.md](../TAK_TODO.md).
+
 ## Current external prerequisites
 
 The official-source local server lab used fresh synthetic credentials; no

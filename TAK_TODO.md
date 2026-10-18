@@ -101,7 +101,10 @@ running.
    road packs is implemented and passes a synthetic production outage gate
    ([scope and evidence](docs/TAK_OFFLINE_ROADS.md)); test it on a physical
    iPhone, then add live guidance (position tracking, rerouting) and, if
-   needed, turn restrictions and multi-region packs. Add unsent tactical queue reconciliation with an explicit
+   needed, turn restrictions and multi-region packs. EMCON silences the browser
+   app ([scope and evidence](docs/TAK_EMCON.md)); verify it on a physical iPhone
+   in Airplane Mode, add a host-side EMCON switch for field laptops and keep
+   the received TAK picture across an EMCON reload. Add unsent tactical queue reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs

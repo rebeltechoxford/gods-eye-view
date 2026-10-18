@@ -110,6 +110,10 @@ Builders cover self SA/PPLI, spot markers, broadcast GeoChat, own-marker delete,
 ping, emergency/cancel and a bounded line/polygon/route subset. The drawing
 editor renders real geometry, supports ordered waypoint edits and requires an
 explicit sharing choice; see [drawings and routes](TAK_DRAWINGS_ROUTES.md).
+
+**EMCON** (above the TAK launcher and in the panel header) stops every
+transmission from the app: the TAK link closes and Connect is refused until it
+is left. See [EMCON](TAK_EMCON.md) for what stays usable and its limits.
 Parsing a type or preserving an unknown detail extension does not implement its
 complete ATAK workflow. Directed/group chat, server mission/data sync, broader
 native shape types, route guidance, full 2525 symbols and native plugins remain
