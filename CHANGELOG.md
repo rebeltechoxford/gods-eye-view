@@ -1,5 +1,13 @@
 # Changelog
 
+- The Local RTL-SDR card has an AIR mode for aircraft and ATC voice (AM,
+  118.000–136.975 MHz), entirely in the browser and usable off-grid: offset
+  tuning keeps the RTL-SDR DC spike off the channel, a 10 kHz AM demodulator
+  with an adjustable squelch (default 6 dB, 300 ms hang) mutes the hiss
+  between transmissions, and the seek buttons step 25 kHz channels. Airband
+  gain and squelch are remembered; existing FM and ADS-B gain settings are
+  kept. See `docs/LOCAL-RECEIVERS.md`.
+
 - Aircraft feeds: the military (adsb.lol) request now times out after 15 s
   instead of hanging; neither it nor OpenSky serves a cached snapshot as
   STALE once it is older than 10 and 15 minutes respectively (the regional

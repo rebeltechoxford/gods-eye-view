@@ -1,11 +1,12 @@
 # Local receivers
 
 The Local ADS-B layer draws aircraft heard by your own receivers. It has two
-inputs, and it can use both at once.
+inputs, and it can use both at once. The browser SDR can also listen to
+aircraft voice: see [Listening to aircraft (airband)](#listening-to-aircraft-airband).
 
 | Input        | What it is                                                                                                                          | Bands                |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| Browser SDR  | A USB RTL-SDR opened by the browser through WebUSB (Radio panel, Local RTL-SDR card). Decoding runs in the page.                   | 1090 MHz             |
+| Browser SDR  | A USB RTL-SDR opened by the browser through WebUSB (Radio panel, Local RTL-SDR card). Decodes in the page; also hears airband.      | 1090 MHz; airband    |
 | Decoder feed | The `aircraft.json` served by a decoder you run: dump1090-fa, readsb or tar1090 (1090 MHz), or dump978-fa + skyaware978 (978 MHz). | 1090 MHz, 978 MHz UAT |
 
 Aircraft from both inputs are merged by ICAO address. The newest position
@@ -84,3 +85,49 @@ dump978-fa. `rtl_test` lists the indexes.
 A tar1090 or readsb install on a Raspberry Pi already serves
 `http://<pi-address>/tar1090/data/aircraft.json`. Use the Pi's private address
 or its `.local` name.
+
+## Listening to aircraft (airband)
+
+The Local RTL-SDR card has an **AIR** mode for aircraft and air traffic
+control voice on 118.000–136.975 MHz. It runs entirely in the browser with a
+USB RTL-SDR: no internet connection, server or other software is needed.
+
+1. Open the Radio panel, select **AIR** in the Local RTL-SDR card and press
+   **CONNECT** (desktop Chrome or Edge).
+2. The receiver starts on 121.500 MHz, the international guard and emergency
+   frequency. Type another frequency in **AIR MHZ** (three decimals, for
+   example `118.705`) and press **TUNE** or Enter. The field also suggests
+   122.750 (air-to-air) and 123.025 (helicopter air-to-air).
+3. **◀ 25 KHZ** and **25 KHZ ▶** step one 25 kHz channel down or up.
+4. Find your local tower, CTAF, approach and ATIS frequencies on the
+   airport's chart or in its airport directory entry; they differ per airport.
+
+**Squelch.** Between transmissions an AM receiver plays loud hiss. The
+**SQUELCH** slider mutes the audio until the channel's signal-to-noise ratio
+reaches the threshold (0–30 dB; 0 turns squelch off). Receiver noise reads
+about 0–1 dB, and the default 6 dB opens on a readable transmission. Raise it
+if noise or a nearby interferer keeps opening it; lower it if weak aircraft are
+cut off. The squelch stays open for 300 ms after a signal drops so the end of a
+sentence is not chopped. The setting is remembered in the browser.
+
+**Antenna.** Airband wants a vertical antenna about 60 cm long (a quarter wave
+at 120–130 MHz) or a purpose-made airband antenna, as high and clear as you
+can get it. A 1090 MHz ADS-B antenna, including the short whip of a
+dual-band ADS-B board, is a poor match at 120 MHz: expect only nearby or
+airborne transmitters. Ground stations (tower, ground, ATIS) are much weaker
+than aircraft overhead.
+
+**What it does and does not do.** Airband is AM only. The receiver tunes 250
+kHz above the channel so the RTL-SDR's DC spike stays off it, and filters a
+10 kHz channel. Frequencies are kept to 1 kHz, so European 8.33 kHz channel
+names such as 118.005 can be entered, but there is no 8.33 kHz channel
+filtering beyond that 10 kHz bandwidth: a strong neighbour 8.33 kHz away can
+be heard too. Gain is per mode (AUTO by default for airband). Airband shares
+the tuner with FM and Local ADS-B, so turning on the Local ADS-B layer switches
+the receiver to 1090 MHz, and local airband audio and internet radio stop each
+other.
+
+**Legal note.** In the United States, listening to aviation voice
+communications is legal. Do not record and rebroadcast or publish what you
+hear, or use it for commercial gain, without checking the rules that apply to
+you; some countries restrict listening itself. Follow your local law.

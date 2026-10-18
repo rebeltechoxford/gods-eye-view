@@ -4954,18 +4954,25 @@ play action; the source does not relay or record streams.
 The Radio panel holds a Local RTL-SDR card below internet radio. One browser
 WebUSB session (`src/sdr/controller.js`) drives a USB RTL-SDR in desktop Chrome
 or Edge on localhost or HTTPS; nothing opens until CONNECT. Demodulation and
-Mode S decoding run in a worker; FM audio plays through an audio worklet.
-Local FM and internet radio are one listening surface: starting local FM stops
-internet-radio playback, and starting internet radio stops local FM. ADS-B
-reception does not interrupt internet radio.
+Mode S decoding run in a worker; FM and airband audio play through an audio
+worklet. Local FM or airband and internet radio are one listening surface:
+starting local audio stops internet-radio playback, and starting internet radio
+stops local FM or airband. ADS-B reception does not interrupt internet radio.
 
-- **Modes.** FM (87.5–108 MHz, tune, seek, volume) or ADS-B at 1090 MHz.
-  With a receiver open, selecting ADS-B enables the Local ADS-B layer;
-  selecting FM disables it.
+- **Modes.** FM (87.5–108 MHz, tune, seek, volume), AIR (airband AM voice,
+  118.000–136.975 MHz, tune, 25 kHz channel steps, squelch, volume) or ADS-B
+  at 1090 MHz. With a receiver open, selecting ADS-B enables the Local ADS-B
+  layer; selecting FM or AIR disables it.
+- **Airband.** 1.024 MS/s with the tuner centre 250 kHz above the listened
+  channel (offset tuning keeps the RTL-SDR DC spike off it); the worker
+  demodulates AM in a 10 kHz channel. Squelch 0–30 dB of channel SNR (0 = off,
+  default 6 dB, 300 ms hang) is stored in `gev:sdr:air-squelch:v1`. Airband
+  shares FM's device preference and remembered device.
   Enabling the layer switches the receiver to ADS-B; disabling it leaves the
   receiver mode unchanged.
 - **Gain.** AUTO (tuner AGC) or a manual R820T step from 0.0 to 49.6 dB,
-  stored per mode in `gev:sdr:gain:v1`. Defaults: ADS-B 28.0 dB, FM AUTO.
+  stored per mode in `gev:sdr:gain:v1`. Defaults: ADS-B 28.0 dB, FM and
+  airband AUTO.
   Changes apply to the open receiver without reconnecting.
 - **Receiver stats (ADS-B).** CRC-valid messages per second, aircraft heard,
   aircraft with a fresh position and the IQ level.
