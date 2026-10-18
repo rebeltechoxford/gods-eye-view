@@ -1041,6 +1041,10 @@
   color: #ddbe86;
   font: 8px/1.4 var(--font-mono);
 }
+.sdr-radio-card > p.sdr-air-help a {
+  color: #65f7ff;
+  text-decoration: underline;
+}
 .sdr-air-help[hidden],
 .sdr-squelch-row[hidden] {
   display: none;
