@@ -30,15 +30,23 @@ function loadEmcon() {
 }
 async function storeEmcon(active) {
   emcon = active;
-  const cache = await caches.open(STATE);
-  if (active)
-    await cache.put(
+  if (active) {
+    await (
+      await caches.open(STATE)
+    ).put(
       EMCON_URL,
       new Response(JSON.stringify({ active: true }), {
         headers: { 'Content-Type': 'application/json' },
       }),
     );
-  else await cache.delete(EMCON_URL);
+    return;
+  }
+  // EMCON off is the default: persist nothing, and drop the state cache if
+  // EMCON was all it held (the page reports "off" on every load).
+  if (!(await caches.has(STATE))) return;
+  const cache = await caches.open(STATE);
+  await cache.delete(EMCON_URL);
+  if (!(await cache.keys()).length) await caches.delete(STATE);
 }
 async function emconResponse(request) {
   const url = new URL(request.url);

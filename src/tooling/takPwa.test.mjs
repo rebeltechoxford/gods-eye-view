@@ -44,6 +44,9 @@ function run(
         async delete(key) {
           return entries.delete(new URL(key, origin).href);
         },
+        async keys() {
+          return [...entries.keys()].map((url) => new Request(url));
+        },
       };
     },
   };
@@ -652,4 +655,21 @@ test('EMCON survives a worker restart and is read before the first navigation', 
     (await restarted.fetch('https://x.example/', 'no-cors')).type,
     'error',
   );
+});
+
+test('EMCON off persists nothing, and leaving EMCON removes what entering stored', async () => {
+  const network = async () => new Response('SYNTHETIC ONLINE RESPONSE');
+  const handle = run(network);
+  await handle.ready();
+  // Every page load reports EMCON off; that alone must not create storage.
+  assert.equal(
+    (await handle.message('GEV_EMCON', 'approved', { active: false })).active,
+    false,
+  );
+  assert.deepEqual([...handle.storage.keys()], []);
+  // Entering stores the flag; leaving removes the cache it created.
+  await handle.message('GEV_EMCON', 'approved', { active: true });
+  assert.equal(handle.storage.size, 1);
+  await handle.message('GEV_EMCON', 'approved', { active: false });
+  assert.deepEqual([...handle.storage.keys()], []);
 });
