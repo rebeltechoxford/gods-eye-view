@@ -1,5 +1,11 @@
 # Changelog
 
+- EMCON now also refuses following an external link or submitting a form (a
+  new browser tab would otherwise transmit); in-page anchors and the saved app
+  shell stay usable. The airband help links to LiveATC.net for listening
+  online without a receiver; LiveATC's terms do not allow embedding, so it
+  opens in its own tab.
+
 - The Local RTL-SDR card has an AIR mode for aircraft and ATC voice (AM,
   118.000–136.975 MHz), entirely in the browser and usable off-grid: offset
   tuning keeps the RTL-SDR DC spike off the channel, a 10 kHz AM demodulator

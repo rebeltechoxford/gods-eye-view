@@ -1,6 +1,7 @@
 // Page-level EMCON guard. Installed once, before any application module
 // runs, it wraps every page API that can transmit: fetch, XMLHttpRequest,
-// sendBeacon, WebSocket, EventSource, RTCPeerConnection, window.open,
+// sendBeacon, WebSocket, EventSource, RTCPeerConnection, window.open, link
+// clicks and form submissions,
 // service-worker registration and the src/href of elements that load
 // network resources. The wrappers consult a live flag, so modules that keep
 // a reference to fetch from boot are covered after EMCON is switched on.
@@ -263,6 +264,52 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
       }
       return nativeSetAttribute.call(this, name, value);
     };
+  }
+
+  // A person following a link or submitting a form leaves through the
+  // browser itself. Same-document links (in-page anchors) stay allowed.
+  const doc = target.document;
+  if (typeof doc?.addEventListener === 'function') {
+    const sameDocument = (url) => {
+      try {
+        const here = new URL(target.location.href);
+        const there = new URL(url, here);
+        return (
+          there.origin === here.origin &&
+          there.pathname === here.pathname &&
+          there.search === here.search
+        );
+      } catch {
+        return false;
+      }
+    };
+    const refuse = (event, kind, url) => {
+      event.preventDefault();
+      event.stopImmediatePropagation?.();
+      record(kind, url);
+    };
+    const onLink = (event) => {
+      if (!isActive()) return;
+      const anchor = event.target?.closest?.('a[href]');
+      if (!anchor) return;
+      const url = anchor.href;
+      if (sameDocument(url) || allows(url, 'GET')) return;
+      refuse(event, 'navigation', url);
+    };
+    doc.addEventListener('click', onLink, true);
+    doc.addEventListener('auxclick', onLink, true);
+    doc.addEventListener(
+      'submit',
+      (event) => {
+        if (!isActive()) return;
+        const form = event.target;
+        const url = form?.action || target.location?.href;
+        const method = String(form?.method || 'GET').toUpperCase();
+        if (allows(url, method)) return;
+        refuse(event, 'form', url);
+      },
+      true,
+    );
   }
 
   const installation = Object.freeze({

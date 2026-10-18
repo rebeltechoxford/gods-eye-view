@@ -258,3 +258,47 @@ test('unreadable or blocked storage never silently turns EMCON off in a tab', ()
   assert.deepEqual(state.set(true), { active: true, persisted: false });
   assert.equal(state.isActive(), true);
 });
+
+test('with EMCON on, following an external link or submitting a form is refused', () => {
+  const document = new EventTarget();
+  const target = {
+    location: { origin: ORIGIN, href: `${ORIGIN}/?welcome=0#lat=1` },
+    navigator: { serviceWorker: { controller: {} } },
+    document,
+  };
+  let active = false;
+  const guard = installEmconGuard(target, { isActive: () => active });
+  const click = (href, type = 'click') => {
+    const event = new Event(type, { cancelable: true });
+    Object.defineProperty(event, 'target', {
+      value: {
+        closest: (selector) =>
+          selector === 'a[href]' ? { href: new URL(href, ORIGIN).href } : null,
+      },
+    });
+    document.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const submit = (action, method = 'post') => {
+    const event = new Event('submit', { cancelable: true });
+    Object.defineProperty(event, 'target', { value: { action, method } });
+    document.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  // Off: links and forms behave normally.
+  assert.equal(click('https://www.liveatc.net/'), false);
+  assert.equal(submit(`${ORIGIN}/logout`), false);
+
+  active = true;
+  assert.equal(click('https://www.liveatc.net/'), true);
+  assert.equal(click('https://www.liveatc.net/', 'auxclick'), true);
+  assert.equal(submit(`${ORIGIN}/logout`), true, 'sign-out contacts the host');
+  // In-page anchors and the saved app shell stay usable.
+  assert.equal(click('#section'), false);
+  assert.equal(click('/?welcome=0#other'), false);
+  assert.equal(click('/'), false);
+  assert.deepEqual(
+    guard.blocked().map((event) => event.kind),
+    ['navigation', 'navigation', 'form'],
+  );
+});

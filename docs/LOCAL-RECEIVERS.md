@@ -127,6 +127,12 @@ the tuner with FM and Local ADS-B, so turning on the Local ADS-B layer switches
 the receiver to 1090 MHz, and local airband audio and internet radio stop each
 other.
 
+**Without a receiver: LiveATC.** The AIR help text links to
+[LiveATC.net](https://www.liveatc.net/), which streams many towers and
+approach controls over the internet. It opens in its own tab: LiveATC's terms
+do not allow its streams to be played inside another application, so GEV only
+links to it. It needs the internet and is refused under [EMCON](TAK_EMCON.md).
+
 **Legal note.** In the United States, listening to aviation voice
 communications is legal. Do not record and rebroadcast or publish what you
 hear, or use it for commercial gain, without checking the rules that apply to
