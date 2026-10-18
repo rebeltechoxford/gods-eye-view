@@ -1,13 +1,15 @@
 # Run God's Eye View × TAK
 
-Use this repository's `dev/tak-web-foundation` development line from
-`rebeltechoxford/gods-eye-view`. The TAK work adds to the existing GEV app;
+The release branch is `main` in `rebeltechoxford/gods-eye-view`; ongoing
+integration uses `dev/tak-web-foundation`. The TAK work adds to the existing GEV app;
 public globe, layers, HUD, camera, scenes and voice remain available under their
 existing provider/key requirements.
 
-The current release candidate is intended for `main` after integration checks.
-This guide does not imply that the candidate has already been merged or that
-physical-device and native TAK peer acceptance are complete.
+The verified candidate is merged into the integration branch. Release through
+[PR #6](https://github.com/rebeltechoxford/gods-eye-view/pull/6) brings it to
+`main`. See the pull request for the merge record.
+[Release checks](docs/TAK_RELEASE_REVIEW.md) passed. Physical-device and native
+TAK peer acceptance remain open.
 
 The full GEV globe is the workspace for TAK. Google photorealistic 3D remains
 the preferred map when a configured Google/Cesium provider can supply it; the
@@ -291,8 +293,9 @@ while GitHub retains it. Its SHA-256 is
 `e412622077b8fc56349bb2fb6ad3df60e0e064a0e0a464c0029cf12619e992b5`.
 Its source is PR test-merge `2a59b57aefa4af8b41d282ea613e065d8332fd5a`,
 whose tree `941cc2a09065064f4519b11c7593e31d7115345d` matches development
-`28eb0c9e`. This retained package predates the current release candidate;
-it is not evidence that the candidate has passed iOS validation. The iOS job
+`28eb0c9e`. Native sources and `scripts/build-ios-ipa.sh` are unchanged in the
+current candidate, so this retained wrapper is reused; it loads the current
+private web app. Rebuild when native sources change. The recorded iOS job
 passed. The archive was built
 with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
 establish a physical-phone or configured-private-endpoint result.
@@ -440,7 +443,7 @@ npm run build
 npm run build:panel
 ```
 
-After the production build, these two gates start their own temporary
+After the production build, these gates start their own temporary
 loopback HTTPS servers and synthetic fixtures; run them sequentially:
 
 ```sh
@@ -451,8 +454,8 @@ node scripts/qa-offline-roads.mjs --https --pack-dir <road pack directory>
 ```
 
 Their reports and screenshots are written under `qa-artifacts/`. The latest
-integrated CI evidence is linked from the
-[offline-map pull request](https://github.com/rebeltechoxford/gods-eye-view/pull/5).
+integrated CI evidence is recorded in the
+[release review](docs/TAK_RELEASE_REVIEW.md).
 These are local/synthetic checks, with separate physical-phone and authorized
 TAK-peer acceptance still required.
 

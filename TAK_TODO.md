@@ -1,34 +1,37 @@
 # God's Eye View × TAK remaining work
 
 Updated: 2026-10-18 UTC. This is the remaining-work handoff for the additive TAK
-foundation on `dev/tak-web-foundation`. Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to run
+foundation integrated on `dev/tak-web-foundation`, with `main` as the release
+branch. Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to run
 the local app/lab. The detailed preservation inventory and parity ledger are in
 [TAK_FEATURE_MATRIX.md](docs/TAK_FEATURE_MATRIX.md); ordered acceptance criteria
 are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 
-The release candidate targets `main` after verification. Candidate integration
-checks and physical iPhone acceptance remain separate from the earlier evidence below;
-this document does not record a completed main merge.
+The candidate passed integration checks and PR #13 merged into development.
+Release through [PR #6](https://github.com/rebeltechoxford/gods-eye-view/pull/6)
+is the main release record. Physical iPhone and native-peer acceptance remain
+separate from the completed automated checks.
 
 ## Release checkpoint
 
 - The [owner-private Sites preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
   is available as a frontend preview. The private Node gateway, operator login,
   TAK transport and server map storage still run on the private host described
-  in the run guide; Sites does not supply those services.
+  in the run guide; Sites does not supply those services. The published preview
+  uses the `3d762106` runtime, unchanged by the final `9d1e23ce` fixture/docs correction.
 - The retained [unsigned arm64 IPA](https://gev-tak-field-preview.jesselsullivan.chatgpt.site/downloads/GEVTAK-unsigned.ipa)
   is available for personal signing. Its verified source remains `28eb0c9e`,
   predating the release candidate. The native sources and build script are
   unchanged, so this wrapper is reused; it loads the current private web app.
   Rebuild when native sources change. Physical iPhone acceptance remains open.
-- Runtime `3d762106` passed all five normal CI jobs, 7,027 ordinary tests
-  (one existing skip), 14 allocation checks and all offline-road, EMCON,
-  FIS-B and protobuf TAK browser scenarios. The cold-start Cesium errors are
-  fixed. The added tracking gate still needs a successful rerun after correcting
-  its offline terrain-height fixture; its first run passed 107 and failed three
-  assertions. [Exact review record](docs/TAK_RELEASE_REVIEW.md).
-- Complete final acceptance before merging to `main`. Full ATAK parity and
-  native-peer/device acceptance remain open independently of those CI checks.
+- Candidate `9d1e23ce` passed all five normal CI jobs and the complete restricted
+  run: 7,027 ordinary tests passed (one existing skip), 14 allocation checks,
+  six offline-road, seven EMCON with strict error checks, six FIS-B and twelve
+  protobuf TAK scenarios. Tracking passed all 111 checks with no failures or
+  skips. [Exact runs and review record](docs/TAK_RELEASE_REVIEW.md).
+- PR #13 merged as development `12af6161a6baefff3ddf4be77d4f54167dda5a81`;
+  its tree exactly matches tested `9d1e23ce`. Full ATAK parity and native-peer/
+  device acceptance remain open independently of those CI checks.
 
 ## First: real peer acceptance
 

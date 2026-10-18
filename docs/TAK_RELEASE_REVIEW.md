@@ -13,6 +13,9 @@ by this review. Private Sites publication is a frontend preview only.
 - MBTiles subset PR #12 head: `4ea69ba4fec9aa8a03998b3290c6ffa7b9f1023d`.
 - Preserved device-stream work: `65be70ee`.
 - Trusted upstream policy revision: `93ea088f4556a5a65b3292a2d15142d5a6c562bc`.
+- Final tested candidate: `9d1e23ce`.
+- PR #13 development merge: `12af6161a6baefff3ddf4be77d4f54167dda5a81`.
+- Verified identical candidate/merge tree: `a2ed225f3cf4bf7dcb02e13d03686e365a34b3bf`.
 
 The integration preserves contributor commits and adds separate review fixes.
 Documentation conflicts preserve both subset downloads and Claude's features.
@@ -37,8 +40,8 @@ Historical evidence is not acceptance of this combined tree:
 
 - PR #13 CI run `39163287486`: all five original jobs passed at its original head.
 - PR #12 run `39002517420`: ordinary checks passed; named-operator browser gate
-  timed out waiting for saved-map readiness. This failure is retained and the
-  combined candidate must pass that gate before integration.
+  timed out waiting for saved-map readiness. This historical failure required
+  a successful combined-candidate rerun before integration; final CI passed below.
 - Device-stream focused run: 86 tests previously passed. Official-server rapid
   same-UID replacement evidence remains incomplete; streams stay opt-in.
 - Combined candidate `c174e8df`: all five ordinary CI jobs passed in
@@ -55,7 +58,7 @@ Historical evidence is not acceptance of this combined tree:
   during saved-app cold reload. Strict page-error assertions remain in place.
   Ordinary CI's Street Level job failed during Puppeteer's browser installation
   (unsettled top-level await), before application execution; the previous job
-  passed. Final acceptance must rerun it successfully.
+  passed. The final normal-CI rerun below passed all five jobs.
 
 The restricted workflow records the exact tested revision, tests, build hashes
 and browser evidence, and reuses one production build. Tracking regression uses
@@ -70,8 +73,24 @@ EMCON scenarios including the strict error assertion, six FIS-B scenarios and
 twelve protobuf TAK scenarios. Waiting for the worker acknowledgement corrected
 the cold-start errors. The added tracking gate passed 107 checks but failed three
 ground-corridor checks because its new offline responder supplied `{}` instead
-of the terrain-height API's typed results. That fixture is corrected separately;
-the full tracking assertions must pass before acceptance.
+of the terrain-height API's typed results. The corrected fixture and all tracking
+assertions passed in the final run below.
+
+Final candidate `9d1e23ce` passed all five normal CI jobs in
+[run 39171560424](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39171560424).
+Restricted [run 39171560421](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39171560421)
+completed successfully: 7,027 ordinary tests passed with one existing skip,
+14 allocation checks passed, and setup, formatting, boundaries, layer tokens
+and production build passed. Browser acceptance passed six offline-road,
+seven EMCON including strict page-error assertions, six FIS-B and twelve
+protobuf TAK scenarios. Tracking passed all 111 checks with zero failures and
+zero skips, including ground corridors using actual DEM batches.
+
+PR #13 merged into `dev/tak-web-foundation` as
+`12af6161a6baefff3ddf4be77d4f54167dda5a81`. Its tree
+`a2ed225f3cf4bf7dcb02e13d03686e365a34b3bf` exactly matches tested `9d1e23ce`.
+This accepts the combined candidate with the limitations below; the earlier
+failed runs remain part of the record.
 
 The host has WSL1 without usable network namespaces. Runtime review therefore
 uses a disposable GitHub Ubuntu VM with Bubblewrap, private home/tmp, scrubbed
@@ -88,16 +107,20 @@ location, native TAK peers, real receiver feeds, current chart editions,
 directed/group chat and durable server mission synchronization remain open.
 See `../HOW_TO_RUN.md` and `../TAK_TODO.md` for operator and follow-up guides.
 
-Release decision: pending the combined candidate's checks. Do not represent
-this application as complete ATAK parity or an operational aviation briefing.
+Release decision: the verified combined candidate is accepted and merged into
+development. Release through [PR #6](https://github.com/rebeltechoxford/gods-eye-view/pull/6)
+is the main release record. Do not represent this application as complete ATAK
+parity or an operational aviation briefing.
 
 ## Private preview and native package
 
 The [owner-private Sites preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
-was deployed from the key-free `c174e8df` production artifact after verifying all
+uses the key-free `3d762106` production artifact after verifying all
 459 production file hashes. It hosts the frontend and download guides, not the
 private Node gateway, raw TCP/TLS uplinks or receiver processes. Browser inspection
 verified the local artifact's globe/TAK UI and the hosted ChatGPT access gate.
+The application runtime is unchanged by the final `9d1e23ce` fixture/docs correction.
+Build provenance: run `39170222903`, artifact `12152800329`; no provider keys.
 
 The retained arm64 IPA from dev `28eb0c9e` has SHA-256
 `e412622077b8fc56349bb2fb6ad3df60e0e064a0e0a464c0029cf12619e992b5`.

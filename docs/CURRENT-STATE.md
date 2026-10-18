@@ -1,6 +1,12 @@
 # God's Eye View Current State
 
-## Additive TAK foundation — October 18, 2026 release candidate
+## Additive TAK foundation — October 18, 2026 verified integration
+
+Candidate `9d1e23ce` passed normal and restricted CI and merged through PR #13
+into development as `12af6161a6baefff3ddf4be77d4f54167dda5a81`, with the exact
+tested tree. Release through [PR #6](https://github.com/rebeltechoxford/gods-eye-view/pull/6)
+is the main release record. [The review record](TAK_RELEASE_REVIEW.md) contains
+the final evidence and remaining physical-device/native-peer acceptance.
 
 `src/tak/` adds session CoT contacts, bounded movement trails, affiliation
 frames/callsign cards in the shared overlay host, self position with explicit
@@ -22,9 +28,14 @@ outgoing buffers are bounded. Submitted means a local transport write, not
 acknowledged peer delivery.
 
 The default-off `TAK_DEVICE_STREAMS` adapter includes correlated browser presence
-STOP, with requested/confirmed/refused/unconfirmed status. Its release integration
-checks and official-server pool acceptance are pending; directed chat remains
-refused. [TAK_DEVICE_STREAMS.md](TAK_DEVICE_STREAMS.md) records the consent,
+STOP, with requested/confirmed/refused/unconfirmed status. Candidate `9d1e23ce`
+passed all five normal CI jobs in
+[run 39171560424](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39171560424).
+The complete restricted run also passed in
+[run 39171560421](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39171560421).
+Official-server pool acceptance remains open; directed chat remains refused
+and the adapter remains opt-in.
+[TAK_DEVICE_STREAMS.md](TAK_DEVICE_STREAMS.md) records the consent,
 ownership and resource limits. Application EMCON pauses controlled app requests
 and closes owned streams; it does not disable device radios, cancel every
 in-flight transmission or stop independent private-host uplinks.
