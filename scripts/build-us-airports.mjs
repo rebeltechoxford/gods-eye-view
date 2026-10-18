@@ -88,7 +88,10 @@ export function buildAirportTable(csvText) {
   );
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   const input = process.argv[2];
   if (!input) {
     console.error('usage: node scripts/build-us-airports.mjs <airports.csv>');
