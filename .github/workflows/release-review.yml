@@ -145,9 +145,10 @@ jobs:
             # One network namespace contains the app, browser, HTTPS fixtures,
             # recording proxy and synthetic receiver. It has no external NIC.
             node scripts/qa-road-pack-fixture.mjs --out /tmp/qa-road-packs
-            node scripts/qa-offline-roads.mjs --https --pack-dir /tmp/qa-road-packs --dist dist
-            node scripts/qa-emcon.mjs --pack-dir /tmp/qa-road-packs --dist dist
-            node scripts/qa-fisb.mjs --dist dist
+            failed=0
+            node scripts/qa-offline-roads.mjs --https --pack-dir /tmp/qa-road-packs --dist dist || failed=1
+            node scripts/qa-emcon.mjs --pack-dir /tmp/qa-road-packs --dist dist || failed=1
+            node scripts/qa-fisb.mjs --dist dist || failed=1
             # The protobuf exchange uses the synthetic Vite lab in this same
             # namespace; it does not produce or replace the production build.
             node scripts/tak-lab.mjs --protobuf > qa-artifacts/release-review/tak-lab.log 2>&1 &
@@ -169,8 +170,9 @@ jobs:
               cat qa-artifacts/release-review/tak-lab.log
               exit 1
             fi
-            node scripts/qa-tak.mjs --lab --protobuf --url http://127.0.0.1:4174
-            sha256sum --check qa-artifacts/release-review/dist-sha256.txt > qa-artifacts/release-review/dist-unchanged.txt
+            node scripts/qa-tak.mjs --lab --protobuf --url http://127.0.0.1:4174 || failed=1
+            sha256sum --check qa-artifacts/release-review/dist-sha256.txt > qa-artifacts/release-review/dist-unchanged.txt || failed=1
+            exit "$failed"
           '
 
       - name: Retain review evidence even when a check fails

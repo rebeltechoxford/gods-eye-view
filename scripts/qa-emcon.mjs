@@ -255,6 +255,8 @@ page.setDefaultTimeout(timeout);
 // and the service worker) put on the wire, as the browser saw it. A proxy
 // connection to a host none of them asked for was opened by the browser.
 const appRequests = [];
+const runtimeExceptions = [];
+let currentStep = 'browser setup';
 const watched = new WeakSet();
 async function watchSession(session, label) {
   if (!session || watched.has(session)) return;
@@ -262,7 +264,31 @@ async function watchSession(session, label) {
   session.on('Network.requestWillBeSent', ({ request }) =>
     appRequests.push({ at: Date.now(), label, url: request.url }),
   );
+  session.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
+    // A rejected Cesium object may have no Error.message or Error.stack.
+    // Keep the browser's actual exception and its primitive own properties
+    // so minified constructor names alone cannot hide the failing request.
+    const record = {
+      at: Date.now(),
+      step: currentStep,
+      label,
+      ...exceptionDetails,
+    };
+    runtimeExceptions.push(record);
+    const objectId = exceptionDetails.exception?.objectId;
+    if (objectId)
+      void session
+        .send('Runtime.getProperties', { objectId, ownProperties: true })
+        .then(({ result }) => {
+          record.properties = result.map(({ name, value }) => ({
+            name,
+            value: value?.value ?? value?.description,
+          }));
+        })
+        .catch(() => {}); // Navigation may already have destroyed this realm.
+  });
   await session.send('Network.enable').catch(() => {});
+  await session.send('Runtime.enable').catch(() => {});
 }
 await watchSession(await page.target().createCDPSession(), 'page');
 page.on(
@@ -276,12 +302,21 @@ const watchWorkerTarget = async (target) => {
 browser.on('targetcreated', (target) => void watchWorkerTarget(target));
 for (const target of browser.targets()) await watchWorkerTarget(target);
 const pageErrors = [];
-page.on('pageerror', (error) =>
-  pageErrors.push(String(error?.message || error)),
-);
+page.on('pageerror', (error) => {
+  const record = {
+    at: Date.now(),
+    step: currentStep,
+    name: error?.name,
+    message: String(error?.message || error),
+    stack: error?.stack,
+  };
+  pageErrors.push(record);
+  console.error('page error:', JSON.stringify(record));
+});
 
 const results = [];
 const step = async (name, fn) => {
+  currentStep = name;
   const started = Date.now();
   const evidence = await fn();
   results.push({
@@ -654,7 +689,7 @@ try {
     },
   );
 
-  assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join('; ')}`);
+  assert.deepEqual(pageErrors, [], 'no unhandled page errors');
   Object.assign(summary, {
     status: 'passed',
     date: new Date().toISOString(),
@@ -670,6 +705,24 @@ try {
   await page
     .screenshot({ path: path.join(artifactDir, 'failure.png') })
     .catch(() => {});
+  await fs.writeFile(
+    path.join(artifactDir, 'failure.json'),
+    JSON.stringify(
+      {
+        ...summary,
+        status: 'failed',
+        date: new Date().toISOString(),
+        step: currentStep,
+        error: String(error?.stack || error),
+        results,
+        pageErrors,
+        runtimeExceptions,
+        requests: appRequests.slice(-100),
+      },
+      null,
+      2,
+    ),
+  );
   console.error(error?.stack || error);
   console.error('server log tail:', JSON.stringify(serverLog.slice(-15)));
   console.error('proxy log tail:', JSON.stringify(proxyLog.slice(-15)));
