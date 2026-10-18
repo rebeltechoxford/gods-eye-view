@@ -216,6 +216,8 @@ async function main() {
   let offlineMetadataRequests = 0;
   let offlineTerrainRequests = 0;
   let offlinePublicRequests = 0;
+  let offlineDemRequests = 0;
+  let syntheticDemActive = false;
   const expectedTerrainFailures = new Set();
   if (OFFLINE_IMAGERY) console.log('  Imagery : synthetic public fixtures; bundled NaturalEarthII and flat terrain fallback');
 
@@ -341,6 +343,28 @@ async function main() {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({ summary: 'QA globe ready' }),
+        });
+        return;
+      }
+      if (OFFLINE_IMAGERY && syntheticDemActive && url.origin === APP_ORIGIN
+        && url.pathname === '/api/terrain/heights' && request.method() === 'GET') {
+        // The corridor scenario must warm cells through the real request,
+        // resolver and cache path. Return only the points actually requested,
+        // in protocol order; no cache seeding or ambient neighbourhood warming.
+        const points = (url.searchParams.get('points') || '').split(';')
+          .map((point) => point.split(',').map(Number));
+        if (points.length > 64 || points.some((point) => point.length !== 2
+          || !Number.isFinite(point[0]) || Math.abs(point[0]) > 180
+          || !Number.isFinite(point[1]) || Math.abs(point[1]) > 90)) {
+          throw new Error('Synthetic DEM received an invalid terrain-height batch');
+        }
+        offlineDemRequests++;
+        await request.respond({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            results: points.map(() => ({ ellipsoid: 150 })),
+          }),
         });
         return;
       }
@@ -3293,8 +3317,13 @@ async function main() {
       // corridor collection is deleted, aimed at the wrong end, or starved.
       // This one seeds NOTHING: the contact's DISPLAY cell can only get a floor
       // if the poll actually collects the ground it is rendering over and warms
-      // it through the real DEM resolve. A control cell the same distance away,
+      // it through the real DEM request/resolver. Offline fixture mode answers
+      // those requests with a deterministic 150 m ellipsoidal plane. A control
+      // cell the same distance away,
       // which no corridor covers, must stay cold.
+      // Keep this service fixture scoped to the successful DEM scenario: the
+      // earlier cold-ground/fallback cases still receive unavailable heights.
+      syntheticDemActive = OFFLINE_IMAGERY;
       const dfCorridor = await evalPage(async (lat, lon) => {
         const v = window.__godsEyeView.viewer;
         const fl = window.__godsEyeView.dataManager.layers.get('flights').module;
@@ -3333,8 +3362,8 @@ async function main() {
         const startCold = {
           control: gf.cachedGroundFloor(controlCell.lat, controlCell.lon),
         };
-        // Baro 0 puts it at the geoid (~-27 m here), ~150 m under the real
-        // Austin surface, so any lift is unambiguous.
+        // Baro 0 puts it at the geoid (~-27 m here), well below both the Austin
+        // surface and the explicit offline DEM plane, so a lift is unambiguous.
         window.__SYNTH.flights.push({ icao: 'aaa097', callsign: 'COAST97', lon, lat, alt: 0, vel: 12, track: 90, onGround: true });
         await fl.update(v);
         await window.__dfSettle(600);
@@ -3392,7 +3421,10 @@ async function main() {
           spriteFloor: d1 ? gf.cachedGroundFloor(d1.lat, d1.lon) : null,
           beforeH: d0.h,
         };
-      }, 30.3000, -97.8000);
+      }, 30.3000, -97.8000).finally(() => { syntheticDemActive = false; });
+
+      if (OFFLINE_IMAGERY) record('display-floor/corridor: typed DEM fixture served actual terrain requests',
+        offlineDemRequests > 0, `${offlineDemRequests} requested batches; no floor cache was pre-seeded`);
 
       // The whole scenario is only meaningful if the cell being warmed is one
       // the ordinary fix-cell batch could NOT have produced. Two conditions
@@ -4195,7 +4227,7 @@ async function main() {
 
     finishAndExit();
   } finally {
-    if (OFFLINE_IMAGERY) console.log(`  Synthetic fixtures: ${offlineImageryRequests} imagery tiles, ${offlineMetadataRequests} metadata, ${offlineTerrainRequests} terrain fallbacks, ${offlinePublicRequests} other public requests`);
+    if (OFFLINE_IMAGERY) console.log(`  Synthetic fixtures: ${offlineImageryRequests} imagery tiles, ${offlineMetadataRequests} metadata, ${offlineTerrainRequests} terrain fallbacks, ${offlineDemRequests} DEM batches, ${offlinePublicRequests} other public requests`);
     if (!KEEP_OPEN) {
       await interception?.dispose();
       await browser.close();

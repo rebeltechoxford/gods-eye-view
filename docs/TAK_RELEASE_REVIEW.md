@@ -61,6 +61,18 @@ The restricted workflow records the exact tested revision, tests, build hashes
 and browser evidence, and reuses one production build. Tracking regression uses
 the existing synthetic Vite lab and deterministic public-provider fixtures.
 
+Runtime candidate `3d762106` passed all five ordinary jobs in
+[run 39170222907](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39170222907).
+Restricted [run 39170222903](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39170222903)
+passed 7,027 ordinary tests (one existing skip), 14 allocation checks, setup,
+formatting, boundaries, layer tokens, build, six offline-road scenarios, seven
+EMCON scenarios including the strict error assertion, six FIS-B scenarios and
+twelve protobuf TAK scenarios. Waiting for the worker acknowledgement corrected
+the cold-start errors. The added tracking gate passed 107 checks but failed three
+ground-corridor checks because its new offline responder supplied `{}` instead
+of the terrain-height API's typed results. That fixture is corrected separately;
+the full tracking assertions must pass before acceptance.
+
 The host has WSL1 without usable network namespaces. Runtime review therefore
 uses a disposable GitHub Ubuntu VM with Bubblewrap, private home/tmp, scrubbed
 environment and loopback-only runtime networking. Dependency provisioning has

@@ -21,14 +21,14 @@ this document does not record a completed main merge.
   predating the release candidate. The native sources and build script are
   unchanged, so this wrapper is reused; it loads the current private web app.
   Rebuild when native sources change. Physical iPhone acceptance remains open.
-- Normal CI passed all five jobs for `c174e8df`. Restricted validation passed
-  7,026 + 14 tests, all six offline-road scenarios and all seven EMCON scenarios,
-  but two unhandled Cesium errors still block that browser gate. Passing the
-  scenario assertions does not make the restricted run a pass.
-- [Diagnostic run 39169076711](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39169076711)
-  is in progress at this checkpoint. Resolve the errors, record the complete
-  restricted-gate result, then verify the final candidate before merging to
-  `main`. Full ATAK parity and native-peer/device acceptance remain open.
+- Runtime `3d762106` passed all five normal CI jobs, 7,027 ordinary tests
+  (one existing skip), 14 allocation checks and all offline-road, EMCON,
+  FIS-B and protobuf TAK browser scenarios. The cold-start Cesium errors are
+  fixed. The added tracking gate still needs a successful rerun after correcting
+  its offline terrain-height fixture; its first run passed 107 and failed three
+  assertions. [Exact review record](docs/TAK_RELEASE_REVIEW.md).
+- Complete final acceptance before merging to `main`. Full ATAK parity and
+  native-peer/device acceptance remain open independently of those CI checks.
 
 ## First: real peer acceptance
 

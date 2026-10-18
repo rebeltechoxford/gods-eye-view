@@ -91,8 +91,13 @@ existing WebSocket/EventSource/RTC teardown, microphone-track stop, active XHR
 abort, retired-resource cleanup and worker acknowledgement gating. Service-worker
 regressions issue API, POST and third-party fetches immediately after a cold
 restart and refuse new shell downloads while paused. These review additions
-require a fresh consolidated validation run; they are not included in the
-historical counts below.
+passed at runtime candidate `3d762106` in restricted
+[run 39170222903](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39170222903):
+all seven browser scenarios and the strict unhandled-error assertion. The
+existing real stream closed at both ends, saved-app reload stayed cache-only,
+and leaving resumed requests. Startup now waits for worker acknowledgement
+before Cesium asset loads; timeout leaves the guard closed. These results do
+not establish radio isolation or physical iPhone behavior.
 
 Historical contributor run on 2026-10-18 UTC with Node `24.14.0` on Linux x64 and Chromium
 `141.0.7390.37`:
