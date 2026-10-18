@@ -471,7 +471,8 @@ try {
         });
         assert.equal(state.active, source.id);
         assert(state.tak);
-        assert.equal(state.layers, 30);
+        // Every catalog layer survives the map change.
+        assert.equal(state.layers, LAYER_STATE_REGISTRY.length + 2);
         assert(state.details.includes(source.credit));
         assert(state.credits.includes(source.credit));
         assert.equal(state.maximumLevel, source.maximumLevel);
