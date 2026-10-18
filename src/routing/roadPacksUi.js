@@ -172,13 +172,15 @@ export function createOfflineRoadsPanel({
 
   async function install(pack) {
     if (download) return status('A road pack download is already running.');
-    const store = await openStore();
-    if (!store)
-      return status('Sign in before storing road packs on this device.');
-    download = new AbortController();
-    const signal = AbortSignal.any([download.signal, lifetime.signal]);
+    const operation = new AbortController();
+    download = operation;
+    const signal = AbortSignal.any([operation.signal, lifetime.signal]);
     status(`Downloading ${pack.name}…`);
     try {
+      const store = await openStore();
+      signal.throwIfAborted();
+      if (!store)
+        throw new Error('Sign in before storing road packs on this device');
       await store.install(pack, {
         signal,
         fetchFrom: (start, s) =>
@@ -191,8 +193,9 @@ export function createOfflineRoadsPanel({
             `Downloading ${pack.name}: ${Math.floor((receivedBytes / totalBytes) * 100)}% (${mib(receivedBytes)} of ${mib(totalBytes)})`,
           ),
       });
+      signal.throwIfAborted();
     } catch (error) {
-      download = null;
+      if (download === operation) download = null;
       if (!destroyed) void refresh();
       return status(
         signal.aborted
@@ -203,7 +206,7 @@ export function createOfflineRoadsPanel({
     const ready = `${pack.name} is installed and verified. Driving directions inside it now work offline.`;
     // A pack is only useful off the grid if the app itself can launch there.
     let launch = '';
-    if (saveOfflineApp) {
+    if (saveOfflineApp && !signal.aborted) {
       try {
         await saveOfflineApp((p) =>
           status(
@@ -216,7 +219,7 @@ export function createOfflineRoadsPanel({
         launch = ` Offline launch was not saved (${error?.message || error}); use SAVED MAPS → Save app for offline launch on the private HTTPS app.`;
       }
     }
-    download = null;
+    if (download === operation) download = null;
     status(ready + launch);
     if (!destroyed) void refresh();
   }

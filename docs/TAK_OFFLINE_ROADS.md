@@ -51,6 +51,11 @@ are stored per operator account in IndexedDB (`gev-road-packs-v1-<scope>`)
 and are removed with **Remove**. The browser can still evict website storage:
 keep the server copy and download again if a pack disappears.
 
+A covered trip fails locally if its pack is damaged, the road is disconnected,
+or the routing worker fails. It does not silently send those coordinates to
+an online router. Online routing remains available for trips with no installed
+covering pack and for walking or cycling.
+
 ## What the router knows
 
 - Roads a car may use: motorway through service roads. Excluded: `area=yes`,
@@ -87,6 +92,18 @@ within fixed limits. The phone verifies SHA-256 at install and again on every
 load, so a pack damaged in storage is refused rather than routed on. The
 worker that decodes and routes is retired and replaced if it fails or does
 not answer within 60 seconds.
+
+Derived indexes have separate device limits: one million snapping cells,
+eight million edge-to-cell references and a 128 MiB typed-index allocation
+budget, including construction scratch and the search heap. Coverage or
+geometry exceeding these limits is refused before the large index allocation.
+These limits bound the indexes; pack bytes, temporary storage reads and browser
+overhead are additional memory. They do not establish physical iPhone capacity.
+Cancelling an active worker request terminates its search. Account retirement
+invalidates pending reads and hashes so they cannot recreate a worker later.
+Download writes carry a transaction-checked operation token: removal or a newer
+install, including in another tab, prevents an old download from publishing a
+late ready record. Cancelled verification never marks a pack ready.
 
 Server API (session-authorized on the private HTTPS app, gateway token in the
 local lab, rate limited, GET/HEAD only):
@@ -141,6 +158,12 @@ node scripts/qa-offline-roads.mjs --https --pack-dir <dir>
 
 Screenshots and `results.json` go to `qa-artifacts/offline-roads/` and
 `qa-artifacts/offline-roads-https/`.
+
+For a deterministic gate without a provider download, create a new fixture
+directory with `node scripts/qa-road-pack-fixture.mjs --out <new-directory>`
+and pass it as `--pack-dir`. This tiny graph connects the gate's default
+coordinates with synthetic segments. It exercises installation, routing and
+disconnected launch; it is not actual road data or regional routing evidence.
 
 ## Not yet verified
 

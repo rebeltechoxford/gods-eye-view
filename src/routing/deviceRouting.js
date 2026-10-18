@@ -30,7 +30,8 @@ export async function openCurrentRoadPackStore({
     });
     previous?.then((store) => store.close()).catch(() => {});
   }
-  return storePromise;
+  const store = await storePromise;
+  return isCurrent(context) ? store : null;
 }
 
 export const offlineRouting = createOfflineRouteEngine({

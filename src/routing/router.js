@@ -8,7 +8,7 @@
 // overestimates and the result is a shortest-time route on this graph. Turn
 // restrictions and turn costs are not modelled.
 
-import { EDGE_DIRECTION, unpackRoadWord } from './roadPack.js';
+import { EDGE_DIRECTION, RoadPackError, unpackRoadWord } from './roadPack.js';
 
 const E7 = 1e7;
 const EARTH_RADIUS_M = 6_371_008.8;
@@ -16,6 +16,13 @@ const DEG = Math.PI / 180;
 /** Grid cell size for the snapping index, degrees. */
 export const SNAP_CELL_DEGREES = 0.01;
 export const DEFAULT_MAX_SNAP_METERS = 2000;
+/** Bound derived indexes independently of the compressed pack's byte size. */
+export const ROAD_ROUTER_LIMITS = Object.freeze({
+  maxCells: 1_000_000,
+  maxCellReferences: 8_000_000,
+  maxIndexBytes: 128 * 1024 * 1024,
+  maxHeapEntries: 1_048_576,
+});
 
 export class RouteError extends Error {
   /** @param {'no-pack'|'outside'|'no-road'|'no-route'|'aborted'} code */
@@ -52,6 +59,8 @@ class MinHeap {
   }
   push(key, value) {
     if (this.size === this.keys.length) {
+      if (this.size * 2 > ROAD_ROUTER_LIMITS.maxHeapEntries)
+        throw new RoadPackError('route search exceeds the device work limit');
       const keys = new Float64Array(this.size * 2);
       const values = new Int32Array(this.size * 2);
       keys.set(this.keys);
@@ -109,6 +118,23 @@ export function createRoadRouter(
   if (!pack?.counts) throw new RouteError('No road pack is loaded', 'no-pack');
   const V = pack.counts.vertices;
   const E = pack.counts.edges;
+  const { west, south, east, north } = pack.bounds;
+  const cols = Math.max(1, Math.ceil((east - west) / SNAP_CELL_DEGREES));
+  const rows = Math.max(1, Math.ceil((north - south) / SNAP_CELL_DEGREES));
+  const cells = rows * cols;
+  if (!Number.isSafeInteger(cells) || cells > ROAD_ROUTER_LIMITS.maxCells)
+    throw new RoadPackError('coverage exceeds the device index limit');
+  // Include construction scratch, query state and the largest search heap.
+  // Reserve the worst-case two directed arcs per edge before allocating any.
+  const baseIndexBytes =
+    pack.counts.roads * 4 +
+    (V + 1) * 8 +
+    V * 21 +
+    E * 24 +
+    (cells + 1) * 12 +
+    ROAD_ROUTER_LIMITS.maxHeapEntries * 18;
+  if (baseIndexBytes > ROAD_ROUTER_LIMITS.maxIndexBytes)
+    throw new RoadPackError('graph exceeds the device index memory limit');
   const speed = new Float32Array(pack.counts.roads); // m/s per road record
   let maxSpeed = 1;
   for (let r = 0; r < speed.length; r++) {
@@ -148,9 +174,6 @@ export function createRoadRouter(
   }
 
   // Snapping grid: each edge is listed in every cell its bounding box covers.
-  const { west, south, east, north } = pack.bounds;
-  const cols = Math.max(1, Math.ceil((east - west) / SNAP_CELL_DEGREES));
-  const rows = Math.max(1, Math.ceil((north - south) / SNAP_CELL_DEGREES));
   const cellOf = (lat, lon) => {
     const c = Math.min(
       cols - 1,
@@ -178,8 +201,18 @@ export function createRoadRouter(
     for (let r = r0; r <= r1; r++)
       for (let c = c0; c <= c1; c++) visit(r * cols + c);
   };
-  const cellCount = new Uint32Array(rows * cols + 1);
-  for (let e = 0; e < E; e++) edgeBox(e, (cell) => cellCount[cell]++);
+  const cellCount = new Uint32Array(cells + 1);
+  let references = 0;
+  for (let e = 0; e < E; e++)
+    edgeBox(e, (cell) => {
+      references++;
+      if (
+        references > ROAD_ROUTER_LIMITS.maxCellReferences ||
+        baseIndexBytes + references * 4 > ROAD_ROUTER_LIMITS.maxIndexBytes
+      )
+        throw new RoadPackError('road geometry exceeds the device index limit');
+      cellCount[cell]++;
+    });
   const cellStart = new Uint32Array(rows * cols + 1);
   for (let i = 0; i < rows * cols; i++)
     cellStart[i + 1] = cellStart[i] + cellCount[i];
@@ -216,9 +249,12 @@ export function createRoadRouter(
     const metersPerDegLat = EARTH_RADIUS_M * DEG;
     const metersPerDegLon = metersPerDegLat * Math.cos(lat * DEG);
     const [r0, c0] = cellOf(lat, lon);
-    const ringLimit = Math.ceil(
-      maxSnapMeters /
-        (Math.min(metersPerDegLat, metersPerDegLon) * SNAP_CELL_DEGREES),
+    const ringLimit = Math.min(
+      Math.max(rows, cols),
+      Math.ceil(
+        maxSnapMeters /
+          (Math.min(metersPerDegLat, metersPerDegLon) * SNAP_CELL_DEGREES),
+      ),
     );
     let best = null;
     const seen = new Set();
@@ -294,16 +330,18 @@ export function createRoadRouter(
   const dist = new Float64Array(V).fill(Infinity);
   const prevArc = new Int32Array(V).fill(-1);
   const closed = new Uint8Array(V);
-  const touched = [];
+  const touched = new Uint32Array(V);
+  let touchedCount = 0;
   const heap = new MinHeap();
 
   function reset() {
-    for (const v of touched) {
+    for (let i = 0; i < touchedCount; i++) {
+      const v = touched[i];
       dist[v] = Infinity;
       prevArc[v] = -1;
       closed[v] = 0;
     }
-    touched.length = 0;
+    touchedCount = 0;
     heap.clear();
   }
 
@@ -342,7 +380,7 @@ export function createRoadRouter(
     const seedForward = new Map();
     const seed = (v, cost, forward) => {
       if (cost >= dist[v]) return;
-      if (dist[v] === Infinity) touched.push(v);
+      if (dist[v] === Infinity) touched[touchedCount++] = v;
       dist[v] = cost;
       prevArc[v] = -1;
       seedForward.set(v, forward);
@@ -403,7 +441,7 @@ export function createRoadRouter(
         const w = arcTarget[arc];
         const cost = g + arcCost[arc];
         if (cost < dist[w]) {
-          if (dist[w] === Infinity) touched.push(w);
+          if (dist[w] === Infinity) touched[touchedCount++] = w;
           dist[w] = cost;
           prevArc[w] = arc;
           heap.push(cost + h(w), w);

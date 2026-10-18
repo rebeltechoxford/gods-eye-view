@@ -59,18 +59,52 @@ export async function openRoadPackStore({
   async function get(id) {
     return result(db.transaction('packs').objectStore('packs').get(id));
   }
-  async function put(record) {
-    const tx = db.transaction('packs', 'readwrite');
-    const completion = done(tx);
-    tx.objectStore('packs').put(record);
-    await completion;
-  }
-  async function remove(id) {
+  // The operation token is checked in the same transaction as every write.
+  // Removing a pack (including from another tab) or starting a newer install
+  // revokes older writers, including ones still hashing their final bytes.
+  async function putOwned(record, expected, signal, chunk = null, clear = false) {
+    signal?.throwIfAborted();
     const tx = db.transaction(['packs', 'chunks'], 'readwrite');
     const completion = done(tx);
-    tx.objectStore('packs').delete(id);
-    tx.objectStore('chunks').delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
+    const packs = tx.objectStore('packs');
+    const request = packs.get(record.id);
+    let accepted = false;
+    request.onsuccess = () => {
+      const current = request.result;
+      if (
+        signal?.aborted ||
+        (expected === null
+          ? current !== undefined
+          : !current || current.operation !== expected)
+      )
+        return;
+      if (clear)
+        tx.objectStore('chunks').delete(IDBKeyRange.bound([record.id, 0], [record.id, Infinity]));
+      if (chunk) tx.objectStore('chunks').put(chunk);
+      packs.put(record);
+      accepted = true;
+    };
     await completion;
+    if (!accepted)
+      throw new DOMException('Road pack download was cancelled or replaced', 'AbortError');
+  }
+  const anyOperation = Symbol('any operation');
+  async function remove(id, expected = anyOperation) {
+    const tx = db.transaction(['packs', 'chunks'], 'readwrite');
+    const completion = done(tx);
+    const packs = tx.objectStore('packs');
+    const request = packs.get(id);
+    let accepted = false;
+    request.onsuccess = () => {
+      if (expected !== anyOperation && (!request.result || request.result.operation !== expected))
+        return;
+      packs.delete(id);
+      tx.objectStore('chunks').delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
+      accepted = true;
+    };
+    await completion;
+    if (!accepted)
+      throw new DOMException('Road pack download was replaced', 'AbortError');
   }
 
   /** Every stored pack record, newest first. */
@@ -81,13 +115,6 @@ export async function openRoadPackStore({
     return records.sort((a, b) =>
       String(b.updatedAt).localeCompare(String(a.updatedAt)),
     );
-  }
-
-  async function clearChunks(id) {
-    const tx = db.transaction('chunks', 'readwrite');
-    const completion = done(tx);
-    tx.objectStore('chunks').delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
-    await completion;
   }
 
   /** Assemble a ready pack's bytes; the length must match the manifest. */
@@ -136,23 +163,30 @@ export async function openRoadPackStore({
     manifestInput,
     { fetchFrom, signal, onProgress = () => {} },
   ) {
+    signal?.throwIfAborted();
     const manifest = validateRoadPackManifest(manifestInput);
     let record = await get(manifest.id);
+    signal?.throwIfAborted();
     if (
       record &&
       (record.sha256 !== manifest.sha256 || record.bytes !== manifest.bytes)
     ) {
-      await remove(manifest.id);
+      await remove(manifest.id, record.operation);
       record = null;
     }
     if (record?.state === 'ready') return record;
-    record ||= {
-      ...manifest,
-      state: 'downloading',
-      receivedBytes: 0,
-      updatedAt: new Date().toISOString(),
+    const previousOperation = record ? record.operation : null;
+    const operation = globalThis.crypto.randomUUID();
+    record = {
+      ...(record || {
+        ...manifest,
+        state: 'downloading',
+        receivedBytes: 0,
+        updatedAt: new Date().toISOString(),
+      }),
+      operation,
     };
-    await put(record);
+    await putOwned(record, previousOperation, signal);
     let received = record.receivedBytes;
     if (received < manifest.bytes) {
       const response = await fetchFrom(received, signal);
@@ -160,7 +194,8 @@ export async function openRoadPackStore({
         // The server ignored the range: start over from the first byte, and
         // drop what was stored, which may not end on a chunk boundary.
         received = 0;
-        await clearChunks(manifest.id);
+        record = { ...record, receivedBytes: 0 };
+        await putOwned(record, operation, signal, null, true);
       } else if (response.status !== 206 && response.status !== 200)
         throw new Error(`Road pack download failed (HTTP ${response.status})`);
       const reader = response.body.getReader();
@@ -175,36 +210,38 @@ export async function openRoadPackStore({
           pending = pending.subarray(size);
           const index = received / ROAD_PACK_CHUNK_BYTES;
           received += size;
-          const tx = db.transaction(['packs', 'chunks'], 'readwrite');
-          const completion = done(tx);
-          tx.objectStore('chunks').put({
-            id: manifest.id,
-            index,
-            bytes: bytes.buffer,
-          });
           record = {
             ...record,
             receivedBytes: received,
             updatedAt: new Date().toISOString(),
           };
-          tx.objectStore('packs').put(record);
-          await completion;
+          await putOwned(record, operation, signal, {
+            id: manifest.id,
+            index,
+            bytes: bytes.buffer,
+          });
           onProgress({ receivedBytes: received, totalBytes: manifest.bytes });
         }
       };
-      for (;;) {
-        signal?.throwIfAborted();
-        const { value, done: finished } = await reader.read();
-        if (finished) break;
-        if (received + pending.length + value.length > manifest.bytes)
-          throw new Error('Road pack download is larger than its manifest');
-        const next = new Uint8Array(pending.length + value.length);
-        next.set(pending);
-        next.set(value, pending.length);
-        pending = next;
-        await flush(false);
+      try {
+        for (;;) {
+          signal?.throwIfAborted();
+          const { value, done: finished } = await reader.read();
+          signal?.throwIfAborted();
+          if (finished) break;
+          if (received + pending.length + value.length > manifest.bytes)
+            throw new Error('Road pack download is larger than its manifest');
+          const next = new Uint8Array(pending.length + value.length);
+          next.set(pending);
+          next.set(value, pending.length);
+          pending = next;
+          await flush(false);
+        }
+        await flush(true);
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
       }
-      await flush(true);
     }
     if (received !== manifest.bytes)
       throw new Error('Road pack download ended early; try again to resume');
@@ -214,16 +251,19 @@ export async function openRoadPackStore({
     let verified = false;
     try {
       const bytes = await assemble(manifest.id, manifest.bytes);
+      signal?.throwIfAborted();
       verified = (await sha256Hex(bytes)) === manifest.sha256;
     } catch {
       verified = false;
     }
+    signal?.throwIfAborted();
     if (!verified) {
-      await remove(manifest.id);
+      // Do not delete a newer tab's replacement when this install loses ownership.
+      await remove(manifest.id, operation);
       throw new Error('Road pack failed its SHA-256 check and was removed');
     }
     record = { ...record, state: 'ready' };
-    await put(record);
+    await putOwned(record, operation, signal);
     return record;
   }
 

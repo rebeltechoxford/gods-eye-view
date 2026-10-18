@@ -23,15 +23,12 @@ export function createOfflineFirstDirectionsSource({ online, offline = null }) {
   return {
     async getRoute(request, options = {}) {
       const { signal } = options;
-      let offlineError = null;
       if (offline && OFFLINE_ROUTE_MODES.includes(request.mode)) {
-        try {
-          const payload = await offline.route(request, { signal });
-          if (payload) return payload;
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          offlineError = error;
-        }
+        // Only an explicit "no covering pack" may use the online source.
+        // A damaged pack, unavailable route or worker failure must not send
+        // coordinates that the operator expected to remain on this device.
+        const payload = await offline.route(request, { signal });
+        if (payload) return payload;
       }
       try {
         return await online.getRoute(request, options);
@@ -39,12 +36,6 @@ export function createOfflineFirstDirectionsSource({ online, offline = null }) {
         if (signal?.aborted) throw error;
         // The browser's fetch reports an unreachable network as a TypeError.
         const network = error instanceof TypeError;
-        if (offlineError)
-          throw new Error(
-            network
-              ? `${offlineError.message}; online routing is unreachable`
-              : offlineError.message,
-          );
         throw network ? new Error(unreachable(request.mode)) : error;
       }
     },

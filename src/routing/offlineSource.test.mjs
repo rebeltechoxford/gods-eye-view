@@ -179,10 +179,12 @@ test('offline-first source: pack first, then online, with useful offline errors'
       },
     },
   });
+  const callsBeforeFailure = calls.length;
   await assert.rejects(
     failing.getRoute({ mode: 'car', a: A, b: B }),
-    /No road near the start in this offline pack; online routing is unreachable/,
+    /No road near the start in this offline pack/,
   );
+  assert.equal(calls.length, callsBeforeFailure, 'a covered-pack failure never discloses the trip online');
 
   const reachable = createOfflineFirstDirectionsSource({
     online: { getRoute: async () => ({ ok: true, from: 'online' }) },
@@ -210,4 +212,15 @@ test('offline-first source: pack first, then online, with useful offline errors'
     ),
     (error) => error.name === 'AbortError',
   );
+});
+
+test('damaged, disconnected and timed-out offline packs never fall back online', async () => {
+  for (const code of ['no-pack', 'no-road', 'no-route', 'aborted']) {
+    const failure = Object.assign(new Error(`Synthetic ${code}`), { code });
+    const source = createOfflineFirstDirectionsSource({
+      online: { getRoute: async () => assert.fail('private trip reached online routing') },
+      offline: { route: async () => { throw failure; } },
+    });
+    await assert.rejects(source.getRoute({ mode: 'car', a: A, b: B }), (error) => error === failure);
+  }
 });

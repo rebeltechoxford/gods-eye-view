@@ -29,11 +29,17 @@ export function createOfflineRouteEngine({
   let loading = null;
   let loadingKey = null;
   let nextId = 1;
+  let generation = 0;
   const pending = new Map();
+  const assertCurrent = (expected) => {
+    if (expected !== generation)
+      throw new DOMException('Offline routing stopped', 'AbortError');
+  };
 
   // Stop the worker and fail whatever it still owed. The next request starts
   // a fresh worker, so one that crashed or hung never blocks later routes.
   function retire(error) {
+    generation++;
     worker?.terminate();
     worker = null;
     loadedKey = null;
@@ -47,7 +53,9 @@ export function createOfflineRouteEngine({
   function ensureWorker() {
     if (worker) return worker;
     worker = createWorker();
-    worker.onmessage = (event) => {
+    const owner = worker;
+    owner.onmessage = (event) => {
+      if (owner !== worker) return;
       const message = event.data || {};
       const entry = pending.get(
         message.type === 'loaded' ? `load:${message.key}` : message.id,
@@ -58,16 +66,17 @@ export function createOfflineRouteEngine({
       );
       entry.resolve(message);
     };
-    worker.onerror = (event) =>
-      retire(new Error(event?.message || 'Offline routing worker failed'));
+    owner.onerror = (event) => {
+      if (owner === worker)
+        retire(new Error(event?.message || 'Offline routing worker failed'));
+    };
     return worker;
   }
 
   function request(key, message, transfer, signal) {
+    signal?.throwIfAborted();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        pending.delete(key);
-        reject(new RouteError('Offline routing timed out', 'aborted'));
         retire(new RouteError('Offline routing timed out', 'aborted'));
       }, timeoutMs);
       const settle = (fn) => (value) => {
@@ -76,28 +85,40 @@ export function createOfflineRouteEngine({
         fn(value);
       };
       const onAbort = () => {
-        pending.delete(key);
-        settle(reject)(new DOMException('Route cancelled', 'AbortError'));
+        // Routing is synchronous inside the worker. Dropping the callback
+        // alone would leave a cancelled search consuming CPU indefinitely.
+        retire(new DOMException('Route cancelled', 'AbortError'));
       };
       signal?.addEventListener('abort', onAbort, { once: true });
       pending.set(key, { resolve: settle(resolve), reject: settle(reject) });
-      ensureWorker().postMessage(message, transfer);
+      try {
+        ensureWorker().postMessage(message, transfer);
+      } catch (error) {
+        retire(error);
+      }
     });
   }
 
-  async function load(pack) {
+  async function load(pack, signal) {
+    const expected = generation;
     const key = `${pack.id}:${pack.sha256}`;
     // One pack loads at a time; a different pack waits for the current load.
     while (loading) {
       if (loadingKey === key) return loading;
       await loading.catch(() => {});
+      assertCurrent(expected);
     }
     if (loadedKey === key) return key;
     loadingKey = key;
     const current = (async () => {
       const bytes = await readPack(pack.id);
+      assertCurrent(expected);
+      signal?.throwIfAborted();
       // Device storage can be damaged after install; check before trusting it.
-      if ((await verify(bytes)) !== pack.sha256)
+      const digest = await verify(bytes);
+      assertCurrent(expected);
+      signal?.throwIfAborted();
+      if (digest !== pack.sha256)
         throw new RouteError(
           `Installed road pack "${pack.name}" is damaged; remove and download it again`,
           'no-pack',
@@ -111,7 +132,9 @@ export function createOfflineRouteEngine({
         `load:${key}`,
         { type: 'load', key, bytes: buffer },
         [buffer],
+        signal,
       );
+      assertCurrent(expected);
       if (!reply.ok)
         throw new RouteError(
           `Road pack "${pack.name}" could not be loaded: ${reply.error}`,
@@ -135,15 +158,20 @@ export function createOfflineRouteEngine({
      * null when no installed pack covers the trip.
      */
     async route({ a, b }, { signal } = {}) {
+      const expected = generation;
+      signal?.throwIfAborted();
       const packs = (await listPacks()).filter(
         (pack) =>
           pack.state === 'ready' &&
           roadPackCovers(pack, a.lat, a.lon) &&
           roadPackCovers(pack, b.lat, b.lon),
       );
+      assertCurrent(expected);
+      signal?.throwIfAborted();
       if (!packs.length) return null;
       const pack = packs.sort((x, y) => area(x) - area(y))[0];
-      const key = await load(pack);
+      const key = await load(pack, signal);
+      assertCurrent(expected);
       signal?.throwIfAborted();
       const id = nextId++;
       const reply = await request(

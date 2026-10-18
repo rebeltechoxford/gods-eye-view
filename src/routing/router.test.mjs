@@ -82,6 +82,25 @@ test('road packs round-trip and expose their tables', () => {
   assert.equal(decodeRoadPack(shifted.subarray(1)).counts.edges, 1);
 });
 
+test('small packs with huge coverage are refused before dense grid allocation', () => {
+  const bytes = syntheticPack({
+    ...gridSpec(2, 2),
+    bounds: { west: -180, south: -90, east: 180, north: 90 },
+  });
+  assert.ok(bytes.length < 4096);
+  const pack = decodeRoadPack(bytes);
+  assert.throws(() => createRoadRouter(pack), /coverage exceeds the device index limit/);
+});
+
+test('graph index allocations have a separate device memory ceiling', () => {
+  // Count-only input proves the guard runs before accessing or allocating
+  // graph arrays. A real decoded pack with these counts has the same bound.
+  assert.throws(() => createRoadRouter({
+    counts: { vertices: 3_000_000, edges: 3_000_000, roads: 1 },
+    bounds: { west: 0, south: 0, east: 1, north: 1 },
+  }), /graph exceeds the device index memory limit/);
+});
+
 test('damaged road packs fail closed with RoadPackError', () => {
   const bytes = syntheticPack(gridSpec(3, 3));
   for (let length = 0; length < bytes.length; length += 7)
