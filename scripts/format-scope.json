@@ -1097,5 +1097,6 @@
   "src/layers/fisb/presentation.test.mjs",
   "scripts/build-us-airports.mjs",
   "scripts/qa-fisb.mjs",
-  "src/testSupport/fisbUplinks.mjs"
+  "src/testSupport/fisbUplinks.mjs",
+  "src/routing/packStore.test.mjs"
 ]

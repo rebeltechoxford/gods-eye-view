@@ -83,18 +83,30 @@ export async function openRoadPackStore({
     );
   }
 
+  async function clearChunks(id) {
+    const tx = db.transaction('chunks', 'readwrite');
+    const completion = done(tx);
+    tx.objectStore('chunks').delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
+    await completion;
+  }
+
   /** Assemble a ready pack's bytes; the length must match the manifest. */
   async function readBytes(id) {
     const record = await get(id);
     if (record?.state !== 'ready')
       throw new Error('Road pack is not installed');
+    return assemble(id, record.bytes);
+  }
+
+  /** The stored chunks of a pack, which must tile exactly `totalBytes`. */
+  async function assemble(id, totalBytes) {
     const chunks = await result(
       db
         .transaction('chunks')
         .objectStore('chunks')
         .getAll(IDBKeyRange.bound([id, 0], [id, Infinity])),
     );
-    const out = new Uint8Array(record.bytes);
+    const out = new Uint8Array(totalBytes);
     let offset = 0;
     chunks.sort((a, b) => a.index - b.index);
     for (const chunk of chunks) {
@@ -145,8 +157,10 @@ export async function openRoadPackStore({
     if (received < manifest.bytes) {
       const response = await fetchFrom(received, signal);
       if (response.status === 200 && received) {
-        // The server ignored the range: start over from the first byte.
+        // The server ignored the range: start over from the first byte, and
+        // drop what was stored, which may not end on a chunk boundary.
         received = 0;
+        await clearChunks(manifest.id);
       } else if (response.status !== 206 && response.status !== 200)
         throw new Error(`Road pack download failed (HTTP ${response.status})`);
       const reader = response.body.getReader();
@@ -194,14 +208,22 @@ export async function openRoadPackStore({
     }
     if (received !== manifest.bytes)
       throw new Error('Road pack download ended early; try again to resume');
-    record = { ...record, state: 'ready' };
-    await put(record);
-    // Verify the stored bytes, not the bytes as they arrived.
-    const bytes = await readBytes(manifest.id);
-    if ((await sha256Hex(bytes)) !== manifest.sha256) {
+    // Verify the stored bytes, not the bytes as they arrived, before the
+    // pack is marked ready: an interruption here leaves a resumable download,
+    // never an unverified "ready" pack.
+    let verified = false;
+    try {
+      const bytes = await assemble(manifest.id, manifest.bytes);
+      verified = (await sha256Hex(bytes)) === manifest.sha256;
+    } catch {
+      verified = false;
+    }
+    if (!verified) {
       await remove(manifest.id);
       throw new Error('Road pack failed its SHA-256 check and was removed');
     }
+    record = { ...record, state: 'ready' };
+    await put(record);
     return record;
   }
 
