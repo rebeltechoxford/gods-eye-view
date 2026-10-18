@@ -1,6 +1,6 @@
 # God's Eye View Current State
 
-## Additive TAK foundation — October 16, 2026
+## Additive TAK foundation — October 18, 2026 release candidate
 
 `src/tak/` adds session CoT contacts, bounded movement trails, affiliation
 frames/callsign cards in the shared overlay host, self position with explicit
@@ -8,13 +8,26 @@ SA broadcast, local/shared markers, broadcast GeoChat and alerts. Existing GEV
 catalog sources, HUD/camera ownership, voice, scenes and public layers remain
 under their existing owners. TAK is separate from public layer/share tokens.
 
-The optional Node gateway accepts only authenticated browsers on the machine
-running it. It validates real loopback sockets, Origin/Host/port, device identity
-and owned marker commands; multiuser/group hosting is not implemented. Configured
-TAK Server uplinks validate TLS certificates/hostnames and keep all certificate
-material on the server. Mesh and server bridging is explicit. Input, replay,
-rate, connection and outgoing buffers are bounded. Network send status means
-gateway submission; actual peer delivery is not acknowledged.
+The development Node gateway accepts authenticated loopback browser connections
+and validates socket address, Origin/Host/port, device identity and owned commands.
+The separate built-app host supports private HTTPS on explicitly configured
+loopback/RFC1918 listeners. Optional named accounts have distinct mTLS upstream
+identities, operator/receive-only roles, revocable sessions and isolated
+replay/ownership/queue/map storage; browser requests bind their expected account
+to the server session. Configure it through [TAK_MULTIOPERATOR.md](TAK_MULTIOPERATOR.md).
+TAK Server uplinks validate certificates and hostnames and keep private keys
+server-side. Server group provisioning and native-peer acceptance remain open.
+Mesh/server bridging is explicit, and input, replay, rate, connection and
+outgoing buffers are bounded. Submitted means a local transport write, not
+acknowledged peer delivery.
+
+The default-off `TAK_DEVICE_STREAMS` adapter includes correlated browser presence
+STOP, with requested/confirmed/refused/unconfirmed status. Its release integration
+checks and official-server pool acceptance are pending; directed chat remains
+refused. [TAK_DEVICE_STREAMS.md](TAK_DEVICE_STREAMS.md) records the consent,
+ownership and resource limits. Application EMCON pauses controlled app requests
+and closes owned streams; it does not disable device radios, cancel every
+in-flight transmission or stop independent private-host uplinks.
 
 Loading TAK information activates sticky page-session privacy protection.
 App-owned AI/voice images/context, public view sharing, scene capture/export and
@@ -28,8 +41,10 @@ Run `npm run tak:lab` for the app and a synthetic, isolated local TCP peer;
 Connect bootstraps an ephemeral local token. `npm run qa:tak -- --url
 http://127.0.0.1:4174 --lab` exercises the real local transport return path,
 privacy, rendering, mobile/embedded views and teardown. Unit security tests use
-fresh local mTLS certificates. These are local evidence, not acceptance against
-ATAK-CIV/iTAK/WinTAK or a real TAK Server. Run instructions and remaining work
+fresh local mTLS certificates. These gates are synthetic evidence. Separately,
+the official-source TAK Server core with a documented loopback patch passed
+eight synthetic-peer transport checks ([record](TAK_REAL_SERVER_ACCEPTANCE.md));
+stock-server and ATAK-CIV/iTAK/WinTAK acceptance remain open. Run instructions and remaining work
 are in [HOW_TO_RUN.md](../HOW_TO_RUN.md) and [TAK_TODO.md](../TAK_TODO.md); the
 capability inventory is [TAK_FEATURE_MATRIX.md](TAK_FEATURE_MATRIX.md).
 

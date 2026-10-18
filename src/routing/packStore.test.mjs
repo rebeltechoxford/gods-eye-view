@@ -217,9 +217,12 @@ test('a pack that fails verification is removed, not left ready', async () => {
 test('an early EOF resumes to completion with a partial stored chunk', async () => {
   const { bytes, manifest } = await packFixture();
   const store = await openRoadPackStore({ indexedDB: fakeIndexedDb() });
-  await assert.rejects(store.install(manifest, {
-    fetchFrom: async () => response(200, bytes.slice(0, 1000)),
-  }), /ended early/);
+  await assert.rejects(
+    store.install(manifest, {
+      fetchFrom: async () => response(200, bytes.slice(0, 1000)),
+    }),
+    /ended early/,
+  );
   await store.install(manifest, {
     fetchFrom: async (start) => {
       assert.equal(start, 1000);
@@ -236,9 +239,13 @@ test('removal in another tab revokes an install still hashing its bytes', async 
   const second = await openRoadPackStore({ indexedDB });
   const digest = crypto.subtle.digest.bind(crypto.subtle);
   let entered;
-  const hashing = new Promise((resolve) => { entered = resolve; });
+  const hashing = new Promise((resolve) => {
+    entered = resolve;
+  });
   let release;
-  const wait = new Promise((resolve) => { release = resolve; });
+  const wait = new Promise((resolve) => {
+    release = resolve;
+  });
   let pause = true;
   t.mock.method(crypto.subtle, 'digest', async (...args) => {
     if (pause) {
@@ -248,14 +255,21 @@ test('removal in another tab revokes an install still hashing its bytes', async 
     }
     return digest(...args);
   });
-  const old = first.install(manifest, { fetchFrom: async () => response(200, bytes) });
+  const old = first.install(manifest, {
+    fetchFrom: async () => response(200, bytes),
+  });
   await hashing;
   await second.remove(manifest.id);
   // A newer tab can install the same ID without an old completion overwriting it.
-  const replacement = await second.install(manifest, { fetchFrom: async () => response(200, bytes) });
+  const replacement = await second.install(manifest, {
+    fetchFrom: async () => response(200, bytes),
+  });
   release();
   await assert.rejects(old, { name: 'AbortError' });
-  assert.equal((await second.get(manifest.id)).operation, replacement.operation);
+  assert.equal(
+    (await second.get(manifest.id)).operation,
+    replacement.operation,
+  );
   assert.deepEqual(await second.readBytes(manifest.id), bytes);
 });
 
@@ -268,10 +282,13 @@ test('aborting during verification never marks a pack ready', async (t) => {
     controller.abort();
     return digest(...args);
   });
-  await assert.rejects(store.install(manifest, {
-    signal: controller.signal,
-    fetchFrom: async () => response(200, bytes),
-  }), { name: 'AbortError' });
+  await assert.rejects(
+    store.install(manifest, {
+      signal: controller.signal,
+      fetchFrom: async () => response(200, bytes),
+    }),
+    { name: 'AbortError' },
+  );
   assert.equal((await store.get(manifest.id)).state, 'downloading');
 });
 
@@ -280,11 +297,18 @@ test('an oversized response cancels its reader instead of retaining a live body'
   const store = await openRoadPackStore({ indexedDB: fakeIndexedDb() });
   let cancelled = false;
   const body = new ReadableStream({
-    start(controller) { controller.enqueue(new Uint8Array(bytes.length + 1)); },
-    cancel() { cancelled = true; },
+    start(controller) {
+      controller.enqueue(new Uint8Array(bytes.length + 1));
+    },
+    cancel() {
+      cancelled = true;
+    },
   });
-  await assert.rejects(store.install(manifest, {
-    fetchFrom: async () => new Response(body),
-  }), /larger than its manifest/);
+  await assert.rejects(
+    store.install(manifest, {
+      fetchFrom: async () => new Response(body),
+    }),
+    /larger than its manifest/,
+  );
   assert.equal(cancelled, true);
 });

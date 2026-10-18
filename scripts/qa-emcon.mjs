@@ -483,8 +483,7 @@ try {
       () => window.__emconStreamWitness?.closed === true,
     );
     const closeDeadline = Date.now() + 5000;
-    while (!streamWitness.closed && Date.now() < closeDeadline)
-      await sleep(20);
+    while (!streamWitness.closed && Date.now() < closeDeadline) await sleep(20);
     assert.equal(
       streamWitness.closed,
       true,

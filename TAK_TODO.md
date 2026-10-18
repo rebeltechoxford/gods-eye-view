@@ -1,15 +1,19 @@
 # God's Eye View × TAK remaining work
 
-Updated: 2026-10-17 UTC. This is the remaining-work handoff for the additive TAK
+Updated: 2026-10-18 UTC. This is the remaining-work handoff for the additive TAK
 foundation on `dev/tak-web-foundation`. Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to run
 the local app/lab. The detailed preservation inventory and parity ledger are in
 [TAK_FEATURE_MATRIX.md](docs/TAK_FEATURE_MATRIX.md); ordered acceptance criteria
 are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 
+The release candidate targets `main` after verification. Candidate integration
+checks and a new iOS artifact remain separate from the earlier evidence below;
+this document does not record a completed main merge.
+
 ## First: real peer acceptance
 
 - **iPhone/AltStore acceptance.** A real unsigned arm64 IPA and simulator
-  startup are verified for development revision `8c96791c`; the run guide links the
+  startup are verified for development revision `28eb0c9e`; the run guide links the
   package and hash. Personal signing/install and actual device TLS/login/WSS,
   touch, GPS/media, Files export and offline WebKit behavior still need testing.
   Native exports cap at 256 MiB and `data:` downloads are unsupported. The
@@ -64,9 +68,13 @@ running.
    authorization, receipts and explicit durable-history policy. The real-server
    routing experiment mapped only the first UID on a shared TLS stream; an
    experimental position-free control also entered latest-SA replay. Do not
-   silently publish placeholder positions. Resolve per-device stream ownership
-   and explicit presence consent before enabling directed replies, then validate
-   each supported native peer. Unsupported directed/group chat remains refused.
+   silently publish placeholder positions. The opt-in device-stream adapter and
+   correlated browser presence STOP are implemented in the candidate. Confirm
+   their combined release checks, actual official-server routing and rapid UID
+   replacement before enabling directed replies, then validate each supported
+   native peer. STOP confirmation means the gateway closed the owned route;
+   it is not peer receipt or a server-registration acknowledgment. Unsupported
+   directed/group chat remains refused.
 4. **Shared drawings and routes.** Lines, simple regional polygons and ordered
    routes now have real globe geometry, phone editing, stable waypoint IDs,
    ownership/conflict/delete handling and explicit gateway sharing. Complete

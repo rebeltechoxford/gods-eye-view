@@ -22,23 +22,27 @@ await mkdir(root);
 const name = 'SYNTHETIC QA ONLY — not actual roads';
 const builtAt = '2026-10-18T00:00:00.000Z';
 const attribution = 'Synthetic QA graph; not actual OpenStreetMap road data';
-const graph = decodeRoadPack(syntheticPack({
-  name,
-  vertices: [
-    [34.3664, -89.5193],
-    [34.3664, -89.10],
-    [34.2576, -89.10],
-    [34.2576, -88.7034],
-  ],
-  edges: [
-    { from: 0, to: 1, road: { name: 'Synthetic QA West' } },
-    { from: 1, to: 2, road: { name: 'Synthetic QA South' } },
-    { from: 2, to: 3, road: { name: 'Synthetic QA East' } },
-  ],
-}));
+const graph = decodeRoadPack(
+  syntheticPack({
+    name,
+    vertices: [
+      [34.3664, -89.5193],
+      [34.3664, -89.1],
+      [34.2576, -89.1],
+      [34.2576, -88.7034],
+    ],
+    edges: [
+      { from: 0, to: 1, road: { name: 'Synthetic QA West' } },
+      { from: 1, to: 2, road: { name: 'Synthetic QA South' } },
+      { from: 2, to: 3, road: { name: 'Synthetic QA East' } },
+    ],
+  }),
+);
 const bytes = encodeRoadPack({
   ...graph,
-  strings: Array.from({ length: graph.counts.strings }, (_, i) => roadPackString(graph, i)),
+  strings: Array.from({ length: graph.counts.strings }, (_, i) =>
+    roadPackString(graph, i),
+  ),
   metadata: {
     name,
     profile: 'car',
@@ -63,5 +67,11 @@ const manifest = validateRoadPackManifest({
   attribution,
 });
 await writeFile(path.join(root, manifest.file), bytes, { flag: 'wx' });
-await writeFile(path.join(root, `${manifest.file}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
-console.log(`Synthetic road fixture: ${bytes.length} bytes, SHA-256 ${manifest.sha256}`);
+await writeFile(
+  path.join(root, `${manifest.file}.json`),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+  { flag: 'wx' },
+);
+console.log(
+  `Synthetic road fixture: ${bytes.length} bytes, SHA-256 ${manifest.sha256}`,
+);

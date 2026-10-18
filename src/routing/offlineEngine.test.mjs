@@ -227,21 +227,34 @@ test('a cancelled trip rejects without disturbing the loaded pack', async () => 
 test('unload fences a pack read or digest that finishes after account retirement', async () => {
   for (const phase of ['read', 'digest']) {
     const pack = await installed('town', GRID, {
-      west: -89.53, south: 34.35, east: -89.5, north: 34.37,
+      west: -89.53,
+      south: 34.35,
+      east: -89.5,
+      north: 34.37,
     });
     let entered;
-    const started = new Promise((resolve) => { entered = resolve; });
+    const started = new Promise((resolve) => {
+      entered = resolve;
+    });
     let release;
-    const blocked = new Promise((resolve) => { release = resolve; });
+    const blocked = new Promise((resolve) => {
+      release = resolve;
+    });
     const { made, createWorker } = fakeWorkers();
     const engine = createOfflineRouteEngine({
       listPacks: async () => [pack],
       readPack: async () => {
-        if (phase === 'read') { entered(); await blocked; }
+        if (phase === 'read') {
+          entered();
+          await blocked;
+        }
         return GRID.slice();
       },
       verify: async () => {
-        if (phase === 'digest') { entered(); await blocked; }
+        if (phase === 'digest') {
+          entered();
+          await blocked;
+        }
         return pack.sha256;
       },
       createWorker,
@@ -251,24 +264,39 @@ test('unload fences a pack read or digest that finishes after account retirement
     engine.unload();
     release();
     await assert.rejects(route, { name: 'AbortError' });
-    assert.equal(made.length, 0, `${phase} completion cannot revive the worker`);
+    assert.equal(
+      made.length,
+      0,
+      `${phase} completion cannot revive the worker`,
+    );
   }
 });
 
 test('cancelling an active worker search terminates its actual work', async () => {
   const pack = await installed('town', GRID, {
-    west: -89.53, south: 34.35, east: -89.5, north: 34.37,
+    west: -89.53,
+    south: 34.35,
+    east: -89.5,
+    north: 34.37,
   });
   let searching;
-  const started = new Promise((resolve) => { searching = resolve; });
+  const started = new Promise((resolve) => {
+    searching = resolve;
+  });
   let terminated = false;
   const worker = {
     postMessage(message) {
       if (message.type === 'load')
-        queueMicrotask(() => worker.onmessage({ data: { type: 'loaded', key: message.key, ok: true } }));
+        queueMicrotask(() =>
+          worker.onmessage({
+            data: { type: 'loaded', key: message.key, ok: true },
+          }),
+        );
       else searching(); // A busy worker that will never answer.
     },
-    terminate() { terminated = true; },
+    terminate() {
+      terminated = true;
+    },
   };
   const engine = createOfflineRouteEngine({
     listPacks: async () => [pack],

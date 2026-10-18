@@ -1104,5 +1104,6 @@
   "scripts/build-us-airports.mjs",
   "scripts/qa-fisb.mjs",
   "src/testSupport/fisbUplinks.mjs",
-  "src/routing/packStore.test.mjs"
+  "src/routing/packStore.test.mjs",
+  "scripts/qa-road-pack-fixture.mjs"
 ]

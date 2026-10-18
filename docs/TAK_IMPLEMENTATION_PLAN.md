@@ -1,4 +1,4 @@
-# God's Eye View × TAK implementation and acceptance plan
+# God's Eye View Ã— TAK implementation and acceptance plan
 
 Updated: 2026-10-17 UTC. Work is integrated into `dev/tak-web-foundation` in
 `rebeltechoxford/gods-eye-view`; `main` is outside this work's execution authority.
@@ -315,9 +315,9 @@ assertion remains. The final foundation CI passed before PR #3 was integrated.
 
 ### Final preservation checks, 2026-10-16
 
-Locked development dependencies received compatible patches: `sharp` 0.35.4 →
+Locked development dependencies received compatible patches: `sharp` 0.35.4 â†’
 0.35.5 with matching platform binaries and `@img/sharp-libvips-*` 1.3.4 packages,
-and `source-map-js` 1.2.1 → 1.2.2, addressing the
+and `source-map-js` 1.2.1 â†’ 1.2.2, addressing the
 [sharp advisory](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) and
 [source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
 Full `npm audit` after the update reported zero vulnerabilities on 2026-10-16
@@ -531,7 +531,7 @@ All **six** production Chromium phone scenarios passed after the final saved-map
 credit fix: actual File/HTTPS import, source notices and server/device retention,
 Cesium pixels/TMS inversion/sparse blank coverage, cancellation, real stopped-
 server fresh-page reopening, and logout clearing private form data before its
-request. The 390 × 844 viewport retained all 30 GEV registrations. The complete
+request. The 390 Ã— 844 viewport retained all 30 GEV registrations. The complete
 long notice remains keyboard-scrollable and unobstructed, verified by nine
 interior hit tests and screenshot review. These are synthetic Chromium results,
 not physical-phone acceptance. `npm run qa:maps:mbtiles` now runs in CI.
@@ -613,7 +613,7 @@ Node `24.14.0` on Linux x64 and Chromium `141.0.7390.37`:
 - `scripts/qa-offline-roads.mjs` against `npm run tak:lab` passed 5 scenarios
   with every online router refused (a control request proves the refusal).
 - `scripts/qa-offline-roads.mjs --https` against the production build passed
-  6 scenarios at 390 × 844. After native login it installs the pack through the
+  6 scenarios at 390 Ã— 844. After native login it installs the pack through the
   panel and saves the offline app. Then it stops the server and opens a fresh
   page from the service worker; the status endpoint is unreachable. That page
   routed Oxford to Tupelo on the device (80 km, 59 min, 23 steps) in 1.8 s.
@@ -627,6 +627,11 @@ memory, eviction, airplane-mode relaunch) remains open in
 [TAK_TODO.md](../TAK_TODO.md).
 
 ## EMCON run
+
+Historical contributor evidence below predates the integration review. Its proxy
+cut existing tunnels, so it did not establish app-driven stream closure. The
+revised gate retains tunnels and observes a real WebSocket at both ends; see
+[the release review](TAK_RELEASE_REVIEW.md) for current acceptance status.
 
 Emissions control is described, with its limits, in
 [TAK_EMCON.md](TAK_EMCON.md). Recorded on 2026-10-18 UTC with Node `24.14.0`

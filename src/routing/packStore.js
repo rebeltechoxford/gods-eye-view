@@ -62,7 +62,13 @@ export async function openRoadPackStore({
   // The operation token is checked in the same transaction as every write.
   // Removing a pack (including from another tab) or starting a newer install
   // revokes older writers, including ones still hashing their final bytes.
-  async function putOwned(record, expected, signal, chunk = null, clear = false) {
+  async function putOwned(
+    record,
+    expected,
+    signal,
+    chunk = null,
+    clear = false,
+  ) {
     signal?.throwIfAborted();
     const tx = db.transaction(['packs', 'chunks'], 'readwrite');
     const completion = done(tx);
@@ -79,14 +85,19 @@ export async function openRoadPackStore({
       )
         return;
       if (clear)
-        tx.objectStore('chunks').delete(IDBKeyRange.bound([record.id, 0], [record.id, Infinity]));
+        tx.objectStore('chunks').delete(
+          IDBKeyRange.bound([record.id, 0], [record.id, Infinity]),
+        );
       if (chunk) tx.objectStore('chunks').put(chunk);
       packs.put(record);
       accepted = true;
     };
     await completion;
     if (!accepted)
-      throw new DOMException('Road pack download was cancelled or replaced', 'AbortError');
+      throw new DOMException(
+        'Road pack download was cancelled or replaced',
+        'AbortError',
+      );
   }
   const anyOperation = Symbol('any operation');
   async function remove(id, expected = anyOperation) {
@@ -96,10 +107,15 @@ export async function openRoadPackStore({
     const request = packs.get(id);
     let accepted = false;
     request.onsuccess = () => {
-      if (expected !== anyOperation && (!request.result || request.result.operation !== expected))
+      if (
+        expected !== anyOperation &&
+        (!request.result || request.result.operation !== expected)
+      )
         return;
       packs.delete(id);
-      tx.objectStore('chunks').delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
+      tx.objectStore('chunks').delete(
+        IDBKeyRange.bound([id, 0], [id, Infinity]),
+      );
       accepted = true;
     };
     await completion;

@@ -5,6 +5,10 @@ Use this repository's `dev/tak-web-foundation` development line from
 public globe, layers, HUD, camera, scenes and voice remain available under their
 existing provider/key requirements.
 
+The current release candidate is intended for `main` after integration checks.
+This guide does not imply that the candidate has already been merged or that
+physical-device and native TAK peer acceptance are complete.
+
 The full GEV globe is the workspace for TAK. Google photorealistic 3D remains
 the preferred map when a configured Google/Cesium provider can supply it; the
 existing keyless globe is its fallback. The synthetic lab does not replace GEV
@@ -264,16 +268,16 @@ to produce those local results.
 
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is
-`output/ios/8c96791c/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`output/ios/28eb0c9e/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
 `provenance.json` and a simulator screenshot. The same package is in the
-[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38999554419)
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39002095999)
 while GitHub retains it. Its SHA-256 is
-`71ab99f7e74c1e9efb3321410f5e10b6a18b14da823441506620f1e8dbea5867`.
-Its PR test-merge `34edc257` has the same file tree as development `8c96791c`.
-The iOS job passed. A separate browser CI run exposed a navigation-related
-fixture-interception failure; its causal correction and the full MBTiles workflow
-subsequently passed all five jobs in CI run `39001491533`, merged into development
-as `28eb0c9e`. The archive was built
+`e412622077b8fc56349bb2fb6ad3df60e0e064a0e0a464c0029cf12619e992b5`.
+Its source is PR test-merge `2a59b57aefa4af8b41d282ea613e065d8332fd5a`,
+whose tree `941cc2a09065064f4519b11c7593e31d7115345d` matches development
+`28eb0c9e`. This retained package predates the current release candidate;
+it is not evidence that the candidate has passed iOS validation. The iOS job
+passed. The archive was built
 with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
 establish a physical-phone or configured-private-endpoint result.
 

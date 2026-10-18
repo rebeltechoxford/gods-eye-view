@@ -319,10 +319,16 @@ test('raw lines: only well-formed uplinks are accepted', () => {
 });
 
 test('invalid block coordinates and reserved scales are rejected before rendering', () => {
-  const block = (number, scale = 0) => Uint8Array.of(
-    0x80 | (scale << 4) | (number >> 16), (number >> 8) & 255, number & 255,
-    0xfa, 0xfa, 0xfa, 0xfa,
-  );
+  const block = (number, scale = 0) =>
+    Uint8Array.of(
+      0x80 | (scale << 4) | (number >> 16),
+      (number >> 8) & 255,
+      number & 255,
+      0xfa,
+      0xfa,
+      0xfa,
+      0xfa,
+    );
   assert.throws(() => decodeGlobalBlock(63, block(0xfffff)), /latitude/);
   assert.throws(() => decodeGlobalBlock(63, block(0x4a570, 3)), /reference/);
   assert.throws(() => blockBounds(-1), /reference/);
@@ -339,8 +345,23 @@ test('out-of-range overlay latitude is rejected rather than wrapped onto the glo
   const vertex = new Uint8Array(6);
   for (let bit = 19; bit < 38; bit++) vertex[bit >> 3] |= 0x80 >> (bit & 7);
   const payload = Uint8Array.from([
-    0x80, 0x10, 0, 0, 0, 255,
-    4, 0x40, 1, 52, 0, 0, 0, 0, 15, 10, 0,
+    0x80,
+    0x10,
+    0,
+    0,
+    0,
+    255,
+    4,
+    0x40,
+    1,
+    52,
+    0,
+    0,
+    0,
+    0,
+    15,
+    10,
+    0,
     ...vertex,
   ]);
   assert.throws(() => decodeTwgo(8, payload), /latitude/);

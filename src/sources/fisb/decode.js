@@ -512,8 +512,11 @@ function blockStep(scale, blockNumber) {
  */
 export function blockBounds(blockNumber, scale = 0, south = false) {
   if (
-    !Number.isInteger(blockNumber) || blockNumber < 0 ||
-    !Number.isInteger(scale) || scale < 0 || scale > 2
+    !Number.isInteger(blockNumber) ||
+    blockNumber < 0 ||
+    !Number.isInteger(scale) ||
+    scale < 0 ||
+    scale > 2
   )
     throw new RangeError('invalid block reference');
   const multiple = [1, 5, 9][scale];

@@ -24,10 +24,18 @@ test('failed refresh removes cached weather and disable rejects late completion'
   let resets = 0;
   const result = {
     configured: true,
-    picture: { reports: [], texts: [{
-      kind: 'METAR', station: 'KUOX', category: 'VFR',
-      position: [-89.54, 34.38], receivedAt: NOW,
-    }] },
+    picture: {
+      reports: [],
+      texts: [
+        {
+          kind: 'METAR',
+          station: 'KUOX',
+          category: 'VFR',
+          position: [-89.54, 34.38],
+          receivedAt: NOW,
+        },
+      ],
+    },
     radar: { 63: { blocks: [] }, 64: { blocks: [] } },
   };
   const layer = createFisbLayer({
@@ -41,10 +49,14 @@ test('failed refresh removes cached weather and disable rejects late completion'
     },
     host: () => null,
   });
-  layer.init({ dataSources: {
-    add: (value) => { dataSource = value; },
-    remove: () => {},
-  } });
+  layer.init({
+    dataSources: {
+      add: (value) => {
+        dataSource = value;
+      },
+      remove: () => {},
+    },
+  });
   await layer.enable();
   assert.equal(await layer.update(), true);
   assert.equal(dataSource.entities.values.length, 1);
@@ -56,13 +68,19 @@ test('failed refresh removes cached weather and disable rejects late completion'
   assert.equal(resets, 1);
   fail = false;
   let resolve;
-  pending = new Promise((done) => { resolve = done; });
+  pending = new Promise((done) => {
+    resolve = done;
+  });
   const update = layer.update();
   await layer.disable();
   resolve(result);
   assert.equal(await update, false);
   await layer.enable();
-  assert.equal(dataSource.entities.values.length, 0, 'no old picture flashes on re-enable');
+  assert.equal(
+    dataSource.entities.values.length,
+    0,
+    'no old picture flashes on re-enable',
+  );
   layer.destroy();
 });
 
@@ -283,10 +301,14 @@ test('the source reads the picture and fetches radar only when it changed', asyn
 test('reset invalidates a pending picture before it can repopulate the radar cache', async () => {
   let finish;
   let calls = 0;
-  const source = createFisbSource({ fetchImpl: async () => {
-    calls++;
-    return new Promise((resolve) => { finish = resolve; });
-  } });
+  const source = createFisbSource({
+    fetchImpl: async () => {
+      calls++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
   const pending = source.fetchPicture();
   const rejected = assert.rejects(pending, { name: 'AbortError' });
   source.reset();

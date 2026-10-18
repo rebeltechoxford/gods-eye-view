@@ -430,7 +430,8 @@ export function installEmconGuard(
       if (!element.srcObject && !/^https?:/i.test(source)) continue;
       try {
         element.pause();
-        for (const track of element.srcObject?.getTracks?.() || []) track.stop();
+        for (const track of element.srcObject?.getTracks?.() || [])
+          track.stop();
         element.srcObject = null;
         element.removeAttribute('src');
         for (const child of element.querySelectorAll?.('source') || [])

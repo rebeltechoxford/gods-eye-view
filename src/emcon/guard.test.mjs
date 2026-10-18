@@ -258,7 +258,10 @@ test('entry closes existing streams, stops RTC capture and aborts only active XH
   const after = calls.length;
   guard.stopActive();
   assert.equal(calls.length, after, 'retired resources are no longer retained');
-  assert.throws(() => new target.WebSocket('wss://example.org/new'), EmconError);
+  assert.throws(
+    () => new target.WebSocket('wss://example.org/new'),
+    EmconError,
+  );
 });
 
 test('a worker controller alone does not authorize static fetches before its acknowledgement', async () => {
@@ -305,8 +308,7 @@ test('entry stops detached remote media and frames while keeping local blob medi
     },
   };
   target.document = {
-    querySelectorAll: (selector) =>
-      selector === 'iframe[src]' ? [frame] : [],
+    querySelectorAll: (selector) => (selector === 'iframe[src]' ? [frame] : []),
   };
   const guard = installEmconGuard(target, { isActive: () => active });
   const remote = new target.HTMLMediaElement();

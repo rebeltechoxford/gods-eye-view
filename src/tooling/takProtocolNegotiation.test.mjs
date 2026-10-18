@@ -308,8 +308,7 @@ test('XML negotiation controls are limited before parsing even without the opt-i
   assert.equal(inbound.length, 0);
 
   clock += 1000;
-  for (let i = 0; i < SERVER_LIMITS.rate + 1; i++)
-    socket.emit('data', offer);
+  for (let i = 0; i < SERVER_LIMITS.rate + 1; i++) socket.emit('data', offer);
   assert.equal(
     uplink.status().protocolControl,
     SERVER_LIMITS.burst + SERVER_LIMITS.rate,
@@ -351,10 +350,10 @@ test('only the requested transaction can accept or deny the encoding switch', as
   );
   await until(() => uplink.status().encoding === 'v1', 'matching acceptance');
   await until(() => inbound.length === 2, 'XML and binary events');
-  assert.deepEqual(inbound.map((xml) => parseCotEvent(xml).uid), [
-    'while-still-requested',
-    'ANDROID-0000synthetic01',
-  ]);
+  assert.deepEqual(
+    inbound.map((xml) => parseCotEvent(xml).uid),
+    ['while-still-requested', 'ANDROID-0000synthetic01'],
+  );
   assert.equal(uplink.status().protocolErrors, 0);
 });
 

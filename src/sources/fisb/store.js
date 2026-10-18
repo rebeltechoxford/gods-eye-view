@@ -102,13 +102,17 @@ function overlayTimeCandidates(time, now) {
   const reference = new Date(now);
   const candidates = [];
   for (const offset of [-1, 0, 1]) {
-    const date = new Date(Date.UTC(
-      reference.getUTCFullYear() + (hasMonth ? offset : 0),
-      hasMonth ? time.month - 1 : reference.getUTCMonth() + (hasDay ? offset : 0),
-      hasDay ? 1 : reference.getUTCDate() + offset,
-      time.hour,
-      time.minute,
-    ));
+    const date = new Date(
+      Date.UTC(
+        reference.getUTCFullYear() + (hasMonth ? offset : 0),
+        hasMonth
+          ? time.month - 1
+          : reference.getUTCMonth() + (hasDay ? offset : 0),
+        hasDay ? 1 : reference.getUTCDate() + offset,
+        time.hour,
+        time.minute,
+      ),
+    );
     const month = date.getUTCMonth();
     if (hasDay) date.setUTCDate(time.day);
     // Date.UTC normalizes February 30 into March; such input is invalid.
