@@ -1,0 +1,206 @@
+name: Restricted release review
+
+on:
+  pull_request:
+    branches: [dev/tak-web-foundation, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: restricted-release-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-review:
+    name: Offline Node 24 and synthetic browser acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the candidate without persistent credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Provision the supported Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.0
+
+      - name: Provision the namespace boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap iproute2
+          # This disposable VM contains no personal profile or operational keys.
+          # Ubuntu's AppArmor userns restriction otherwise prevents Bubblewrap.
+          if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          review_control="$RUNNER_TEMP/gev-release-review"
+          mkdir -p "$review_control"
+          printf 'review:x:%s:%s::/tmp/home:/bin/bash\n' "$(id -u)" "$(id -g)" > "$review_control/passwd"
+          printf 'review:x:%s:\n' "$(id -g)" > "$review_control/group"
+          cat > "$review_control/sandbox.sh" <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mode="$1"
+          shift
+          network=(--unshare-all)
+          case "$mode" in
+            provision) network+=(--share-net) ;;
+            offline) ;;
+            *) exit 2 ;;
+          esac
+          review_control="$RUNNER_TEMP/gev-release-review"
+          review_node="$(dirname "$(dirname "$(command -v node)")")"
+          exec bwrap "${network[@]}" --die-with-parent --new-session --cap-drop ALL \
+            --ro-bind /usr /usr --ro-bind /bin /bin \
+            --ro-bind /lib /lib --ro-bind /lib64 /lib64 \
+            --proc /proc --dev /dev --tmpfs /tmp \
+            --dir /etc --ro-bind "$review_control/passwd" /etc/passwd \
+            --ro-bind "$review_control/group" /etc/group \
+            --ro-bind /etc/hosts /etc/hosts \
+            --ro-bind /etc/nsswitch.conf /etc/nsswitch.conf \
+            --ro-bind /etc/resolv.conf /etc/resolv.conf \
+            --ro-bind /etc/ssl /etc/ssl --ro-bind /etc/fonts /etc/fonts \
+            --ro-bind /etc/ld.so.cache /etc/ld.so.cache \
+            --ro-bind "$review_node" /opt/node \
+            --ro-bind "$review_control" /review \
+            --bind "$GITHUB_WORKSPACE" /app \
+            --clearenv --setenv PATH /opt/node/bin:/usr/bin:/bin:/usr/sbin \
+            --setenv HOME /tmp/home --setenv USER review --setenv LOGNAME review \
+            --setenv TMPDIR /tmp --setenv XDG_CACHE_HOME /tmp/cache \
+            --setenv LANG C.UTF-8 --setenv TZ UTC --setenv CI true \
+            --setenv GIT_CONFIG_GLOBAL /dev/null --setenv GIT_CONFIG_NOSYSTEM 1 \
+            --setenv npm_config_userconfig /dev/null --setenv npm_config_cache /tmp/npm-cache \
+            --setenv PUPPETEER_CACHE_DIR /app/.gev-cache/review-puppeteer \
+            --setenv GEV_REQUIRE_ALLOCATION_GATE 1 \
+            --chdir /app /bin/bash -c 'mkdir -p /tmp/home; exec "$@"' review "$@"
+          BASH
+          chmod 700 "$review_control/sandbox.sh"
+          # Fail closed: do not fall back to executing candidate code on the VM
+          # host if its namespaces cannot be created.
+          "$review_control/sandbox.sh" offline /bin/bash -c '
+            set -euo pipefail
+            test "$(ip -o link show | wc -l)" -eq 1
+            test -z "$(ip route show default)"
+            ip -o address show dev lo | grep -q "127\\.0\\.0\\.1/8"
+            ip link show dev lo | grep -q "UP"
+            ip -brief address
+            node --version
+          '
+
+      - name: Install locked dependencies inside the credential-free boundary
+        shell: bash
+        run: |
+          # Network is allowed only for this provisioning phase. Lifecycle
+          # scripts run inside Bubblewrap, without runner home or Actions env.
+          "$RUNNER_TEMP/gev-release-review/sandbox.sh" provision npm ci --no-audit --no-fund
+
+      - name: Verify the candidate with runtime egress disabled
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/gev-release-review/sandbox.sh" offline /bin/bash -c '
+            set -euo pipefail
+            mkdir -p qa-artifacts/release-review
+            git rev-parse HEAD | tee qa-artifacts/release-review/revision.txt
+            ip -brief address > qa-artifacts/release-review/network.txt
+            node scripts/setup-doctor.mjs --json | tee qa-artifacts/release-review/doctor.json
+            node scripts/format.mjs --check
+            node scripts/check-import-directions.mjs
+            node scripts/check-package-boundaries.mjs
+            node scripts/check-layer-state-tokens.mjs --base-ref origin/main
+            node scripts/run-unit-tests.mjs 2>&1 | tee qa-artifacts/release-review/unit-tests.log
+          '
+
+      - name: Build once without provider keys or runtime egress
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/gev-release-review/sandbox.sh" offline /bin/bash -c '
+            set -euo pipefail
+            node node_modules/vite/bin/vite.js build 2>&1 | tee qa-artifacts/release-review/build.log
+            find dist -type f -print0 | sort -z | xargs -0 sha256sum > qa-artifacts/release-review/dist-sha256.txt
+          '
+
+      - name: Retain the exact build used by the browser gates
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-review-dist-${{ github.sha }}
+          path: |
+            dist/
+            qa-artifacts/release-review/revision.txt
+            qa-artifacts/release-review/dist-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Exercise the built app and synthetic peers on private loopback
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/gev-release-review/sandbox.sh" offline /bin/bash -c '
+            set -euo pipefail
+            # One network namespace contains the app, browser, HTTPS fixtures,
+            # recording proxy and synthetic receiver. It has no external NIC.
+            node scripts/qa-road-pack-fixture.mjs --out /tmp/qa-road-packs
+            failed=0
+            node scripts/qa-offline-roads.mjs --https --pack-dir /tmp/qa-road-packs --dist dist || failed=1
+            node scripts/qa-emcon.mjs --pack-dir /tmp/qa-road-packs --dist dist || failed=1
+            node scripts/qa-fisb.mjs --dist dist || failed=1
+            # The protobuf exchange uses the synthetic Vite lab in this same
+            # namespace; it does not produce or replace the production build.
+            node scripts/tak-lab.mjs --protobuf > qa-artifacts/release-review/tak-lab.log 2>&1 &
+            lab_pid=$!
+            cleanup_lab() {
+              kill "$lab_pid" 2>/dev/null || true
+              wait "$lab_pid" 2>/dev/null || true
+            }
+            trap cleanup_lab EXIT
+            ready=0
+            for attempt in $(seq 1 60); do
+              if curl --silent --fail --max-time 2 http://127.0.0.1:4174/ > /dev/null; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            if test "$ready" -ne 1; then
+              cat qa-artifacts/release-review/tak-lab.log
+              exit 1
+            fi
+            node scripts/qa-tak.mjs --lab --protobuf --url http://127.0.0.1:4174 || failed=1
+            npm run test:track -- --url http://127.0.0.1:4174 --offline-imagery 2>&1 | tee qa-artifacts/release-review/tracking.log || failed=1
+            sha256sum --check qa-artifacts/release-review/dist-sha256.txt > qa-artifacts/release-review/dist-unchanged.txt || failed=1
+            exit "$failed"
+          '
+
+      - name: Retain review evidence even when a check fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-review-evidence-${{ github.sha }}
+          path: qa-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Record the evidence limits
+        if: always()
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'TEXT'
+          Runtime checks run with a scrubbed environment, private home and tmp,
+          and a Bubblewrap network namespace containing loopback only. No
+          repository secrets, operational credentials, personal home, SSH agent,
+          container socket or physical receiver are supplied. Namespace failure
+          fails the job instead of falling back to host execution.
+
+          Dependency provisioning has network access inside the filesystem and
+          process boundary; it is not an allowlisted or air-gapped install.
+          The existing browser harnesses use SwiftShader and `--no-sandbox`
+          inside the outer namespace boundary. This supplies synthetic functional
+          evidence, not hardware GPU performance, live-provider, physical-phone,
+          native TAK-peer or real-radio interoperability evidence. The ordinary
+          CI jobs remain separate checks.
+          TEXT

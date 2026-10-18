@@ -331,7 +331,7 @@ export function directionsStats(state) {
     armed,
     pointerBlocked,
   } = state;
-  const source = 'OSM routing';
+  const source = directionsSourceLabel(route);
   if (pointerBlocked) {
     return {
       count: route?.steps.length || 0,
@@ -367,6 +367,7 @@ export function directionsStats(state) {
     const word = DIRECTIONS_MODES[mode]?.word || mode;
     const summary =
       `${formatRouteDistance(route.distanceM)} · ${formatRouteDuration(route.durationS)} · ${word}` +
+      (route.offline ? ' · offline' : '') +
       (route.stepsTruncated ? ` · first ${route.steps.length} turns` : '');
     return {
       count: route.steps.length,
@@ -496,7 +497,34 @@ export function normalizeRoutePayload(payload, mode) {
     // the cut is shown rather than passed off as the whole route.
     stepsTruncated: payload.stepsTruncated === true,
     mode,
+    offline: offlineRouteSource(payload.offline),
   };
+}
+
+const shortLabel = (value, max) =>
+  typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
+
+/** Which on-device road pack produced a route, or null for online routing. */
+function offlineRouteSource(value) {
+  if (!value || typeof value !== 'object') return null;
+  const edition =
+    typeof value.edition === 'string' &&
+    Number.isFinite(Date.parse(value.edition))
+      ? new Date(value.edition).toISOString().slice(0, 10)
+      : null;
+  return {
+    pack: shortLabel(value.pack, 60) || 'road pack',
+    edition,
+    attribution:
+      shortLabel(value.attribution, 120) || '© OpenStreetMap contributors',
+  };
+}
+
+/** Status-row source text: the online router, or the on-device pack used. */
+export function directionsSourceLabel(route) {
+  if (!route?.offline) return 'OSM routing';
+  const { pack, edition } = route.offline;
+  return `Offline · ${pack}${edition ? ` (OSM ${edition})` : ''}`;
 }
 
 /**

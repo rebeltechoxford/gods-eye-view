@@ -13,6 +13,7 @@
  */
 
 import { cancelCameraArrival } from '../data/cameraArrival.js';
+import { isTakPrivacyBlocked, TAK_PRIVACY_MESSAGE } from '../tak/privacy.js';
 import { resolveCameraPose, resolveCameraMove } from '../director/camera.js';
 import { createCameraMotion } from './cameraMotion.js';
 import { createStateChannel } from '../app/stateChannel.js';
@@ -915,6 +916,10 @@ export class SceneDirector {
    * new shot appended to the selected scene. No-op if no scene is selected.
    */
   captureShot() {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
+      this._updateStatus(TAK_PRIVACY_MESSAGE);
+      return false;
+    }
     const scene = this._getSelectedScene();
     if (!scene) return;
 
@@ -949,6 +954,10 @@ export class SceneDirector {
    * with the live viewport state. Useful for fine-tuning a shot in-place.
    */
   updateSelectedShot() {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
+      this._updateStatus(TAK_PRIVACY_MESSAGE);
+      return false;
+    }
     const scene = this._getSelectedScene();
     if (!scene) return;
 
@@ -1937,6 +1946,10 @@ export class SceneDirector {
 
   /** Export the entire project as a timestamped JSON file download. */
   exportProject() {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
+      this._updateStatus(TAK_PRIVACY_MESSAGE);
+      return false;
+    }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `scene-presets-${stamp}.json`;
     let payload;
@@ -2035,6 +2048,10 @@ export class SceneDirector {
 
   /** Download the telemetry metadata from the most recent completed run as JSON. */
   downloadLastRunMetadata() {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) {
+      this._updateStatus(TAK_PRIVACY_MESSAGE);
+      return false;
+    }
     if (!this._lastRunJson) return;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `scene-run-${stamp}.json`;

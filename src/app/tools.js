@@ -1,10 +1,13 @@
 import { initTakWebClient } from '../tak/index.js';
+import { isTakPrivacyBlocked, subscribeTakPrivacy } from '../tak/privacy.js';
+import { overlayHost } from './layers/overlayHost.js';
 import { SceneDirector } from '../scenes/director.js';
 import { initAnnotations } from '../annotations/index.js';
 import { initDrawTool } from '../annotations/drawTool.js';
 import { initImageryBoxTool } from '../ui/imageryBoxTool.js';
 import { createRecentImageryPanel } from '../ui/recentImagery.js';
 import { initGevVoiceCommands } from '../voice/gevRealtime.js';
+import { emconState } from '../emcon/boot.js';
 import { installViews, isEmbeddedInline } from './embed.js';
 import { installScopeMask, destroyScopeMask } from '../scopeMask.js';
 import {
@@ -60,6 +63,8 @@ export function createApplicationTools({
   // DATA ▸ Recent Imagery: the box tool claims the pointer like Draw and the
   // panel lives on the right rail, so both belong to the application
   // lifetime. The tileset lets the layer drape while the globe is hidden.
+  // FIS-B radar drapes on the tileset too while the globe is hidden.
+  dataManager.layers.get('fisb')?.module.attachTileset?.(tileset);
   const recentImagery = dataManager.layers.get('recent-imagery')?.module;
   if (recentImagery) {
     recentImagery.attachTileset(tileset);
@@ -161,8 +166,23 @@ export function createApplicationTools({
   defer(() => {
     if (window.__godsEyeView === debug) delete window.__godsEyeView;
   });
-  // Additive web-native TAK preview; independent of existing GEV layers.
-  const takClient = initTakWebClient({ viewer });
+  // TAK client: CoT overlay on top of every GEV layer; network only via the
+  // same-origin gateway (server/providers/tak) after the operator connects.
+  const takClient = initTakWebClient({
+    viewer,
+    mapStackController,
+    overlays: overlayHost,
+    navigate: (fly) => styleManager._runExplicitNavigation('TAK contact', fly),
+  });
+  debug.takClient = takClient;
+  defer(
+    subscribeTakPrivacy(viewer, () => {
+      if (isTakPrivacyBlocked(viewer, 'ai'))
+        styleManager.hud?._summaryRequest?.abort();
+      if (isTakPrivacyBlocked(viewer, 'recording'))
+        styleManager.setRecordingMode(false);
+    }),
+  );
   defer(() => takClient.destroy());
   const voiceCommands = initGevVoiceCommands({
     ...voice,
@@ -184,11 +204,28 @@ export function createApplicationTools({
   });
   debug.voiceCommands = voiceCommands;
   defer(
+    emconState.subscribe((record) => {
+      if (!record) return;
+      for (const stop of [
+        () => voiceCommands.stop(),
+        () => dataManager.layers.get('radio')?.module.stopRadioPlayback?.(),
+        () => styleManager.hud?._summaryRequest?.abort(),
+      ]) {
+        try {
+          stop();
+        } catch {
+          // Independent owners must all get a chance to release their resources.
+        }
+      }
+    }),
+  );
+  defer(
     installViews({
       shell: styleManager,
       viewer,
       dataManager,
-      run: (name, args) => voiceCommands.runner(name, args, { signal }),
+      run: (name, args) =>
+        voiceCommands.runner(name, args, { signal, localOnly: true }),
       signal,
     }),
   );

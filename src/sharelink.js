@@ -1,3 +1,8 @@
+import {
+  isTakPrivacyBlocked,
+  takDisclosureTicket,
+  canDiscloseTakData,
+} from './tak/privacy.js';
 import * as Cesium from 'cesium';
 import { BLOOM_INTENSITY_DEFAULT, BLOOM_SCALE_VERSION } from './bloom.js';
 import {
@@ -507,12 +512,15 @@ export class ShareLinkManager {
 
   /** Copy a current-state snapshot with a copy-time timestamp. Returns true on success. */
   async copyLink({ nowMs = Date.now() } = {}) {
+    if (isTakPrivacyBlocked(this.viewer, 'sharing')) return false;
+    const privacy = takDisclosureTicket(this.viewer, 'sharing');
     const params = this._buildHashParams();
     if (!params) return false;
     params.set(SHARE_CREATED_AT_PARAM, String(Math.floor(nowMs / 1000)));
     const copiedUrl = new URL(window.location.href);
     copiedUrl.hash = params.toString();
     try {
+      if (!canDiscloseTakData(privacy)) return false;
       await navigator.clipboard.writeText(copiedUrl.href);
       return true;
     } catch {
@@ -541,7 +549,8 @@ export class ShareLinkManager {
 
   /** Build a deterministic snapshot without mutating history. */
   _buildHashParams() {
-    if (this._destroyed) return null;
+    if (this._destroyed || isTakPrivacyBlocked(this.viewer, 'sharing'))
+      return null;
     const camera = this.viewer.camera;
     const carto = camera.positionCartographic;
     if (!carto) return null;

@@ -372,6 +372,7 @@ const layers = [
 export const VOICE_OFF_LAYERS = Object.freeze({
   'bhote-koshi-2026': 'scene-driven event layer (control_scene)',
   'bhote-koshi-locator': 'scene-driven event layer (control_scene)',
+  fisb: 'reads your own 978 MHz receiver on the host; not part of voice yet',
 });
 
 const TYPE_NAMES = Object.freeze({

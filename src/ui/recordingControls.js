@@ -1,3 +1,4 @@
+import { isTakPrivacyBlocked } from '../tak/privacy.js';
 /** Own recording chrome, safe frames and the pre-recording HUD snapshot. */
 export class RecordingControls {
   constructor({ syncShareState }) {
@@ -28,6 +29,8 @@ export class RecordingControls {
 
   setRecordingMode(enabled, options = {}) {
     if (this.destroyed) return;
+    if (enabled && isTakPrivacyBlocked(this.hud?.viewer, 'recording'))
+      return false;
     const {
       hidePanels = true,
       hudMode = 'minimal',

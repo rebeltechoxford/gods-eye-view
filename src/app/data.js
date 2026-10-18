@@ -1,6 +1,7 @@
 import { LayerLifecycle } from '../data/lifecycle.js';
 import { LayerPresentation } from './layerPresentation.js';
 import { createCyberSonarScene } from '../cyberSonarScene.js';
+import { emconState } from '../emcon/boot.js';
 /** Register the application layer catalog before allowing state restoration. */
 export function createApplicationData({
   scene: { viewer, mapStackController },
@@ -26,6 +27,12 @@ export function createApplicationData({
     weatherClock: catalog?.weatherClock,
   });
   defer(() => presentation.destroy());
+  // Before restoration: under EMCON, saved network layers stay off and
+  // nothing polls; the operator's layer preferences are left untouched.
+  dataManager.setEmcon(emconState.isActive());
+  defer(
+    emconState.subscribe((record) => dataManager.setEmcon(Boolean(record))),
+  );
   onData?.(dataManager);
   if (!catalog?.layers || !catalog?.metadata)
     throw new TypeError('An application layer catalog is required');

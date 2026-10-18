@@ -14,6 +14,7 @@ import { defaultSourceRoot } from './common/source-root.js';
 import { radioBrowserProxy } from './radio.js';
 import { gbfsProxy } from './gbfs.js';
 import { localReceiversProxy } from './local-receivers.js';
+import { fisbProxy } from './fisb.js';
 import { transitProxy } from './transit.js';
 import { adsbLolProxy } from './aircraft/adsb-lol.js';
 import { aisLiveProxy } from './vessels/ais-live.js';
@@ -26,6 +27,7 @@ import { weatherProxy } from './weather.js';
 import { firePerimetersProxy } from './firePerimeters.js';
 import { cycloneProxy } from './cyclones.js';
 import { windProxy } from './wind.js';
+import { takGatewayProxy } from './tak.js';
 
 /**
  * Construct the local provider plugins in their established order.
@@ -49,6 +51,7 @@ function localProviderPlugins({ realtime } = {}) {
     radioBrowserProxy(),
     gbfsProxy(),
     localReceiversProxy(),
+    fisbProxy(),
     transitProxy(),
     adsbLolProxy(),
     aisLiveProxy(),
@@ -60,6 +63,7 @@ function localProviderPlugins({ realtime } = {}) {
     cycloneProxy(),
     mapillaryProxy(),
     firePerimetersProxy(),
+    takGatewayProxy(),
     keySetupEndpoint(),
   ];
 }

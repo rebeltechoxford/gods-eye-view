@@ -22,6 +22,7 @@ export const R820T_GAIN_STEPS_DB = Object.freeze([
 export const SDR_GAIN_DEFAULTS = Object.freeze({
   fm: SDR_GAIN_AUTO,
   adsb: 28.0,
+  air: SDR_GAIN_AUTO,
 });
 
 export const SDR_GAIN_STORAGE_KEY = 'gev:sdr:gain:v1';
@@ -47,8 +48,10 @@ export function normalizeSdrGain(value) {
 
 /**
  * Read per-mode gain settings, falling back to the defaults.
+ * Settings stored before a mode existed (for example `{fm, adsb}` from before
+ * airband) keep their values; the missing mode takes its default.
  * @param {Storage|null} storage Browser storage or a test double.
- * @returns {{fm:'auto'|number, adsb:'auto'|number}}
+ * @returns {{fm:'auto'|number, adsb:'auto'|number, air:'auto'|number}}
  */
 export function readSdrGainSettings(storage) {
   let stored = null;
@@ -68,14 +71,19 @@ export function readSdrGainSettings(storage) {
 /**
  * Persist per-mode gain settings. Storage failures are ignored.
  * @param {Storage|null} storage Browser storage or a test double.
- * @param {{fm:'auto'|number, adsb:'auto'|number}} settings Settings to save.
+ * @param {{fm:'auto'|number, adsb:'auto'|number, air?:'auto'|number}} settings
+ *   Settings to save; a missing mode is left out and reads as its default.
  * @returns {boolean} Whether the write succeeded.
  */
 export function writeSdrGainSettings(storage, settings) {
   try {
     storage?.setItem?.(
       SDR_GAIN_STORAGE_KEY,
-      JSON.stringify({ fm: settings.fm, adsb: settings.adsb }),
+      JSON.stringify({
+        fm: settings.fm,
+        adsb: settings.adsb,
+        air: settings.air,
+      }),
     );
     return Boolean(storage?.setItem);
   } catch {

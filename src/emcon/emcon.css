@@ -1,0 +1,112 @@
+.tak-web-root button.gev-emcon-button {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  border: 1px solid #f0b871;
+  border-radius: 7px;
+  padding: 10px 14px;
+  background: #1f1508;
+  color: #ffe7c4;
+  font:
+    700 12px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tak-web-root button.gev-emcon-button[aria-pressed='true'] {
+  border-color: #ff5a4e;
+  background: #4a0d09;
+  color: #fff;
+}
+.gev-emcon-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 400;
+  padding: 6px 12px;
+  background: #8b130c;
+  color: #fff;
+  font:
+    700 12px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-align: center;
+  /* Taps reach the controls underneath; the banner is only a reminder. */
+  pointer-events: none;
+  opacity: 0.94;
+}
+.gev-emcon-banner[hidden] {
+  display: none;
+}
+.gev-emcon-dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 410;
+  width: min(420px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  border: 1px solid #f0b871;
+  border-radius: 10px;
+  padding: 16px;
+  background: #0d1520;
+  color: #eaf2fb;
+  font:
+    13px/1.5 'JetBrains Mono',
+    monospace;
+  box-shadow: 0 12px 40px #000a;
+}
+.gev-emcon-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+.gev-emcon-dialog p {
+  margin: 0 0 10px;
+}
+.gev-emcon-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.gev-emcon-actions button {
+  min-height: 44px;
+  border: 1px solid #71bcf0;
+  border-radius: 7px;
+  padding: 8px 14px;
+  background: #0b1929;
+  color: #eaf7ff;
+  font: inherit;
+  cursor: pointer;
+}
+.gev-emcon-actions button[data-emcon='accept'] {
+  border-color: #f0b871;
+  background: #3a2408;
+}
+body.ui-embed .gev-emcon-button,
+body.ui-clean-view .gev-emcon-button,
+body.recording-mode .gev-emcon-button {
+  display: none;
+}
+.tak-web-root:has(> .tak-web-launcher[aria-expanded='true'])
+  > button.gev-emcon-button {
+  display: none;
+}
+.tak-web-root button.gev-emcon-header-button {
+  margin-left: 8px;
+  border: 1px solid #f0b871;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #1f1508;
+  color: #ffe7c4;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.tak-web-root button.gev-emcon-header-button[aria-pressed='true'] {
+  border-color: #ff5a4e;
+  background: #4a0d09;
+  color: #fff;
+}

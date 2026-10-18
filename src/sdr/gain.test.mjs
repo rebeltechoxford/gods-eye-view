@@ -26,7 +26,7 @@ test('gain steps are the R820T table and ADS-B defaults to manual 28.0 dB', () =
   assert.equal(R820T_GAIN_STEPS_DB.at(-1), 49.6);
   assert.ok(R820T_GAIN_STEPS_DB.includes(20.7));
   assert.ok(R820T_GAIN_STEPS_DB.includes(28.0));
-  assert.deepEqual(SDR_GAIN_DEFAULTS, { fm: 'auto', adsb: 28.0 });
+  assert.deepEqual(SDR_GAIN_DEFAULTS, { fm: 'auto', adsb: 28.0, air: 'auto' });
   assert.equal(tunerGainValue('auto'), null, 'AUTO hands gain to tuner AGC');
   assert.equal(tunerGainValue(20.7), 20.7);
 });
@@ -49,7 +49,11 @@ test('per-mode gain persists in storage and survives unavailable storage', () =>
     storage.values.get(SDR_GAIN_STORAGE_KEY),
     '{"fm":28,"adsb":"auto"}',
   );
-  assert.deepEqual(readSdrGainSettings(storage), { fm: 28, adsb: 'auto' });
+  assert.deepEqual(readSdrGainSettings(storage), {
+    fm: 28,
+    adsb: 'auto',
+    air: 'auto',
+  });
 
   const corrupt = memoryStorage({ [SDR_GAIN_STORAGE_KEY]: '{not json' });
   assert.deepEqual(readSdrGainSettings(corrupt), SDR_GAIN_DEFAULTS);
@@ -70,9 +74,41 @@ test('a stored ADS-B gain wins over the 28.0 dB default', () => {
   const storage = memoryStorage({
     [SDR_GAIN_STORAGE_KEY]: JSON.stringify({ fm: 'auto', adsb: 20.7 }),
   });
-  assert.deepEqual(readSdrGainSettings(storage), { fm: 'auto', adsb: 20.7 });
+  assert.deepEqual(readSdrGainSettings(storage), {
+    fm: 'auto',
+    adsb: 20.7,
+    air: 'auto',
+  });
   const onlyFm = memoryStorage({
     [SDR_GAIN_STORAGE_KEY]: JSON.stringify({ fm: 36.4 }),
   });
-  assert.deepEqual(readSdrGainSettings(onlyFm), { fm: 36.4, adsb: 28.0 });
+  assert.deepEqual(readSdrGainSettings(onlyFm), {
+    fm: 36.4,
+    adsb: 28.0,
+    air: 'auto',
+  });
+});
+
+test('airband gain is stored beside FM and ADS-B without disturbing them', () => {
+  // A value written before airband existed keeps both of its modes.
+  const storage = memoryStorage({
+    [SDR_GAIN_STORAGE_KEY]: JSON.stringify({ fm: 36.4, adsb: 20.7 }),
+  });
+  const settings = readSdrGainSettings(storage);
+  assert.deepEqual(settings, { fm: 36.4, adsb: 20.7, air: 'auto' });
+  assert.equal(writeSdrGainSettings(storage, { ...settings, air: 42.1 }), true);
+  assert.deepEqual(JSON.parse(storage.values.get(SDR_GAIN_STORAGE_KEY)), {
+    fm: 36.4,
+    adsb: 20.7,
+    air: 42.1,
+  });
+  assert.deepEqual(readSdrGainSettings(storage), {
+    fm: 36.4,
+    adsb: 20.7,
+    air: 42.1,
+  });
+  const badAir = memoryStorage({
+    [SDR_GAIN_STORAGE_KEY]: JSON.stringify({ fm: 'auto', air: 'loud' }),
+  });
+  assert.equal(readSdrGainSettings(badAir).air, 'auto');
 });

@@ -3,10 +3,15 @@
   position: fixed;
   right: 18px;
   bottom: 72px;
-  z-index: 10100;
+  z-index: 140;
   font-family: 'JetBrains Mono', monospace;
   color: #e5f0fc;
   font-size: 12px;
+}
+body.ui-embed .tak-web-root,
+body.ui-clean-view .tak-web-root,
+body.recording-mode .tak-web-root {
+  display: none !important;
 }
 .tak-web-root button,
 .tak-web-root input,
@@ -37,6 +42,7 @@
   bottom: 52px;
   width: min(355px, calc(100vw - 24px));
   max-height: min(72vh, 660px);
+  max-height: min(72dvh, 660px);
   overflow: auto;
   padding: 14px;
   border: 1px solid #4b83a1;
@@ -45,15 +51,32 @@
   box-shadow: 0 8px 36px rgba(0, 0, 0, 0.65);
   box-sizing: border-box;
 }
-.tak-web-panel[hidden] { display: none; }
-.tak-web-header, .tak-web-roster-header {
+.tak-web-panel[hidden] {
+  display: none;
+}
+.tak-web-header,
+.tak-web-roster-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
 }
-.tak-web-header strong { font-size: 14px; letter-spacing: 0.08em; }
-.tak-web-header span { color: #f4c675; font-size: 10px; }
+.tak-web-header strong {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+.tak-web-header {
+  position: sticky;
+  top: -14px;
+  z-index: 1;
+  padding: 10px 0;
+  background: #081522;
+  border-bottom: 1px solid #35516a;
+}
+.tak-web-header span {
+  color: #f4c675;
+  font-size: 10px;
+}
 .tak-web-explainer {
   margin: 10px 0;
   color: #aac5d7;
@@ -65,7 +88,7 @@
   color: #c9e6fa;
   font-size: 11px;
 }
-.tak-web-root input:not([type="file"]),
+.tak-web-root input:not([type='file']),
 .tak-web-root textarea {
   display: block;
   box-sizing: border-box;
@@ -76,13 +99,16 @@
   background: #101d2b;
   color: #e5f0fc;
 }
-.tak-web-root input[type="file"] {
+.tak-web-root input[type='file'] {
   box-sizing: border-box;
   width: 100%;
   font-size: 10px;
   color: #bdd8e6;
 }
-.tak-web-root textarea { resize: vertical; min-height: 60px; }
+.tak-web-root textarea {
+  resize: vertical;
+  min-height: 60px;
+}
 .tak-web-root button:not(.tak-web-launcher) {
   padding: 7px 9px;
   border: 1px solid #547993;
@@ -91,7 +117,9 @@
   color: #e5f0fc;
   cursor: pointer;
 }
-.tak-web-root button:hover { border-color: #8acaff; }
+.tak-web-root button:hover {
+  border-color: #8acaff;
+}
 .tak-web-root button:focus-visible,
 .tak-web-root textarea:focus-visible,
 .tak-web-root input:focus-visible {
@@ -111,8 +139,14 @@
   font-weight: 700;
   letter-spacing: 0.08em;
 }
-.tak-web-coordinates { display: flex; gap: 6px; margin: 6px 0; }
-.tak-web-roster-header { margin: 16px 0 6px; }
+.tak-web-coordinates {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+.tak-web-roster-header {
+  margin: 16px 0 6px;
+}
 .tak-web-roster {
   max-height: 174px;
   overflow-y: auto;
@@ -126,11 +160,197 @@
   gap: 4px;
   text-align: left;
 }
-.tak-web-contact + .tak-web-contact { border-top: 1px solid #263e54; }
-.tak-web-contact span { color: #acc7dc; font-size: 10px; }
-.tak-web-empty { padding: 6px; color: #b2c8d6; font-size: 11px; }
-.tak-web-status { min-height: 28px; padding-top: 10px; color: #a7e3bc; }
-.tak-web-error { color: #ff9999; }
+.tak-web-contact + .tak-web-contact {
+  border-top: 1px solid #263e54;
+}
+.tak-web-contact span {
+  color: #acc7dc;
+  font-size: 10px;
+}
+.tak-web-empty {
+  padding: 6px;
+  color: #b2c8d6;
+  font-size: 11px;
+}
+.tak-web-status {
+  min-height: 28px;
+  padding-top: 10px;
+  color: #a7e3bc;
+}
+.tak-web-error {
+  color: #ff9999;
+}
+.tak-web-root select {
+  flex: 1;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #42637a;
+  border-radius: 4px;
+  background: #101d2b;
+  color: #e5f0fc;
+  font: inherit;
+}
+.tak-web-row {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+.tak-web-row > * {
+  flex: 1;
+  min-width: 0;
+}
+.tak-web-root .tak-web-row input:not([type='file']) {
+  width: auto;
+}
+.tak-web-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #35516a;
+}
+.tak-web-section > summary {
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  list-style-position: inside;
+}
+.tak-web-section > summary span {
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #a0c3d8;
+  border-bottom: 2px solid transparent;
+}
+.tak-web-section form,
+.tak-web-section > p,
+.tak-web-section > .tak-web-row {
+  margin-top: 8px;
+}
+.tak-web-hint {
+  margin: 6px 0;
+  color: #9fb9ca;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-line;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.tak-web-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  color: #c9e6fa;
+}
+.tak-web-root .tak-web-check input {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+}
+.tak-web-root button.tak-web-alert {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  border-color: #a33;
+  background: #3a1214;
+  color: #ffd2d0;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.tak-web-root button.tak-web-alert[aria-pressed='true'] {
+  background: #b3261e;
+  color: #fff;
+}
+.tak-web-root [data-tak-filter] {
+  margin-bottom: 6px;
+}
+.tak-web-contact-row {
+  display: flex;
+  align-items: stretch;
+}
+.tak-web-contact-row + .tak-web-contact-row {
+  border-top: 1px solid #263e54;
+}
+.tak-web-contact-row .tak-web-contact {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.tak-web-root button.tak-web-remove {
+  flex: 0 0 32px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #ff9999;
+}
+.tak-web-contact-emergency strong {
+  color: #ff8a80;
+}
+.tak-web-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: 1px solid #000;
+  vertical-align: middle;
+}
+.tak-web-friendly {
+  background: #80e0ff;
+}
+.tak-web-hostile {
+  background: #ff8080;
+  transform: rotate(45deg);
+}
+.tak-web-neutral {
+  background: #aaffaa;
+}
+.tak-web-unknown {
+  background: #ffff80;
+  border-radius: 50%;
+}
+.tak-web-marker {
+  background: #f0cd70;
+  border-radius: 50%;
+}
+.tak-web-self {
+  background: #64c4ff;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 2px #0b1929,
+    0 0 0 3px #64c4ff;
+}
+.tak-web-chat {
+  max-height: 160px;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding: 4px 6px;
+  border: 1px solid #263e54;
+  border-radius: 4px;
+}
+.tak-web-chat p {
+  margin: 4px 0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.tak-web-chat time {
+  color: #7f98aa;
+}
+.tak-web-chat-out strong {
+  color: #64c4ff;
+}
+.tak-web-chat-in strong {
+  color: #f4c675;
+}
+.tak-web-root[data-link='open'] .tak-web-launcher {
+  border-color: #6fdc8c;
+}
+.tak-web-root[data-link='open'] .tak-web-launcher span,
+.tak-web-root[data-link='open'] .tak-web-header span {
+  color: #6fdc8c;
+}
+.tak-web-root[data-link='refused'] .tak-web-header span,
+.tak-web-root[data-link='reconnecting'] .tak-web-header span {
+  color: #ff9999;
+}
 .tak-web-panel footer {
   margin-top: 9px;
   color: #94abb9;
@@ -138,6 +358,121 @@
   letter-spacing: 0.03em;
 }
 @media (max-width: 600px) {
-  .tak-web-root { right: 12px; bottom: 60px; }
-  .tak-web-panel { bottom: 48px; max-height: 64vh; }
+  .tak-web-root {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(
+      60px + env(safe-area-inset-bottom) + var(--tak-keyboard-inset, 0px)
+    );
+  }
+  .tak-web-panel {
+    bottom: 52px;
+    width: min(
+      380px,
+      calc(
+        100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)
+      )
+    );
+    max-height: max(
+      0px,
+      calc(
+        min(100dvh, var(--tak-viewport-height, 100dvh)) - 140px -
+          env(safe-area-inset-top) - env(safe-area-inset-bottom)
+      )
+    );
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-top: 50px;
+  }
+  .tak-web-root button,
+  .tak-web-root select,
+  .tak-web-root input:not([type='checkbox']),
+  .tak-web-root summary,
+  .tak-web-root .tak-web-check {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .tak-web-root input:not([type='checkbox']),
+  .tak-web-root textarea,
+  .tak-web-root select {
+    font-size: 16px;
+  }
+  .tak-web-root .tak-web-check input {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+  }
+  .tak-web-section > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    list-style: none;
+  }
+  .tak-web-section > summary::before {
+    content: '▸';
+  }
+  .tak-web-section[open] > summary::before {
+    content: '▾';
+  }
+}
+.tak-saved-map-list,
+.tak-road-pack-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tak-saved-map-list li,
+.tak-road-pack-list li {
+  border-top: 1px solid #ffffff26;
+  padding: 10px 0;
+}
+.tak-saved-map-list button,
+.tak-road-pack-list button {
+  margin: 4px 4px 4px 0;
+}
+[data-tak-section='maps'] .tak-web-row > label {
+  flex: 1;
+  min-width: 0;
+}
+.tak-web-root [data-tak-section='maps'] .tak-web-row input[type='number'] {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Long retained-map notices stay complete without changing public map credits. */
+#cesium-credits:has(.gev-saved-map-credit) {
+  z-index: 149;
+}
+body:has(.tak-web-panel:not([hidden]))
+  #cesium-credits:has(.gev-saved-map-credit) {
+  z-index: 139;
+}
+#cesium-credits:has(.gev-saved-map-credit),
+#cesium-credits:has(.gev-saved-map-credit) .cesium-credit-textContainer {
+  white-space: normal;
+}
+#cesium-credits .gev-saved-map-credit {
+  display: inline-block;
+  box-sizing: border-box;
+  width: min(48rem, calc(100vw - 3rem));
+  max-width: min(48rem, calc(100vw - 3rem));
+  padding: 8px;
+  border: 1px solid #42637a;
+  border-radius: 4px;
+  background: #081522;
+  color: #e5f0fc;
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: min(25vh, 10rem);
+  max-height: min(25dvh, 10rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+  touch-action: pan-y;
+}
+#cesium-credits .gev-saved-map-credit:focus-visible {
+  outline: 2px solid #71bcf0;
+  outline-offset: 2px;
 }

@@ -168,14 +168,15 @@
                 <strong>LOCAL RTL-SDR</strong>
                 <span id="sdr-connection-state">NO USB</span>
               </div>
-              <p>Chrome/Edge · WebUSB · one local tuner shared by FM and the Local ADS-B layer.</p>
+              <p>Chrome/Edge · WebUSB · one local tuner shared by FM, airband and the Local ADS-B layer.</p>
               <div class="sdr-radio-actions">
                 <button id="sdr-connect-btn" class="panel-layer-toggle" type="button" aria-pressed="false">CONNECT</button>
                 <button id="sdr-locate-btn" type="button" title="Use your location for faster ADS-B position decoding">LOCATE</button>
                 <button id="sdr-change-device-btn" type="button" title="Choose a different RTL-SDR or receiver channel">CHANGE DEVICE</button>
               </div>
               <div class="sdr-mode-row" role="group" aria-label="RTL-SDR receiver mode">
-                <button id="sdr-mode-fm-btn" class="active" type="button" aria-pressed="true">FM</button>
+                <button id="sdr-mode-fm-btn" class="active" type="button" aria-pressed="true" title="Broadcast FM radio">FM</button>
+                <button id="sdr-mode-air-btn" type="button" aria-pressed="false" title="Airband: aircraft and ATC voice, AM, 118.000–136.975 MHz">AIR</button>
                 <button id="sdr-mode-adsb-btn" type="button" aria-pressed="false">ADS-B · 1090</button>
               </div>
               <div class="sdr-gain-row">
@@ -220,14 +221,25 @@
                 <span>IQ <output id="sdr-stat-iq">--</output></span>
               </div>
               <div class="sdr-frequency-row">
-                <label for="sdr-frequency-input">FM MHZ</label>
+                <label id="sdr-frequency-label" for="sdr-frequency-input">FM MHZ</label>
                 <input id="sdr-frequency-input" type="number" min="87.5" max="108" step="0.1" value="98.5" inputmode="decimal" />
                 <button id="sdr-tune-btn" type="button">TUNE</button>
               </div>
-              <div class="sdr-seek-row" role="group" aria-label="Seek broadcast FM stations">
-                <button id="sdr-seek-back-btn" type="button" disabled>◀ SEEK</button>
-                <button id="sdr-seek-forward-btn" type="button" disabled>SEEK ▶</button>
+              <datalist id="sdr-air-frequencies">
+                <option value="121.500" label="Guard / emergency"></option>
+                <option value="122.750" label="Air-to-air"></option>
+                <option value="123.025" label="Helicopter air-to-air"></option>
+              </datalist>
+              <p id="sdr-air-help" class="sdr-air-help" hidden>Enter the actual carrier frequency in MHz. 8.33 kHz channel labels are not converted (channel 118.005 uses a 118.000 MHz carrier). 121.500 guard/emergency · 122.750 air-to-air · 123.025 helicopter air-to-air. No receiver? <a href="https://www.liveatc.net/" target="_blank" rel="noopener noreferrer">Listen online at LiveATC</a> (opens liveatc.net; not available under EMCON).</p>
+              <div id="sdr-seek-row" class="sdr-seek-row" role="group" aria-label="Seek broadcast FM stations">
+                <button id="sdr-seek-back-btn" type="button" title="Seek down to the previous FM station" disabled>◀ SEEK</button>
+                <button id="sdr-seek-forward-btn" type="button" title="Seek up to the next FM station" disabled>SEEK ▶</button>
               </div>
+              <label id="sdr-squelch-row" class="radio-volume-row sdr-squelch-row" for="sdr-squelch" hidden>
+                <span>SQUELCH</span>
+                <input id="sdr-squelch" class="gev-quantitative-slider" type="range" min="0" max="30" step="1" value="6" aria-label="Airband squelch threshold in dB, 0 is off" />
+                <output id="sdr-squelch-value" class="gev-slider-value" for="sdr-squelch">6 dB</output>
+              </label>
               <label class="radio-volume-row" for="sdr-volume">
                 <span>SDR VOL</span>
                 <input id="sdr-volume" class="gev-quantitative-slider" type="range" min="0" max="100" value="80" aria-label="Local SDR volume" />

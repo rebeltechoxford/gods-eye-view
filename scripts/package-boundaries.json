@@ -314,7 +314,8 @@
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
       "server/providers/openai/toolDescriptions.js",
-      "src/sources/rateLimit.js"
+      "src/sources/rateLimit.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   },
@@ -418,7 +419,9 @@
       "src/ui/mapSourceControls.js",
       "src/mapStackChips.js",
       "src/keySetupCore.mjs",
-      "src/localRequestGate.mjs"
+      "src/localRequestGate.mjs",
+      "src/maps/referenceCatalog.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": []
   },
@@ -668,7 +671,11 @@
       "src/ui/localSdrControls.js",
       "src/layers/localAdsb/feedNames.js",
       "src/ui/localSdrPresentation.js",
-      "src/data/cameraArrival.js"
+      "src/sdr/airbandTuning.js",
+      "src/data/cameraArrival.js",
+      "src/tak/privacy.js",
+      "src/maps/referenceCatalog.js",
+      "src/ui/mapReferenceControls.js"
     ],
     "external": ["cesium"]
   },
@@ -774,7 +781,9 @@
       "src/director/authoring.js",
       "src/scenes/sharing.js",
       "src/ui/sceneSharing.js",
-      "src/data/cameraArrival.js"
+      "src/data/cameraArrival.js",
+      "src/tak/privacy.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": ["cesium"]
   },
@@ -1353,7 +1362,14 @@
       "src/maps/terrainRetry.js",
       "src/keySetupCore.mjs",
       "src/localRequestGate.mjs",
-      "src/maps/imageryHost.js"
+      "src/maps/imageryHost.js",
+      "src/maps/referenceCatalog.js",
+      "src/maps/referenceImagery.js",
+      "src/maps/offline/schema.js",
+      "src/maps/offline/store.js",
+      "src/maps/offline/file.js",
+      "src/maps/offline/imagery.js",
+      "src/maps/offline/boot.js"
     ],
     "external": ["cesium"]
   },
@@ -1400,7 +1416,8 @@
       "src/voice/narration.js",
       "src/voice/earcon.js",
       "src/voice/pointerContext.js",
-      "src/voice/pointerReticle.js"
+      "src/voice/pointerReticle.js",
+      "src/tak/privacy.js"
     ],
     "external": []
   },
@@ -1476,6 +1493,29 @@
       "src/app/stateChannel.js",
       "src/app/surfaceServices.js",
       "src/app/tools.js",
+      "src/tak/index.js",
+      "src/tak/operatorContext.js",
+      "src/tak/tak.css",
+      "src/tak/client.js",
+      "src/tak/geometry.js",
+      "src/tak/geometryCot.js",
+      "src/tak/geometryGraphics.js",
+      "src/tak/drawingsWorkflow.js",
+      "src/tak/drawingsUi.js",
+      "src/tak/drawings.css",
+      "src/tak/delivery.js",
+      "src/tak/cotOverlay.js",
+      "src/tak/store.js",
+      "src/tak/transport.js",
+      "src/tak/ui.js",
+      "src/tak/protocol/builders.js",
+      "src/tak/protocol/cot.js",
+      "src/tak/protocol/xml.js",
+      "src/tak/packages.js",
+      "src/tak/packagesZip.js",
+      "src/tak/packagesFile.js",
+      "src/tak/packagesUi.js",
+      "src/tak/packages.css",
       "src/app/viewer.js",
       "src/app/atmosphereCompat.js",
       "src/bloom.js",
@@ -2125,6 +2165,13 @@
       "src/layers/cyclones/labels.js",
       "src/layers/cyclones/source.js",
       "src/app/layers/localAdsb.js",
+      "src/layers/fisb/index.js",
+      "src/layers/fisb/policy.js",
+      "src/layers/fisb/presentation.js",
+      "src/layers/fisb/radar.js",
+      "src/layers/fisb/source.js",
+      "src/sources/fisb/decode.js",
+      "src/sources/fisb/text.js",
       "src/layers/localAdsb/index.js",
       "src/layers/localAdsb/policy.js",
       "src/layers/localAdsb/card.js",
@@ -2139,6 +2186,7 @@
       "src/sdr/spectrum.js",
       "src/sdr/gain.js",
       "src/sdr/usbDevices.js",
+      "src/sdr/airbandTuning.js",
       "src/ui/localSdrControls.js",
       "src/ui/localSdrPresentation.js",
       "src/app/layers/recentImagery.js",
@@ -2201,7 +2249,6 @@
       "src/data/cameraArrival.js",
       "src/layers/alpr/floors.js",
       "src/data/militaryNames.js",
-      "src/sources/requestDeadline.js",
       "src/data/local_data/osm_military_names/names.json",
       "src/layers/installations/namedMarkers.js",
       "src/data/infrastructureOverlayEntry.js",
@@ -2209,7 +2256,43 @@
       "src/tools/functions.js",
       "src/voice/actionSchemas.js",
       "src/view/index.js",
-      "src/app/embed.js"
+      "src/app/embed.js",
+      "src/tak/privacy.js",
+      "src/tak/geolocation.js",
+      "src/tak/position.js",
+      "src/tak/mobile.js",
+      "src/tak/session.js",
+      "src/maps/referenceCatalog.js",
+      "src/maps/referenceImagery.js",
+      "src/ui/mapReferenceControls.js",
+      "src/maps/offline/schema.js",
+      "src/maps/offline/store.js",
+      "src/maps/offline/file.js",
+      "src/maps/offline/imagery.js",
+      "src/maps/offline/boot.js",
+      "src/maps/offline/ui.js",
+      "src/tak/navigation.js",
+      "src/tak/navigationWorkflow.js",
+      "src/tak/navigationUi.js",
+      "src/tak/navigationCamera.js",
+      "src/tak/navigation.css",
+      "src/maps/offline/mbtilesUpload.js",
+      "src/routing/offlineSource.js",
+      "src/routing/deviceRouting.js",
+      "src/routing/offlineEngine.js",
+      "src/routing/packStore.js",
+      "src/routing/packManifest.js",
+      "src/routing/router.js",
+      "src/routing/roadPack.js",
+      "src/routing/osmRoads.js",
+      "src/routing/offlineDirections.js",
+      "src/routing/route.worker.js",
+      "src/routing/roadPacksUi.js",
+      "src/emcon/boot.js",
+      "src/emcon/guard.js",
+      "src/emcon/state.js",
+      "src/emcon/ui.js",
+      "src/emcon/emcon.css"
     ],
     "external": [
       "hls.js",
@@ -2664,6 +2747,13 @@
       "src/layers/cyclones/labels.js",
       "src/layers/cyclones/source.js",
       "src/app/layers/localAdsb.js",
+      "src/layers/fisb/index.js",
+      "src/layers/fisb/policy.js",
+      "src/layers/fisb/presentation.js",
+      "src/layers/fisb/radar.js",
+      "src/layers/fisb/source.js",
+      "src/sources/fisb/decode.js",
+      "src/sources/fisb/text.js",
       "src/layers/localAdsb/index.js",
       "src/layers/localAdsb/policy.js",
       "src/layers/localAdsb/card.js",
@@ -2678,6 +2768,7 @@
       "src/sdr/spectrum.js",
       "src/sdr/gain.js",
       "src/sdr/usbDevices.js",
+      "src/sdr/airbandTuning.js",
       "src/data/detection.js",
       "src/data/detectionRenderDemand.js",
       "src/data/detectionPresentation.js",
@@ -2732,7 +2823,6 @@
       "src/data/cameraArrival.js",
       "src/layers/alpr/floors.js",
       "src/data/militaryNames.js",
-      "src/sources/requestDeadline.js",
       "src/data/local_data/osm_military_names/names.json",
       "src/layers/installations/namedMarkers.js",
       "src/data/infrastructureOverlayEntry.js",
@@ -2988,7 +3078,8 @@
     "modules": [
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
-      "src/hudLayoutPolicy.js"
+      "src/hudLayoutPolicy.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   },
@@ -3381,7 +3472,8 @@
       "src/view/index.js",
       "src/tools/views.js",
       "src/tools/globePanel.js",
-      "src/tools/queries/panelRequest.js"
+      "src/tools/queries/panelRequest.js",
+      "src/maps/referenceCatalog.js"
     ],
     "external": ["satellite.js"]
   },
@@ -3477,7 +3569,8 @@
       "src/view/index.js",
       "src/data/idSwitches.js",
       "src/data/layerState.js",
-      "src/data/layerStateTokenReservations.json"
+      "src/data/layerStateTokenReservations.json",
+      "src/maps/referenceCatalog.js"
     ],
     "external": []
   }

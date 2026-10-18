@@ -13,7 +13,15 @@ import {
   uninstallRenderGovernor,
   governorRequestRender,
 } from '../renderGovernor.js';
-import { describeError } from './errors.js';
+import { ApplicationRedirectError, describeError } from './errors.js';
+import { readSelectedOfflinePack } from '../maps/offline/boot.js';
+import { offlineSource } from '../maps/offline/imagery.js';
+import { markTakDataPrivate } from '../tak/privacy.js';
+import { isEmbedded } from './embed.js';
+import {
+  resolveOperatorContext,
+  subscribeOperatorContextInvalidation,
+} from '../tak/operatorContext.js';
 
 /** Construct the application globe using the caller's local configuration. */
 export async function createApplicationScene({
@@ -28,6 +36,31 @@ export async function createApplicationScene({
   signal,
   defer,
 }) {
+  // Account authorization precedes both retained map reads and TAK identity boot.
+  // Embedded views never restore a private retained map from the host profile.
+  const accountContext = isEmbedded()
+    ? null
+    : await resolveOperatorContext({ signal });
+  if (accountContext?.sessionExpired) {
+    window.location.replace('/login');
+    throw new ApplicationRedirectError('Returning to sign-in…');
+  }
+  const accountLifetime = new AbortController();
+  const accountSignal = AbortSignal.any([signal, accountLifetime.signal]);
+  let savedMap = null,
+    mapStackController = null;
+  if (accountContext)
+    defer(
+      subscribeOperatorContextInvalidation(() => {
+        accountLifetime.abort(
+          new DOMException('Operator account changed', 'AbortError'),
+        );
+        savedMap?.store.close();
+        for (const stack of mapStackController?.getStacks() || [])
+          if (stack.id.startsWith('offline-'))
+            mapStackController.removeLocalSource(stack.id);
+      }),
+    );
   const operations = createApplicationOperations({
     requests: requestServices,
     signal,
@@ -59,15 +92,28 @@ export async function createApplicationScene({
   defer(installTrackpadPinchZoom(viewer));
   registerDataCredits(viewer, credits);
   configureCreditKeyboardAccess(document);
+  // Read existing opt-in storage before starting any default map/terrain fetch.
+  savedMap = accountContext
+    ? await readSelectedOfflinePack({
+        signal: accountSignal,
+        context: accountContext,
+      })
+    : null;
+  if (savedMap) {
+    defer(() => savedMap.store.close());
+    markTakDataPrivate(viewer);
+  }
   loaderStatus.textContent =
     googleApiKey || googleTokens || cesiumToken
       ? 'Loading Google 3D Tiles...'
       : 'Loading the keyless globe...';
-  const photoreal = await loadPhotorealisticTileset(Cesium, {
-    googleApiKey,
-    googleTokens,
-    cesiumToken,
-  });
+  const photoreal = savedMap
+    ? { tileset: null, errors: [], route: 'saved-map' }
+    : await loadPhotorealisticTileset(Cesium, {
+        googleApiKey,
+        googleTokens,
+        cesiumToken,
+      });
   const tileset = photoreal.tileset;
   // A provider can finish after cancellation; retain ownership of its result.
   defer(() => {
@@ -97,12 +143,34 @@ export async function createApplicationScene({
 
   loaderStatus.textContent = 'Initializing systems...';
 
-  const mapStackController = new MapController(viewer, {
+  accountSignal.throwIfAborted();
+  mapStackController = new MapController(viewer, {
     requestRender: governorRequestRender,
     ...mapOptions,
     googleTileset: tileset,
     cesiumToken,
     initialStack: tileset ? 'photoreal' : 'esri-imagery',
+    ...(savedMap && (googleApiKey || googleTokens || cesiumToken)
+      ? {
+          createGoogleTileset: async ({ signal: mapSignal }) => {
+            mapSignal?.throwIfAborted();
+            const result = await loadPhotorealisticTileset(Cesium, {
+              googleApiKey,
+              googleTokens,
+              cesiumToken,
+            });
+            if (!result.tileset)
+              throw (
+                result.errors.at(-1) || new Error('Google 3D is unavailable')
+              );
+            if (mapSignal?.aborted) {
+              if (!result.tileset.isDestroyed()) result.tileset.destroy();
+              mapSignal.throwIfAborted();
+            }
+            return result.tileset;
+          },
+        }
+      : {}),
     // Task 5 (height-datum fix): rebroadcast stack changes as a window
     // CustomEvent so data layers (CCTV per-regime ground resolution) can
     // react without coupling MapStackController to layer modules. Fires on
@@ -116,10 +184,27 @@ export async function createApplicationScene({
     onError: (message) => console.warn('[MapStack]', message),
   });
   defer(() => mapStackController.destroy());
-  await mapStackController.setStack(tileset ? 'photoreal' : 'esri-imagery', {
+  const initialMap = savedMap
+    ? mapStackController.registerLocalSource(
+        offlineSource(savedMap.manifest, savedMap.store),
+      )
+    : tileset
+      ? 'photoreal'
+      : 'esri-imagery';
+  await mapStackController.setStack(initialMap, {
     silent: true,
   });
 
+  accountSignal.throwIfAborted();
   signal.throwIfAborted();
-  return { viewer, tileset, mapStackController, operations };
+  return {
+    viewer,
+    tileset,
+    mapStackController,
+    operations,
+    savedMapBounds:
+      savedMap?.manifest.provenance?.selection?.bounds ||
+      savedMap?.manifest.bounds ||
+      null,
+  };
 }

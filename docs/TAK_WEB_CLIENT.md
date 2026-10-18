@@ -1,81 +1,176 @@
-# God's Eye View x TAK: Web Client Foundation
+# God's Eye View × TAK: web client foundation
 
-Status: **Phase 1 local proof of concept (not a TAK Server client yet)**.
+Status: **local web application with optional named private HTTPS operators**.
+The implementation adds bounded CoT XML, contact/marker/chat workflows and an
+opt-in local gateway to GEV. The synthetic lab exercises actual local TCP and
+WebSocket transport. A separate [official TAK Server core acceptance run](TAK_REAL_SERVER_ACCEPTANCE.md)
+passed marker/correction/broadcast-chat and rejection checks with synthetic TLS
+peers and a documented local bind patch. ATAK-CIV, iTAK, WinTAK and physical EUD
+acceptance remain open. Complete ATAK parity is not claimed.
 
-## Architecture
+Start with [HOW_TO_RUN.md](../HOW_TO_RUN.md). Scope and evidence live in the
+[feature matrix](TAK_FEATURE_MATRIX.md), [implementation plan](TAK_IMPLEMENTATION_PLAN.md)
+and [remaining work](../TAK_TODO.md).
 
-- Keep God's Eye View's CesiumJS globe, imagery, HUD, public intelligence layers,
-  camera controls, scene director, voice integration, and upstream sync intact.
-- Add a web-native, modular TAK operator interface. The first slice lives in
-  src/tak/ and is mounted through src/app/tools.js on the app lifecycle.
-- Treat ATAK-CIV as a feature/protocol reference, **not** a browser dependency.
-  Android Java/JNI code and APKs cannot be embedded directly in a browser.
-- Retain official ATAK, iTAK and WinTAK clients as first-class peers. Use TAK
-  Server for authenticated CoT transport, mission data and collaboration once
-  a separately authenticated backend connector is implemented.
-- Keep sensitive TAK data distinct from public/exploratory GEV sources.
+## Architecture and ownership
 
-## Implemented in this branch
+```text
+GEV browser: existing globe, layers, HUD, camera, scenes, voice
+  TAK panel → client/store → same-origin WebSocket /api/tak/ws
+             ↓                              ↓
+  dedicated Cesium overlay          Node gateway: auth + policy + router
+  shared world-overlay cards          ├─ configured TLS/TCP server link
+                                      └─ optional authorized UDP mesh link
+```
 
-- Visible collapsible TAK LOCAL operator panel on the existing globe.
-- Import offline CoT XML (one event or event collection) via file or paste.
-- Validate geographic CoT coordinates; bound XML size to 1 MiB and event count
-  to 1000; reject DTDs/entities, malformed and invalid-only inputs.
-- Deduplicate contacts by UID, reject older events with comparable timestamps,
-  cap state at 1000 contacts and label stale records.
-- Display color-coded CoT positions/callsigns as Cesium map entities; select a
-  contact from the roster to fly to its position.
-- Create temporary, locally labeled geographic markers.
-- Preserve imported TAK data only in page memory: no remote submission,
-  browser storage, share links or export to public viewers.
-- Explicitly disclose OFFLINE/LOCAL status. Do not misrepresent import as a
-  connected TAK Server session.
+- `src/tak/protocol/` owns portable XML/CoT parsing, validation, serialization,
+  builders, stream framing and routing. It has no DOM/Cesium/Node dependencies.
+  Inputs are bounded and DTD/entity declarations refused. The browser and gateway
+  share protocol handling; the gateway additionally enforces outbound policy.
+- `store.js` owns bounded, page-memory contacts, tracks, alerts and deduplicated
+  chat. UID/time ordering and stale retention remain separate from display
+  presentation. `client.js` owns stable device identity, current fix, explicit
+  position broadcast, local/imported/shared objects, chat and transport state.
+  Identity preferences can persist; positions/chat do not.
+- `transport.js` authenticates to the same-origin gateway, registers the device
+  identity and reports bounded reconnect states. Submitting a frame is not peer
+  acknowledgement. Disconnected markers/imports are not automatically published
+  later.
+- `cotOverlay.js` owns a dedicated `CustomDataSource` for affiliation frames,
+  stale presentation, emergencies and trails; callsign cards use the existing
+  world-overlay host. Records are diffed by UID. Focus uses GEV navigation
+  ownership; private records are not registered as public GEV layers.
+- `ui.js` owns the operator panel and its listeners. `index.js` composes the
+  client, overlay, geolocation and panel, mounts through `src/app/tools.js`, and
+  releases sockets, timers, watches, subscriptions and rendering on teardown.
+- `server/providers/tak.js` composes `config.js`, `gateway.js`, `meshLink.js`
+  and `serverLink.js` as server-owned resources. Upstreams come from operator
+  configuration, never a browser/model-supplied address.
 
-## Deliberately not implemented (required before operational use)
+Keep GEV's existing rendering, catalog, public sources, camera/cockpit, HUD,
+annotations/director, voice/tools, provider setup, share formats and credits.
+The feature matrix inventories those capabilities rather than treating the TAK
+panel as a replacement application.
 
-- TAK Server connection, X.509 mutual TLS, certificate lifecycle, roles,
-  groups, authorized subscriptions and permission enforcement.
-- Durable offline mission package storage, authenticated file attachments,
-  group collaboration, peer-to-peer mesh/MANET transport or chat.
-- CoT event emission and acknowledged synchronization; no marker edits are
-  published to other ATAK/iTAK/WinTAK users.
-- TAK drawing/model tools, navigation, mission planning, military symbology,
-  plugin capabilities, video integration or field-grade offline resilience.
-- Operational safety validation. Public-feed detections and simulated traffic
-  must not be interpreted as verified tactical data.
+## Gateway access and authorization
 
-## Next milestone: authenticated TAK gateway
+The development gateway serves one local operator. Enabling
+it requires `TAK_GATEWAY=1` and a valid random `TAK_GATEWAY_TOKEN` of 24–128
+allowed characters. Dev/lab browser upgrades require a direct loopback socket,
+matching loopback host/port, same Origin, no forwarding headers, `tak.v1` and
+the valid token. The production `npm run tak:serve` host additionally supports
+an explicitly configured private HTTPS origin and revocable secure-cookie
+session; the private WSS listener always requires that session. Public listeners
+and reverse proxies are outside this implementation. See the run guide for
+the certificate, private address and pinned-origin requirements.
 
-Implement a dedicated server-side gateway on an operator-owned, authorized
-TAK Server installation. The gateway (not the browser) owns client
-certificates, mTLS, TAK protocol framing, certificate rotation, access
-controls, media proxying and audit records. A separately authenticated,
-same-origin HTTPS/WSS browser session subscribes only to authorized data and
-sends normalized, validated commands. Preserve UID/time/stale semantics and
-separate namespaces for public versus private contacts. Refuse arbitrary
-upstream URLs, CORS wildcard authorization, browser-exposed certificates,
-unauthenticated event injection and silent retry/broadcast.
+The authenticated session registers a `GEV-<UUIDv4>` device identity before
+publishing. The gateway enforces its supported own-device/own-marker namespace
+and action policy. Arbitrary imported events, identity impersonation and
+modification/deletion of other devices' objects are refused. All browsers using
+this token still belong to the same local operator.
 
-Test a controlled exchange with ATAK-CIV and WinTAK, including both directions,
-then validate each remaining capability against a feature parity checklist.
-CoT alone is not equivalent to complete ATAK or WinTAK feature parity.
+The private HTTPS host can instead use `TAK_GATEWAY_USERS_FILE` for up to eight
+named accounts with independent mTLS upstream identities, routers, replay,
+ownership tables and submission queues. The server derives authority from the
+authenticated HttpOnly cookie and rejects publishing by receive-only accounts.
+It also requires matching expected account scope on map requests, logout and
+WebSocket upgrades, preventing a stale tab from acquiring a new cookie's
+authority. Credential/role changes revoke affected sessions and sockets.
+Client identity and device map namespaces are scoped, with explicit approval
+before offline restoration. See [named operator setup and limits](TAK_MULTIOPERATOR.md).
+TAK Server groups remain an administrator-controlled, separately tested boundary;
+certificate separation alone does not establish group membership or isolation.
 
-## Licensing
+`npm run tak:lab` creates a transient random token and enables an explicit
+local-session bootstrap at `POST /api/tak/session`. The panel requests it only
+when Connect is pressed. Bootstrap uses strict same-origin loopback checks and
+is off by default outside the lab. It is not a general authentication service.
 
-- Upstream God's Eye View source is MIT; retain its copyright and license.
-- ATAK-CIV source repository contains GPLv3 licensing and other notices. No
-  ATAK-CIV source code was copied into this proof of concept. Any later source
-  incorporation/linking must undergo GPLv3 and third-party-license review.
-- GEV's imagery, data and bundled models have separate provider licenses.
-  Check allowed field and commercial use before deployment.
+Frame/body, connection, rate, replay, queue, history and backpressure limits
+bound resource use. TLS trust/hostname validation stays enabled; private CA and
+client certificate/key or PKCS#12 material stay in the server process. Plain TCP
+is for an explicitly configured local/private lab endpoint. Mesh/server bridging
+requires `TAK_BRIDGE=1`; enabling two uplinks does not silently bridge them.
 
-## Development
+## Protocol scope
 
-Run npm ci, npm test, npm run format:check, npm run check:boundaries and
-npm run build using the Node versions declared by the upstream project.
-Unit coverage is in src/tak/cot.test.mjs. Without a connected TAK Server, test
-CoT import with docs/examples/synthetic-contact.cot and add a local marker using
-the TAK panel. The synthetic contact is not an operational location.
+The official
+[TAK protocol reference](https://github.com/TAK-Product-Center/atak-civ/blob/main/takproto/README.txt)
+describes legacy XML mesh/streaming and later protobuf framing. Server XML
+output uses an XML declaration and newline before each event and does not add
+arbitrary newlines after its closing tag, following that reference. Mesh
+datagrams in protocol v1 are decoded, and a TAK Server stream can negotiate v1
+with `TAK_SERVER_PROTOBUF=1`. Every v1 event is converted to XML and passes the
+same validation; outbound mesh traffic stays XML. See
+[TAK protocol v1](TAK_PROTOCOL_V1.md) for scope, evidence and the real-peer
+acceptance still required.
 
-This branch is intentionally additive. Merge only after the repository CI,
-browser smoke tests, and an operator acceptance review pass.
+Builders cover self SA/PPLI, spot markers, broadcast GeoChat, own-marker delete,
+ping, emergency/cancel and a bounded line/polygon/route subset. The drawing
+editor renders real geometry, supports ordered waypoint edits and requires an
+explicit sharing choice; see [drawings and routes](TAK_DRAWINGS_ROUTES.md).
+
+**EMCON** (above the TAK launcher and in the panel header) stops every
+transmission from the app: the TAK link closes and Connect is refused until it
+is left. See [EMCON](TAK_EMCON.md) for what stays usable and its limits.
+Parsing a type or preserving an unknown detail extension does not implement its
+complete ATAK workflow. Directed/group chat, server mission/data sync, broader
+native shape types, route guidance, full 2525 symbols and native plugins remain
+outside this foundation. Local mission ZIP import/export and
+selected attachment downloads are implemented with bounded validation and
+per-download consent; see [mission packages](TAK_MISSION_PACKAGES.md).
+DD/DMS/MGRS/UTM entry, waypoint focus/local markers and horizontal WGS84
+range/true bearing are implemented; see [navigation](TAK_FIELD_NAVIGATION.md).
+USGS raster downloads are implemented on both the server and browser/device,
+with bounded verified packs, backup/import and an explicitly saved app shell.
+Closed-server browser launch/rendering is tested; physical iPhone WebKit storage
+acceptance remains open. Source permissions and evidence are recorded in
+[the offline map plan](TAK_OFFLINE_MAP_PLAN.md). An unsigned AltStore IPA is built
+and simulator-tested; personal signing and physical device acceptance are still
+required. The wrapper does not establish native TAK or background GPS parity.
+
+Browser connection, gateway submission, upstream queue/write and real peer
+receipt are different states. Never describe `LIVE`, a successful send return
+value or an echoing fixture as proof that an operational peer received data.
+The submissions panel now reports correlated pending, queued, submitted,
+rejected and expired states. Submitted confirms a local transport write only;
+see [delivery and cancellation semantics](TAK_DELIVERY.md).
+
+## Privacy boundary
+
+Imported files and unshared markers are local by default. Once TAK data or a
+private fix enters the page, a per-viewer sticky guard blocks AI/voice context
+and imagery, public links, scene capture/export and recording until the
+operator explicitly authorizes disclosure in the panel. Hiding/clearing data
+does not remove the guard because camera/location context can remain sensitive.
+AI / voice providers, public sharing / scene exports, and recording use separate
+permissions for the current page session. Allowing one use does not enable the
+others. Each switch can be revoked independently, or all revoked together;
+captures/async operations recheck both the required permission and its revision
+before returning or publishing results. Sign-out and session expiry revoke all.
+
+Public tool/catalog state excludes raw TAK contacts. Embedded/clean/recording
+views hide TAK controls and fresh embedded pages do not auto-connect. Additional
+egress routes introduced by future features need corresponding policy and race
+tests; memory-only storage alone does not establish privacy.
+
+## Verification and licensing
+
+`npm test` includes portable protocol/store/client/transport, gateway and privacy
+tests. Gateway tests use real local HTTP/WebSocket/TCP/TLS sockets and synthetic
+test identities/certificates; they are not a TAK Server compatibility result.
+`npm run qa:tak -- --url <local-url>` exercises the actual browser UI using
+synthetic CoT and intercepted public HTTP data/imagery. Add `--gateway` for the
+explicit local lab path. Record final revision, commands and limitations in the
+implementation plan. Real-peer acceptance remains separate for each client and
+server version.
+
+GEV source remains MIT with its copyright/notices retained. No ATAK-CIV GPL
+source is incorporated in this implementation; protocol/workflow references do
+not make Android code a browser dependency. Review any future reused source,
+symbol library or plugin together with its own third-party notices. Existing
+imagery, datasets and models retain their separate terms: see
+[LICENSE](../LICENSE), [DATA_SOURCES.md](../DATA_SOURCES.md) and
+[model attribution](../public/models/README.md). Preserve noncommercial and
+share-alike restrictions where applicable.

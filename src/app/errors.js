@@ -1,3 +1,11 @@
+/** A known navigation outcome still aborts startup and releases its resources. */
+export class ApplicationRedirectError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ApplicationRedirectError';
+  }
+}
+
 /**
  * Extract a human-readable error message from any thrown value.
  * Handles Error objects, strings, and plain objects with message/error fields.

@@ -6,6 +6,9 @@
  * a serial number. Selection therefore remembers the full identity
  * (vendorId, productId, productName, serialNumber) per receiver mode and, for
  * ADS-B, prefers a channel whose product name names ADS-B or 1090 MHz.
+ * Airband voice is a VHF listening mode like FM: it prefers the same channels
+ * and shares FM's remembered receiver, so switching between FM and airband
+ * retunes the open receiver instead of reopening another one.
  */
 
 export const SDR_DEVICE_STORAGE_KEY = 'gev:sdr:device:v1';
@@ -16,6 +19,16 @@ export const RTL_SDR_USB_FILTERS = Object.freeze([
 ]);
 const ADSB_PRODUCT_PATTERN = /ads.?b|1090/i;
 const NON_FM_PRODUCT_PATTERN = /ads.?b|1090|uat|978/i;
+
+/**
+ * The receiver-preference group of a mode: airband listens with whatever
+ * receiver FM uses.
+ * @param {string} mode Receiver mode.
+ * @returns {'fm'|'adsb'}
+ */
+export function sdrDevicePreferenceMode(mode) {
+  return mode === 'adsb' ? 'adsb' : 'fm';
+}
 
 function text(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -78,12 +91,12 @@ function filterMatchesDevice(filter, device) {
 /**
  * Choose an already-authorized receiver without opening the WebUSB picker.
  * Order: the device remembered for this mode; then, for ADS-B, a channel
- * named for ADS-B/1090 MHz, or for FM a channel not named for ADS-B/UAT; then
- * the first matching device.
+ * named for ADS-B/1090 MHz, or for FM and airband a channel not named for
+ * ADS-B/UAT; then the first matching device.
  * @param {object[]} devices Authorized devices from `navigator.usb.getDevices()`.
  * @param {object} [options]
  * @param {object[]} [options.filters] WebUSB request filters.
- * @param {'fm'|'adsb'} [options.mode] Receiver mode being connected.
+ * @param {'fm'|'adsb'|'air'} [options.mode] Receiver mode being connected.
  * @param {object|null} [options.remembered] Identity remembered for this mode.
  * @returns {object|null} Chosen device, or null when the picker is needed.
  */
@@ -105,7 +118,7 @@ export function selectAuthorizedSdrDevice(
     if (match) return match;
   }
   const preferred =
-    mode === 'adsb'
+    sdrDevicePreferenceMode(mode) === 'adsb'
       ? candidates.find((device) =>
           ADSB_PRODUCT_PATTERN.test(device.productName || ''),
         )
@@ -116,7 +129,8 @@ export function selectAuthorizedSdrDevice(
 }
 
 /**
- * Per-mode remembered receiver identities in browser storage.
+ * Per-mode remembered receiver identities in browser storage. Airband reads
+ * and writes FM's entry (see `sdrDevicePreferenceMode`).
  * @param {Storage|null} storage Browser storage or a test double.
  * @returns {{get(mode:string):object|null, set(mode:string, device:object):void}}
  */
@@ -133,7 +147,7 @@ export function createSdrDeviceMemory(storage) {
   };
   return {
     get(mode) {
-      return sdrDeviceIdentity(read()[mode]);
+      return sdrDeviceIdentity(read()[sdrDevicePreferenceMode(mode)]);
     },
     set(mode, device) {
       const identity = sdrDeviceIdentity(device);
@@ -141,7 +155,10 @@ export function createSdrDeviceMemory(storage) {
       try {
         storage?.setItem?.(
           SDR_DEVICE_STORAGE_KEY,
-          JSON.stringify({ ...read(), [mode]: identity }),
+          JSON.stringify({
+            ...read(),
+            [sdrDevicePreferenceMode(mode)]: identity,
+          }),
         );
       } catch {
         /* storage can be unavailable or quota-limited */
@@ -155,7 +172,7 @@ export function createSdrDeviceMemory(storage) {
  * for the current mode before asking WebUSB to show its picker.
  * @param {USB} webUsb Browser WebUSB object.
  * @param {object} [options]
- * @param {() => 'fm'|'adsb'} [options.getMode] Mode being connected.
+ * @param {() => 'fm'|'adsb'|'air'} [options.getMode] Mode being connected.
  * @param {{get:Function,set:Function}} [options.memory] Remembered identities.
  * @param {() => boolean} [options.consumeForcePicker] Returns true once when
  *   the user asked to choose a different device.

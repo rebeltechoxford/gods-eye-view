@@ -1,0 +1,46 @@
+.tak-navigation select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #42637a;
+  border-radius: 4px;
+  background: #101d2b;
+  color: #e5f0fc;
+  font: inherit;
+}
+.tak-navigation button {
+  margin: 5px 0;
+}
+.tak-navigation-readout {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 7px;
+  font-size: 12px;
+}
+.tak-navigation-readout[hidden] {
+  display: none;
+}
+.tak-navigation-readout dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.tak-navigation-range {
+  display: block;
+  margin: 10px 0;
+  color: #a5dafa;
+  overflow-wrap: anywhere;
+}
+.tak-navigation select:focus-visible {
+  outline: 2px solid #8acaff;
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .tak-navigation select,
+  .tak-navigation button,
+  .tak-navigation textarea,
+  .tak-navigation input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}

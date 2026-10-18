@@ -1,4 +1,5 @@
 import { HUD_LAYOUTS } from '../hudLayoutPolicy.js';
+import { ALL_MAP_IDS } from '../maps/referenceCatalog.js';
 
 // Canonical action arguments. Descriptive wording is supplied separately.
 import {
@@ -345,13 +346,7 @@ const schemas = [
       properties: {
         stack: {
           type: 'string',
-          enum: [
-            'photoreal',
-            'bing-aerial',
-            'bing-labels',
-            'esri-imagery',
-            'osm',
-          ],
+          enum: [...ALL_MAP_IDS],
         },
       },
       required: ['stack'],

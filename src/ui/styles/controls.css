@@ -832,6 +832,45 @@
   border-top: 1px solid rgba(123, 189, 211, 0.18);
 }
 
+.map-reference-controls {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.map-reference-controls label {
+  color: var(--text-muted, #adb3b8);
+  font-size: 10px;
+}
+.map-reference-controls select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  color: #e0e8ec;
+  background: #152128;
+  border: 1px solid #40515d;
+  border-radius: 4px;
+}
+.map-reference-details {
+  font-size: 9px;
+  line-height: 1.4;
+  max-height: 110px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: #bdc9cf;
+}
+.map-reference-details p {
+  margin: 0 0 4px;
+}
+.map-reference-details a {
+  color: #9ccee7;
+}
+@media (max-width: 600px) {
+  .map-reference-controls select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
 .map-source-heading {
   display: flex;
   align-items: center;
