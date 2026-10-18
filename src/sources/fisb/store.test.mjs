@@ -5,6 +5,7 @@ import {
   FISB_LIMITS,
   FISB_RETENTION_MS,
   createFisbStore,
+  resolveOverlayInterval,
   resolveOverlayTime,
 } from './store.js';
 import { decodeApduHeader, infoFrames, parseRawLine } from './decode.js';
@@ -174,6 +175,34 @@ test('overlay times resolve to the nearest year around now', () => {
     null,
   );
   assert.equal(resolveOverlayTime(null, now), null);
+});
+
+test('partial overlay dates cross midnight and month boundaries without normalizing invalid dates', () => {
+  const at = Date.parse('2026-10-31T23:30:00Z');
+  assert.equal(
+    resolveOverlayTime({ hour: 1, minute: 0 }, at),
+    Date.parse('2026-11-01T01:00:00Z'),
+  );
+  assert.equal(
+    resolveOverlayTime({ day: 1, hour: 1, minute: 0 }, at),
+    Date.parse('2026-11-01T01:00:00Z'),
+  );
+  assert.equal(
+    resolveOverlayTime({ day: 31, hour: 23, minute: 0 }, Date.parse('2027-01-01T01:00:00Z')),
+    Date.parse('2026-12-31T23:00:00Z'),
+  );
+  assert.equal(resolveOverlayTime({ month: 2, day: 30, hour: 1, minute: 0 }, at), null);
+  assert.equal(resolveOverlayTime({ hour: -1, minute: 0 }, at), null);
+  assert.deepEqual(
+    resolveOverlayInterval({ hour: 23, minute: 0 }, { hour: 1, minute: 0 }, at),
+    { start: Date.parse('2026-10-31T23:00:00Z'), stop: Date.parse('2026-11-01T01:00:00Z') },
+  );
+  assert.deepEqual(
+    resolveOverlayInterval({ hour: 8, minute: 0 }, { hour: 10, minute: 0 }, Date.parse('2026-10-31T12:00:00Z')),
+    { start: Date.parse('2026-10-31T08:00:00Z'), stop: Date.parse('2026-10-31T10:00:00Z') },
+    'an expired interval is not extended to tomorrow',
+  );
+  assert.throws(() => resolveOverlayInterval(null, { hour: 25, minute: 0 }, at), RangeError);
 });
 
 test('a synthetic current picture decodes into a TFR, an AIRMET, METARs and radar', async () => {

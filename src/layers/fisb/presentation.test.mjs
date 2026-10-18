@@ -12,9 +12,59 @@ import {
 } from './presentation.js';
 import { composeRadar } from './radar.js';
 import { createFisbSource } from './source.js';
+import { createFisbLayer } from './index.js';
 import { blockBounds } from '../../sources/fisb/decode.js';
 
 const NOW = Date.parse('2026-10-18T12:00:00Z');
+
+test('failed refresh removes cached weather and disable rejects late completion', async () => {
+  let dataSource;
+  let fail = false;
+  let pending = null;
+  let resets = 0;
+  const result = {
+    configured: true,
+    picture: { reports: [], texts: [{
+      kind: 'METAR', station: 'KUOX', category: 'VFR',
+      position: [-89.54, 34.38], receivedAt: NOW,
+    }] },
+    radar: { 63: { blocks: [] }, 64: { blocks: [] } },
+  };
+  const layer = createFisbLayer({
+    now: () => NOW,
+    source: {
+      fetchPicture: async () => {
+        if (fail) throw new Error('receiver unavailable');
+        return pending ?? result;
+      },
+      reset: () => resets++,
+    },
+    host: () => null,
+  });
+  layer.init({ dataSources: {
+    add: (value) => { dataSource = value; },
+    remove: () => {},
+  } });
+  await layer.enable();
+  assert.equal(await layer.update(), true);
+  assert.equal(dataSource.entities.values.length, 1);
+  fail = true;
+  assert.equal(await layer.update(), false);
+  assert.equal(dataSource.entities.values.length, 0);
+  assert.equal(layer.getStats().count, 0);
+  assert.equal(layer.getStats().status, 'error');
+  assert.equal(resets, 1);
+  fail = false;
+  let resolve;
+  pending = new Promise((done) => { resolve = done; });
+  const update = layer.update();
+  await layer.disable();
+  resolve(result);
+  assert.equal(await update, false);
+  await layer.enable();
+  assert.equal(dataSource.entities.values.length, 0, 'no old picture flashes on re-enable');
+  layer.destroy();
+});
 
 test('weather text groups by station with its flight category', () => {
   const stations = stationsFromTexts([
@@ -228,4 +278,19 @@ test('the source reads the picture and fetches radar only when it changed', asyn
   });
   const broken = createFisbSource({ fetchImpl: async () => json({}, 502) });
   await assert.rejects(broken.fetchPicture(), /502/);
+});
+
+test('reset invalidates a pending picture before it can repopulate the radar cache', async () => {
+  let finish;
+  let calls = 0;
+  const source = createFisbSource({ fetchImpl: async () => {
+    calls++;
+    return new Promise((resolve) => { finish = resolve; });
+  } });
+  const pending = source.fetchPicture();
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  source.reset();
+  finish(new Response(JSON.stringify({ configured: true, radarRevision: 1 })));
+  await rejected;
+  assert.equal(calls, 1, 'no radar reads after reset');
 });

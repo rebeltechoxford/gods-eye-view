@@ -50,7 +50,7 @@ const FREQUENCY_FIELDS = Object.freeze({
     decimals: 1,
   }),
   air: Object.freeze({
-    label: 'AIR MHZ',
+    label: 'AIR CARRIER MHZ',
     min: (AIRBAND_MIN_HZ / 1_000_000).toFixed(3),
     max: (AIRBAND_MAX_HZ / 1_000_000).toFixed(3),
     step: '0.005',

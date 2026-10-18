@@ -1081,7 +1081,7 @@ test('airband frequencies clamp to 118.000-136.975 MHz and round to 1 kHz', asyn
   assert.equal(controller.getState().frequencyHz, 136_975_000);
   await controller.tuneAir(121_500_400);
   assert.equal(controller.getState().frequencyHz, 121_500_000);
-  // An 8.33 kHz channel label stays usable at 1 kHz resolution.
+  // Entry is the carrier frequency, rounded to 1 kHz, not a channel label.
   await controller.tuneAir(118_005_499);
   assert.equal(controller.getState().frequencyHz, 118_005_000);
   await controller.tuneAir('not a frequency');

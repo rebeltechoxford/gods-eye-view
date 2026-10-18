@@ -21,7 +21,7 @@ export const AIRBAND_SAMPLE_RATE = 1_024_000;
  * within the R820T/R828D tuning range).
  */
 export const AIRBAND_TUNING_OFFSET_HZ = 250_000;
-/** Frequencies are kept to whole kHz (8.33 kHz channel labels like 118.005). */
+/** Carrier frequencies are kept to whole kHz; these are not channel labels. */
 export const AIRBAND_FREQUENCY_RESOLUTION_HZ = 1_000;
 /** One 25 kHz channel: the step of the card's channel buttons. */
 export const AIRBAND_CHANNEL_STEP_HZ = 25_000;

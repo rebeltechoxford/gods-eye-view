@@ -76,6 +76,17 @@ export function createFisbLayer({
   let imageryCollection = null;
   let radarKey = null;
   let selected = null;
+  let requestGeneration = 0;
+
+  function clearPicture() {
+    picture = null;
+    radar = null;
+    source.reset?.();
+    clearSelection();
+    clearImagery();
+    dataSource?.entities.removeAll();
+    governorRequestRender('fisb-clear');
+  }
 
   function clearImagery() {
     if (imagery && imageryCollection && !imageryCollection.isDestroyed?.())
@@ -363,11 +374,10 @@ export function createFisbLayer({
 
     async disable() {
       enabled = false;
+      requestGeneration++;
       releaseInteraction();
-      clearSelection();
-      clearImagery();
+      clearPicture();
       if (dataSource) {
-        dataSource.entities.removeAll();
         dataSource.show = false;
       }
       governorRequestRender('fisb-disable');
@@ -375,9 +385,10 @@ export function createFisbLayer({
     },
 
     async update(_viewer, { signal } = {}) {
+      const generation = ++requestGeneration;
       try {
         const result = await source.fetchPicture({ signal });
-        if (signal?.aborted) return false;
+        if (signal?.aborted || generation !== requestGeneration) return false;
         state = {
           configured: result.configured,
           missing: result.missing === true,
@@ -389,11 +400,14 @@ export function createFisbLayer({
         if (enabled) render();
         return true;
       } catch (error) {
-        if (signal?.aborted) return false;
+        if (signal?.aborted || generation !== requestGeneration) return false;
         state = {
           ...state,
           error: error?.message || 'FIS-B route unavailable',
         };
+        // A failed refresh cannot establish that a weather or airspace
+        // product is still current. Do not leave its old geometry on the map.
+        clearPicture();
         return false;
       }
     },
@@ -430,15 +444,12 @@ export function createFisbLayer({
 
     destroy() {
       enabled = false;
+      requestGeneration++;
       releaseInteraction();
-      clearSelection();
-      clearImagery();
+      clearPicture();
       if (viewer && dataSource) viewer.dataSources.remove(dataSource, true);
       dataSource = null;
       viewer = null;
-      picture = null;
-      radar = null;
-      source.reset?.();
     },
   };
   return layer;

@@ -215,7 +215,10 @@ export function dlacText(data, start = 0, byteLength = data.length - start) {
 
 function latOf(raw, bits) {
   const value = (raw * 360) / 2 ** bits;
-  return value > 90 ? value - 180 : value;
+  const latitude = value > 90 ? value - 180 : value;
+  if (latitude < -90 || latitude > 90)
+    throw new RangeError('overlay latitude out of range');
+  return latitude;
 }
 
 function lonOf(raw, bits) {
@@ -431,6 +434,7 @@ export function decodeGlobalBlock(productId, payload) {
     block.south = false;
     block.altitudeIndex = field;
   }
+  blockBounds(blockNumber, block.scale, block.south);
   if (elementId === 0) {
     need(payload, 4, 'empty block bitmap');
     const length = payload[3] & 0x0f;
@@ -442,7 +446,11 @@ export function decodeGlobalBlock(productId, payload) {
       for (let k = 0; k < 8; k++) flags.push((payload[4 + i] >> k) & 1);
     block.emptyBlocks = [];
     flags.forEach((flag, i) => {
-      if (flag) block.emptyBlocks.push(blockNumber + i * step);
+      if (flag) {
+        const number = blockNumber + i * step;
+        blockBounds(number, block.scale, block.south);
+        block.emptyBlocks.push(number);
+      }
     });
     block.consumed = 4 + length;
     return block;
@@ -503,7 +511,12 @@ function blockStep(scale, blockNumber) {
  * @param {boolean} south
  */
 export function blockBounds(blockNumber, scale = 0, south = false) {
-  const multiple = [1, 5, 9][scale] ?? 1;
+  if (
+    !Number.isInteger(blockNumber) || blockNumber < 0 ||
+    !Number.isInteger(scale) || scale < 0 || scale > 2
+  )
+    throw new RangeError('invalid block reference');
+  const multiple = [1, 5, 9][scale];
   const wide = blockNumber >= 405000;
   const number = wide ? blockNumber & ~1 : blockNumber;
   const row = Math.floor(number / 450);
@@ -512,5 +525,8 @@ export function blockBounds(blockNumber, scale = 0, south = false) {
   const height = (4 / 60) * multiple;
   const width = (wide ? 1.6 : 0.8) * multiple;
   const north = south ? -(row * 4) / 60 : ((row + 1) * 4) / 60;
-  return { north, south: north - height, west, east: west + width };
+  const bottom = north - height;
+  if (north > 90 || bottom < -90)
+    throw new RangeError('block latitude out of range');
+  return { north, south: bottom, west, east: west + width };
 }

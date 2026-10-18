@@ -95,8 +95,8 @@ USB RTL-SDR: no internet connection, server or other software is needed.
 1. Open the Radio panel, select **AIR** in the Local RTL-SDR card and press
    **CONNECT** (desktop Chrome or Edge).
 2. The receiver starts on 121.500 MHz, the international guard and emergency
-   frequency. Type another frequency in **AIR MHZ** (three decimals, for
-   example `118.705`) and press **TUNE** or Enter. The field also suggests
+   frequency. Type the actual carrier frequency in **AIR CARRIER MHZ**
+   (three decimals, for example `118.700`) and press **TUNE** or Enter. The field also suggests
    122.750 (air-to-air) and 123.025 (helicopter air-to-air).
 3. **◀ 25 KHZ** and **25 KHZ ▶** step one 25 kHz channel down or up.
 4. Find your local tower, CTAF, approach and ATIS frequencies on the
@@ -119,10 +119,12 @@ than aircraft overhead.
 
 **What it does and does not do.** Airband is AM only. The receiver tunes 250
 kHz above the channel so the RTL-SDR's DC spike stays off it, and filters a
-10 kHz channel. Frequencies are kept to 1 kHz, so European 8.33 kHz channel
-names such as 118.005 can be entered, but there is no 8.33 kHz channel
-filtering beyond that 10 kHz bandwidth: a strong neighbour 8.33 kHz away can
-be heard too. Gain is per mode (AUTO by default for airband). Airband shares
+10 kHz channel. Entry is the actual carrier frequency, rounded to 1 kHz.
+**8.33 kHz channel names are not converted:** channel `118.005` uses a
+`118.000 MHz` carrier; entering `118.005` here instead tunes `118.005 MHz`.
+See the [EUROCONTROL channel table](https://www.eurocontrol.int/archive_download/all/node/10364).
+The fixed 10 kHz bandwidth and 1 kHz tuning resolution are not full 8.33 kHz
+channel support. Gain is per mode (AUTO by default for airband). Airband shares
 the tuner with FM and Local ADS-B, so turning on the Local ADS-B layer switches
 the receiver to 1090 MHz, and local airband audio and internet radio stop each
 other.

@@ -87,37 +87,50 @@ function setCapped(map, key, value, cap) {
   map.set(key, value);
 }
 
-/**
- * Resolve an overlay time (month/day/hour/minute, any subset) to epoch ms near
- * `now`, assuming UTC and the nearest year.
- */
-export function resolveOverlayTime(time, now) {
-  if (!time || !Number.isInteger(time.hour) || !Number.isInteger(time.minute))
-    return null;
-  const reference = new Date(now);
-  const month = Number.isInteger(time.month)
-    ? time.month - 1
-    : reference.getUTCMonth();
-  const day = Number.isInteger(time.day) ? time.day : reference.getUTCDate();
+function overlayTimeCandidates(time, now) {
+  if (!time || !Number.isFinite(now)) return [];
+  const valid = (value, min, max) =>
+    Number.isInteger(value) && value >= min && value <= max;
+  if (!valid(time.hour, 0, 23) || !valid(time.minute, 0, 59)) return [];
+  const hasMonth = time.month !== undefined;
+  const hasDay = time.day !== undefined;
   if (
-    month < 0 ||
-    month > 11 ||
-    day < 1 ||
-    day > 31 ||
-    time.hour > 23 ||
-    time.minute > 59
+    (hasMonth && (!hasDay || !valid(time.month, 1, 12))) ||
+    (hasDay && !valid(time.day, 1, 31))
   )
-    return null;
-  let best = null;
-  for (const year of [
-    reference.getUTCFullYear() - 1,
-    reference.getUTCFullYear(),
-    reference.getUTCFullYear() + 1,
-  ]) {
-    const at = Date.UTC(year, month, day, time.hour, time.minute);
-    if (best === null || Math.abs(at - now) < Math.abs(best - now)) best = at;
+    return [];
+  const reference = new Date(now);
+  const candidates = [];
+  for (const offset of [-1, 0, 1]) {
+    const date = new Date(Date.UTC(
+      reference.getUTCFullYear() + (hasMonth ? offset : 0),
+      hasMonth ? time.month - 1 : reference.getUTCMonth() + (hasDay ? offset : 0),
+      hasDay ? 1 : reference.getUTCDate() + offset,
+      time.hour,
+      time.minute,
+    ));
+    const month = date.getUTCMonth();
+    if (hasDay) date.setUTCDate(time.day);
+    // Date.UTC normalizes February 30 into March; such input is invalid.
+    if (date.getUTCMonth() !== month) continue;
+    candidates.push(date.getTime());
   }
-  return best;
+  return candidates.sort((a, b) => Math.abs(a - now) - Math.abs(b - now));
+}
+
+/** Resolve omitted date components near receipt across UTC boundaries. */
+export function resolveOverlayTime(time, now) {
+  return overlayTimeCandidates(time, now)[0] ?? null;
+}
+
+/** Resolve a validity interval without putting its stop before its start. */
+export function resolveOverlayInterval(startTime, stopTime, now) {
+  const start = resolveOverlayTime(startTime, now);
+  const candidates = overlayTimeCandidates(stopTime, start ?? now);
+  const stop = candidates.find((at) => start === null || at >= start) ?? null;
+  if ((startTime && start === null) || (stopTime && stop === null))
+    throw new RangeError('invalid overlay validity time');
+  return { start, stop };
 }
 
 const round5 = (value) => Math.round(value * 1e5) / 1e5;
@@ -246,8 +259,7 @@ export function createFisbStore({ now = Date.now } = {}) {
           label: record.label,
           objectType: record.objectType,
           objectElement: record.objectElement,
-          start: resolveOverlayTime(record.start, at),
-          stop: resolveOverlayTime(record.stop, at),
+          ...resolveOverlayInterval(record.start, record.stop, at),
           vertices: record.vertices.slice(0, FISB_LIMITS.verticesPerOverlay),
         };
         setCapped(

@@ -194,7 +194,7 @@ test('FM shows one decimal and seeks; airband shows three decimals and steps cha
   assert.equal(air.airActive, true);
   assert.equal(air.fmActive, false);
   assert.equal(air.adsbActive, false);
-  assert.equal(air.frequencyLabel, 'AIR MHZ');
+  assert.equal(air.frequencyLabel, 'AIR CARRIER MHZ');
   assert.equal(air.frequencyValue, '118.005');
   assert.deepEqual(
     [air.frequencyMin, air.frequencyMax, air.frequencyStep],

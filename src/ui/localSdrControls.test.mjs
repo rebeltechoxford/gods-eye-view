@@ -203,7 +203,7 @@ test('the AIR button, tune, channel steps and squelch drive airband', async (t) 
   assert.equal(frequency.attributes.get('step'), '0.005');
   assert.equal(
     doc.getElementById('sdr-frequency-label').textContent,
-    'AIR MHZ',
+    'AIR CARRIER MHZ',
   );
   const back = doc.getElementById('sdr-seek-back-btn');
   const forward = doc.getElementById('sdr-seek-forward-btn');

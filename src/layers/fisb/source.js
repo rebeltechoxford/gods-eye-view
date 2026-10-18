@@ -20,6 +20,12 @@ export function createFisbSource({
 } = {}) {
   let radarRevision = null;
   let radar = { 63: null, 64: null };
+  let generation = 0;
+
+  function requireCurrent(requestGeneration) {
+    if (requestGeneration !== generation)
+      throw new DOMException('FIS-B request superseded', 'AbortError');
+  }
 
   async function getJson(url, signal) {
     return requestWithDeadline(
@@ -43,7 +49,9 @@ export function createFisbSource({
    * @returns {Promise<{configured:boolean, missing?:boolean, picture?:object, radar?:object}>}
    */
   async function fetchPicture({ signal } = {}) {
+    const requestGeneration = generation;
     const picture = await getJson(FISB_URL, signal);
+    requireCurrent(requestGeneration);
     if (picture?.missing) return { configured: false, missing: true };
     if (picture?.configured !== true) return { configured: false, picture };
     if (picture.radarRevision !== radarRevision) {
@@ -52,6 +60,7 @@ export function createFisbSource({
           getJson(`${FISB_RADAR_URL}?product=${product}`, signal),
         ),
       );
+      requireCurrent(requestGeneration);
       radar = {
         64: conus?.missing ? null : conus,
         63: regional?.missing ? null : regional,
@@ -64,6 +73,7 @@ export function createFisbSource({
   return {
     fetchPicture,
     reset() {
+      generation++;
       radarRevision = null;
       radar = { 63: null, 64: null };
     },
