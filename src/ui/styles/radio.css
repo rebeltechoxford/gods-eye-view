@@ -1037,3 +1037,14 @@
 .sdr-feed-status[hidden] {
   display: none;
 }
+.sdr-radio-card > p.sdr-air-help {
+  color: #ddbe86;
+  font: 8px/1.4 var(--font-mono);
+}
+.sdr-air-help[hidden],
+.sdr-squelch-row[hidden] {
+  display: none;
+}
+.sdr-radio-card .sdr-squelch-row {
+  grid-template-columns: auto minmax(0, 1fr) 36px;
+}

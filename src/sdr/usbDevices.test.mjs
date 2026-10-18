@@ -6,6 +6,7 @@ import {
   createRememberingWebUsb,
   createSdrDeviceMemory,
   sameSdrDevice,
+  sdrDevicePreferenceMode,
   selectAuthorizedSdrDevice,
 } from './usbDevices.js';
 
@@ -132,6 +133,26 @@ test('device memory is per mode and tolerates unavailable storage', () => {
   });
   assert.equal(blocked.get('adsb'), null);
   assert.doesNotThrow(() => blocked.set('adsb', flyCatcherAdsb));
+});
+
+test('airband shares the FM receiver preference and remembered device', () => {
+  const devices = [flyCatcherAdsb, flyCatcherUat];
+  assert.equal(sdrDevicePreferenceMode('air'), 'fm');
+  assert.equal(sdrDevicePreferenceMode('adsb'), 'adsb');
+  assert.equal(
+    selectAuthorizedSdrDevice(devices, { filters: RTL_FILTERS, mode: 'air' }),
+    selectAuthorizedSdrDevice(devices, { filters: RTL_FILTERS, mode: 'fm' }),
+  );
+  const storage = memoryStorage();
+  const memory = createSdrDeviceMemory(storage);
+  memory.set('fm', genericDongle);
+  assert.deepEqual(memory.get('air'), genericDongle);
+  memory.set('air', flyCatcherUat);
+  assert.deepEqual(memory.get('fm'), flyCatcherUat);
+  assert.deepEqual(
+    Object.keys(JSON.parse(storage.values.get(SDR_DEVICE_STORAGE_KEY))),
+    ['fm'],
+  );
 });
 
 test('the WebUSB wrapper reuses the remembered channel without the picker', async () => {

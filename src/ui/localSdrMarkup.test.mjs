@@ -25,6 +25,7 @@ test('the Local RTL-SDR card lives inside the Radio panel with every control', (
     'sdr-locate-btn',
     'sdr-change-device-btn',
     'sdr-mode-fm-btn',
+    'sdr-mode-air-btn',
     'sdr-mode-adsb-btn',
     'sdr-gain-select',
     'sdr-adsb-stats',
@@ -32,10 +33,17 @@ test('the Local RTL-SDR card lives inside the Radio panel with every control', (
     'sdr-stat-heard',
     'sdr-stat-positioned',
     'sdr-stat-iq',
+    'sdr-frequency-label',
     'sdr-frequency-input',
     'sdr-tune-btn',
+    'sdr-air-frequencies',
+    'sdr-air-help',
+    'sdr-seek-row',
     'sdr-seek-back-btn',
     'sdr-seek-forward-btn',
+    'sdr-squelch-row',
+    'sdr-squelch',
+    'sdr-squelch-value',
     'sdr-volume',
     'sdr-status',
     'sdr-feed-status',
@@ -44,6 +52,49 @@ test('the Local RTL-SDR card lives inside the Radio panel with every control', (
   }
   assert.match(html, /id="sdr-status"[^>]*>Connect an RTL-SDR to begin\.</);
   assert.match(css, /\.sdr-radio-card\s*\{/);
+});
+
+test('the AIR mode sits between FM and ADS-B with airband help and a squelch slider', () => {
+  const row = html.slice(
+    html.indexOf('aria-label="RTL-SDR receiver mode"'),
+    html.indexOf('</div>', html.indexOf('aria-label="RTL-SDR receiver mode"')),
+  );
+  const order = [
+    'sdr-mode-fm-btn',
+    'sdr-mode-air-btn',
+    'sdr-mode-adsb-btn',
+  ].map((id) => row.indexOf(`id="${id}"`));
+  assert.ok(order.every((index, n) => index > (n ? order[n - 1] : -1)));
+  assert.match(
+    html,
+    /id="sdr-mode-air-btn" type="button" aria-pressed="false"[^>]*>AIR</,
+  );
+  const datalist = html.slice(
+    html.indexOf('id="sdr-air-frequencies"'),
+    html.indexOf('</datalist>'),
+  );
+  assert.deepEqual(
+    [...datalist.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]),
+    ['121.500', '122.750', '123.025'],
+  );
+  assert.match(
+    html,
+    /id="sdr-air-help"[^>]*hidden>121\.500 guard\/emergency · 122\.750 air-to-air · 123\.025 helicopter air-to-air\. Your local tower, CTAF and ATIS frequencies are on the airport's chart\.</,
+  );
+  assert.match(
+    html,
+    /id="sdr-squelch-row"[^>]*for="sdr-squelch" hidden>/,
+    'squelch starts hidden (FM is the default mode)',
+  );
+  assert.match(
+    html,
+    /id="sdr-squelch" class="gev-quantitative-slider" type="range" min="0" max="30" step="1" value="6" aria-label="[^"]+"/,
+  );
+  assert.match(
+    html,
+    /id="sdr-frequency-label" for="sdr-frequency-input">FM MHZ</,
+  );
+  assert.match(css, /\.sdr-squelch-row\[hidden\]/);
 });
 
 test('the gain control offers AUTO plus every R820T step', () => {

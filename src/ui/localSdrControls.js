@@ -1,8 +1,9 @@
 import {
   internetRadioAudioActive,
+  localSdrAudioActive,
   localSdrCardView,
   localSdrFeedLine,
-  localSdrFmAudioActive,
+  localSdrModeHasAudio,
 } from './localSdrPresentation.js';
 
 const ELEMENT_IDS = Object.freeze({
@@ -12,6 +13,7 @@ const ELEMENT_IDS = Object.freeze({
   locate: 'sdr-locate-btn',
   changeDevice: 'sdr-change-device-btn',
   modeFm: 'sdr-mode-fm-btn',
+  modeAir: 'sdr-mode-air-btn',
   modeAdsb: 'sdr-mode-adsb-btn',
   gain: 'sdr-gain-select',
   stats: 'sdr-adsb-stats',
@@ -19,10 +21,16 @@ const ELEMENT_IDS = Object.freeze({
   statHeard: 'sdr-stat-heard',
   statPositioned: 'sdr-stat-positioned',
   statIq: 'sdr-stat-iq',
+  frequencyLabel: 'sdr-frequency-label',
   frequency: 'sdr-frequency-input',
   tune: 'sdr-tune-btn',
+  airHelp: 'sdr-air-help',
+  seekRow: 'sdr-seek-row',
   seekBack: 'sdr-seek-back-btn',
   seekForward: 'sdr-seek-forward-btn',
+  squelchRow: 'sdr-squelch-row',
+  squelch: 'sdr-squelch',
+  squelchValue: 'sdr-squelch-value',
   volume: 'sdr-volume',
   volumeValue: 'sdr-volume-value',
   status: 'sdr-status',
@@ -37,8 +45,8 @@ function setText(element, text) {
  * Local RTL-SDR card in the Radio panel.
  *
  * Owns the card's listeners and its receiver/radio subscriptions. The Radio
- * panel is one listening surface: starting local FM stops internet radio, and
- * starting internet radio stops local FM.
+ * panel is one listening surface: starting local FM or airband audio stops
+ * internet radio, and starting internet radio stops local FM or airband.
  */
 export class LocalSdrControls {
   /**
@@ -72,7 +80,7 @@ export class LocalSdrControls {
     this._listeners = new AbortController();
     this._state = receiver.getState();
     this._radioState = null;
-    this._fmAudioActive = localSdrFmAudioActive(this._state);
+    this._sdrAudioActive = localSdrAudioActive(this._state);
     this._radioAudioActive = false;
     this._renderFrame = null;
     this._destroyed = false;
@@ -120,7 +128,7 @@ export class LocalSdrControls {
         await this.receiver.stop();
         return;
       }
-      if (before.mode === 'fm') this._stopInternetRadio();
+      if (localSdrModeHasAudio(before.mode)) this._stopInternetRadio();
       if (await this.receiver.connect(before.mode))
         await this._enableLayerWhenReceiving();
     });
@@ -128,16 +136,24 @@ export class LocalSdrControls {
       void this.receiver.requestReceiverLocation();
     });
     this._listen(el.changeDevice, 'click', async () => {
-      if (this.receiver.getState().mode === 'fm') this._stopInternetRadio();
+      if (localSdrModeHasAudio(this.receiver.getState().mode))
+        this._stopInternetRadio();
       if (await this.receiver.changeDevice())
         await this._enableLayerWhenReceiving();
     });
-    this._listen(el.modeFm, 'click', async () => {
-      this._stopInternetRadio();
-      if (this.actions.isLocalAdsbEnabled?.())
-        await this.actions.setLocalAdsbEnabled?.(false);
-      await this.receiver.setMode('fm');
-    });
+    // FM and airband are listening modes: they take over from internet radio
+    // and from the Local ADS-B layer, which needs the receiver on 1090 MHz.
+    for (const [button, mode] of [
+      [el.modeFm, 'fm'],
+      [el.modeAir, 'air'],
+    ]) {
+      this._listen(button, 'click', async () => {
+        this._stopInternetRadio();
+        if (this.actions.isLocalAdsbEnabled?.())
+          await this.actions.setLocalAdsbEnabled?.(false);
+        await this.receiver.setMode(mode);
+      });
+    }
     this._listen(el.modeAdsb, 'click', async () => {
       if (await this.receiver.setMode('adsb'))
         await this._enableLayerWhenReceiving();
@@ -149,7 +165,9 @@ export class LocalSdrControls {
       const mhz = Number(el.frequency?.value);
       if (!Number.isFinite(mhz)) return;
       this._stopInternetRadio();
-      void this.receiver.tuneFm(mhz * 1_000_000);
+      if (this.receiver.getState().mode === 'air')
+        void this.receiver.tuneAir(mhz * 1_000_000);
+      else void this.receiver.tuneFm(mhz * 1_000_000);
     };
     this._listen(el.tune, 'click', tune);
     this._listen(el.frequency, 'keydown', (event) => {
@@ -163,9 +181,17 @@ export class LocalSdrControls {
     ]) {
       this._listen(button, 'click', () => {
         this._stopInternetRadio();
-        void this.receiver.seekFm(direction);
+        // Airband steps one 25 kHz channel; FM seeks the next station.
+        if (this.receiver.getState().mode === 'air')
+          void this.receiver.stepAir(direction);
+        else void this.receiver.seekFm(direction);
       });
     }
+    this._listen(el.squelch, 'input', () => {
+      const applied = this.receiver.setSquelch?.(el.squelch.value);
+      if (applied !== null && applied !== undefined)
+        setText(el.squelchValue, applied > 0 ? `${applied} dB` : 'OFF');
+    });
     this._listen(el.volume, 'input', () => {
       const value = Number(el.volume.value);
       this.receiver.setVolume(value / 100);
@@ -175,20 +201,21 @@ export class LocalSdrControls {
 
   _onReceiverState(state) {
     this._state = state;
-    const fmAudioActive = localSdrFmAudioActive(state);
-    // Local FM just started: it takes over from internet radio.
-    if (fmAudioActive && !this._fmAudioActive) this._stopInternetRadio();
-    this._fmAudioActive = fmAudioActive;
+    const sdrAudioActive = localSdrAudioActive(state);
+    // Local FM or airband just started: it takes over from internet radio.
+    if (sdrAudioActive && !this._sdrAudioActive) this._stopInternetRadio();
+    this._sdrAudioActive = sdrAudioActive;
     this._scheduleRender();
   }
 
   _onRadioState(state) {
     this._radioState = state;
     const radioAudioActive = internetRadioAudioActive(state);
-    // Internet radio just started: it takes over from local FM.
-    if (radioAudioActive && !this._radioAudioActive && this._fmAudioActive) {
+    // Internet radio just started: it takes over from local FM or airband.
+    if (radioAudioActive && !this._radioAudioActive && this._sdrAudioActive) {
+      const listening = this._state?.mode === 'air' ? 'airband' : 'FM';
       void this.receiver.stop({
-        message: 'Local FM stopped: internet radio started',
+        message: `Local ${listening} stopped: internet radio started`,
       });
     }
     this._radioAudioActive = radioAudioActive;
@@ -220,6 +247,7 @@ export class LocalSdrControls {
     }
     for (const [button, active] of [
       [el.modeFm, view.fmActive],
+      [el.modeAir, view.airActive],
       [el.modeAdsb, view.adsbActive],
     ]) {
       if (!button) continue;
@@ -243,14 +271,37 @@ export class LocalSdrControls {
     setText(el.statHeard, view.stats.heard);
     setText(el.statPositioned, view.stats.positioned);
     setText(el.statIq, view.stats.iq);
+    setText(el.frequencyLabel, view.frequencyLabel);
     if (el.frequency) {
       el.frequency.disabled = view.frequencyDisabled;
+      el.frequency.setAttribute('min', view.frequencyMin);
+      el.frequency.setAttribute('max', view.frequencyMax);
+      el.frequency.setAttribute('step', view.frequencyStep);
+      if (view.frequencySuggestions)
+        el.frequency.setAttribute('list', view.frequencySuggestions);
+      else el.frequency.removeAttribute?.('list');
       if (doc?.activeElement !== el.frequency && view.frequencyValue !== null)
         el.frequency.value = view.frequencyValue;
     }
     if (el.tune) el.tune.disabled = view.tuneDisabled;
-    if (el.seekBack) el.seekBack.disabled = view.seekDisabled;
-    if (el.seekForward) el.seekForward.disabled = view.seekDisabled;
+    if (el.airHelp) el.airHelp.hidden = view.airHelpHidden;
+    el.seekRow?.setAttribute('aria-label', view.seekGroupLabel);
+    for (const [button, label, title] of [
+      [el.seekBack, view.seekBackLabel, view.seekBackTitle],
+      [el.seekForward, view.seekForwardLabel, view.seekForwardTitle],
+    ]) {
+      if (!button) continue;
+      button.disabled = view.seekDisabled;
+      setText(button, label);
+      button.setAttribute('title', title);
+    }
+    if (el.squelchRow) el.squelchRow.hidden = view.squelchHidden;
+    if (el.squelch) {
+      if (doc?.activeElement !== el.squelch)
+        el.squelch.value = view.squelchValue;
+      el.squelch.disabled = view.squelchHidden;
+    }
+    setText(el.squelchValue, view.squelchText);
     if (el.volume) {
       if (doc?.activeElement !== el.volume)
         el.volume.value = String(view.volumePercent);
@@ -270,7 +321,7 @@ export class LocalSdrControls {
       ?.closest?.('#radio-panel')
       ?.classList.toggle('sdr-connected', view.connectionActive);
     // Only structural changes move the rail; per-block text updates do not.
-    const layoutKey = `${view.statsHidden}|${view.connectionActive}|${feedLine === null}`;
+    const layoutKey = `${view.statsHidden}|${view.squelchHidden}|${view.connectionActive}|${feedLine === null}`;
     if (layoutKey !== this._layoutKey) {
       this._layoutKey = layoutKey;
       this.actions.scheduleLayout?.();

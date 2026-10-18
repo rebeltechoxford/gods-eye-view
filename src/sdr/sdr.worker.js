@@ -7,28 +7,56 @@ import {
   updateAircraftTrack,
 } from './adsbDecoder.js';
 import { analyzeSpectrum } from './spectrum.js';
+import { createAirbandReceiver } from './airband.js';
+import {
+  AIRBAND_SAMPLE_RATE,
+  AIRBAND_SQUELCH_DEFAULT_DB,
+  AIRBAND_TUNING_OFFSET_HZ,
+} from './airbandTuning.js';
 import { recordFromDecoderTrack } from '../sources/adsbRecords.js';
 
 let mode = 'fm';
 let sampleRate = 2_048_000;
 let receiverLocation = null;
 let demodulator = null;
+// Airband: the listened channel sits at this offset from the tuner centre.
+let airOffsetHz = -AIRBAND_TUNING_OFFSET_HZ;
+let airSquelchDb = AIRBAND_SQUELCH_DEFAULT_DB;
+let airReceiver = null;
 let blockCount = 0;
 const aircraft = new Map();
 // Positions refused by the decoder's speed check since the last clear.
 const decoderStats = { positionsRejected: 0 };
 const adsbStream = new AdsbStreamDecoder();
 
-function configure(nextMode, nextSampleRate, location) {
-  const modeChanged = mode !== (nextMode === 'adsb' ? 'adsb' : 'fm');
-  mode = nextMode === 'adsb' ? 'adsb' : 'fm';
-  sampleRate =
-    Number(nextSampleRate) || (mode === 'adsb' ? 2_000_000 : 2_048_000);
+function workerMode(value) {
+  return value === 'adsb' || value === 'air' ? value : 'fm';
+}
+
+function defaultSampleRate(value) {
+  if (value === 'adsb') return 2_000_000;
+  return value === 'air' ? AIRBAND_SAMPLE_RATE : 2_048_000;
+}
+
+function configure(nextMode, nextSampleRate, location, options = {}) {
+  const modeChanged = mode !== workerMode(nextMode);
+  mode = workerMode(nextMode);
+  sampleRate = Number(nextSampleRate) || defaultSampleRate(mode);
   receiverLocation = location || receiverLocation;
+  if (Number.isFinite(options.offsetHz)) airOffsetHz = options.offsetHz;
+  if (Number.isFinite(options.squelchDb)) airSquelchDb = options.squelchDb;
   blockCount = 0;
   demodulator =
     mode === 'fm'
       ? getDemod(sampleRate, 48_000, { ...getMode('WBFM'), stereo: false })
+      : null;
+  airReceiver =
+    mode === 'air'
+      ? createAirbandReceiver({
+          sampleRate,
+          offsetHz: airOffsetHz,
+          squelchDb: airSquelchDb,
+        })
       : null;
   if (modeChanged) {
     adsbStream.reset();
@@ -88,7 +116,15 @@ function publicAircraft() {
 self.onmessage = (event) => {
   const message = event.data || {};
   if (message.type === 'configure') {
-    configure(message.mode, message.sampleRate, message.location);
+    configure(message.mode, message.sampleRate, message.location, {
+      offsetHz: message.offsetHz,
+      squelchDb: message.squelchDb,
+    });
+    return;
+  }
+  if (message.type === 'squelch') {
+    if (Number.isFinite(message.db)) airSquelchDb = message.db;
+    airReceiver?.setSquelch(airSquelchDb);
     return;
   }
   if (message.type === 'location') {
@@ -102,7 +138,10 @@ self.onmessage = (event) => {
       aircraft.clear();
       decoderStats.positionsRejected = 0;
     }
-    if (mode === 'fm') configure(mode, sampleRate, receiverLocation);
+    if (mode === 'fm' || mode === 'air')
+      configure(mode, sampleRate, receiverLocation, {
+        offsetHz: message.offsetHz,
+      });
     return;
   }
   if (message.type !== 'samples' || !(message.buffer instanceof ArrayBuffer))
@@ -135,6 +174,29 @@ self.onmessage = (event) => {
             : null,
       },
       [samples.buffer, ...(bins ? [bins.buffer] : [])],
+    );
+    return;
+  }
+
+  if (mode === 'air') {
+    const { i, q, iqLevelDbfs } = normalizedIq(message.buffer);
+    const { samples, snrDb, squelchOpen } = airReceiver.process(i, q);
+    self.postMessage(
+      {
+        type: 'air',
+        samples,
+        snr: snrDb,
+        squelchOpen,
+        diagnostics:
+          blockCount % 15 === 0
+            ? {
+                workerBlocks: blockCount,
+                iqLevelDbfs,
+                audioLevelDbfs: audioLevel(samples),
+              }
+            : null,
+      },
+      [samples.buffer],
     );
     return;
   }

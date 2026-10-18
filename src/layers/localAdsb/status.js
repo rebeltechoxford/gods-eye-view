@@ -63,7 +63,10 @@ function webUsbStatus(receiver, heard, feedState) {
   if (!receiver.connected)
     return { status: 'idle', statusMessage: 'connect a receiver in Radio' };
   if (receiver.mode !== 'adsb')
-    return { status: 'idle', statusMessage: 'receiver is in FM mode' };
+    return {
+      status: 'idle',
+      statusMessage: `receiver is in ${receiver.mode === 'air' ? 'airband' : 'FM'} mode`,
+    };
   const rate = Number.isFinite(receiver.messagesPerSecond)
     ? `${receiver.messagesPerSecond} msg/s`
     : 'listening';

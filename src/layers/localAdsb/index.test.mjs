@@ -678,6 +678,8 @@ test('layer stats guide the operator to the Radio card until ADS-B is streaming'
   assert.equal(layer.getStats().statusMessage, 'connect a receiver in Radio');
   receiver.set({ connected: true, status: 'streaming', mode: 'fm' });
   assert.equal(layer.getStats().statusMessage, 'receiver is in FM mode');
+  receiver.set({ mode: 'air' });
+  assert.equal(layer.getStats().statusMessage, 'receiver is in airband mode');
   receiver.set({
     mode: 'adsb',
     messagesPerSecond: 3.5,

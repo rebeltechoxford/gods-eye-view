@@ -16,6 +16,19 @@ import {
   sdrDeviceLabel,
   selectAuthorizedSdrDevice,
 } from './usbDevices.js';
+import {
+  AIRBAND_CHANNEL_STEP_HZ,
+  AIRBAND_DEFAULT_HZ,
+  AIRBAND_MAX_HZ,
+  AIRBAND_MIN_HZ,
+  AIRBAND_SAMPLE_RATE,
+  AIRBAND_TUNING_OFFSET_HZ,
+  airbandCenterFrequency,
+  clampAirFrequency,
+  normalizeAirSquelch,
+  readAirSquelch,
+  writeAirSquelch,
+} from './airbandTuning.js';
 import { summarizeLocalAdsb } from '../sources/adsbRecords.js';
 
 export { createRememberingWebUsb } from './usbDevices.js';
@@ -47,15 +60,36 @@ export const SDR_RECEIVER_PRESETS = Object.freeze({
     ppm: 0,
     rtlAgc: false,
   }),
+  // Airband AM voice. `frequencyHz` is the default LISTEN frequency; the
+  // tuner centre sits AIRBAND_TUNING_OFFSET_HZ above it (offset tuning).
+  air: Object.freeze({
+    frequencyHz: AIRBAND_DEFAULT_HZ,
+    sampleRate: AIRBAND_SAMPLE_RATE,
+    ppm: 0,
+    rtlAgc: false,
+  }),
 });
 
 const FM_DEFAULT_HZ = SDR_RECEIVER_PRESETS.fm.frequencyHz;
 const FM_SAMPLE_RATE = SDR_RECEIVER_PRESETS.fm.sampleRate;
 const ADSB_FREQUENCY_HZ = SDR_RECEIVER_PRESETS.adsb.frequencyHz;
-const ADSB_SAMPLE_RATE = SDR_RECEIVER_PRESETS.adsb.sampleRate;
 
 function normalizeMode(mode) {
-  return mode === 'adsb' ? 'adsb' : 'fm';
+  return mode === 'adsb' || mode === 'air' ? mode : 'fm';
+}
+
+/** Modes that play audio through the shared audio worklet. */
+function modeHasAudio(mode) {
+  return mode === 'fm' || mode === 'air';
+}
+
+function modeName(mode) {
+  if (mode === 'adsb') return 'ADS-B';
+  return mode === 'air' ? 'airband' : 'FM';
+}
+
+function formatAirMhz(frequencyHz) {
+  return (frequencyHz / 1_000_000).toFixed(3);
 }
 
 function defaultStorage() {
@@ -218,15 +252,16 @@ function describeConnectionError(error) {
 }
 
 function streamingMessage(mode) {
-  return mode === 'adsb'
-    ? 'Receiving 1090 MHz ADS-B'
-    : 'Receiving broadcast FM';
+  if (mode === 'adsb') return 'Receiving 1090 MHz ADS-B';
+  return mode === 'air' ? 'Receiving airband AM' : 'Receiving broadcast FM';
 }
 
 /**
- * Browser-local RTL-SDR session shared by the FM controls and the Local ADS-B
- * layer. `state.aircraft` holds source-agnostic records from
- * `src/sources/adsbRecords.js`.
+ * Browser-local RTL-SDR session shared by the FM and airband controls and the
+ * Local ADS-B layer. `state.aircraft` holds source-agnostic records from
+ * `src/sources/adsbRecords.js`. In airband mode `state.frequencyHz` is the
+ * listened channel; the tuner centre is offset above it (see
+ * `airbandTuning.js`).
  */
 export class SdrController {
   /**
@@ -262,6 +297,8 @@ export class SdrController {
       sampleRate: FM_SAMPLE_RATE,
       volume: 0.8,
       gain: this._gainByMode.fm,
+      squelchDb: readAirSquelch(storage),
+      squelchOpen: false,
       seeking: false,
       seekMessage: '',
       snr: null,
@@ -311,6 +348,9 @@ export class SdrController {
     this._acquisitionSequence = 0;
     this._destroyed = false;
     this._fmFrequencyHz = FM_DEFAULT_HZ;
+    this._airFrequencyHz = AIRBAND_DEFAULT_HZ;
+    // Listened airband channel minus the tuner centre, as the worker needs it.
+    this._airOffsetHz = -AIRBAND_TUNING_OFFSET_HZ;
     this._spectrum = null;
     this._spectrumSequence = 0;
     this._spectrumWaiters = new Set();
@@ -427,6 +467,8 @@ export class SdrController {
       mode: this.state.mode,
       sampleRate: this.state.sampleRate,
       location: this.state.receiverLocation,
+      offsetHz: this._airOffsetHz,
+      squelchDb: this.state.squelchDb,
     });
   }
 
@@ -499,6 +541,19 @@ export class SdrController {
       if (Number.isFinite(message.snr)) this._setState({ snr: message.snr });
       return;
     }
+    if (message.type === 'air') {
+      if (message.samples instanceof Float32Array && this._audioNode) {
+        this._audioNode.port.postMessage(
+          { type: 'samples', samples: message.samples },
+          [message.samples.buffer],
+        );
+      }
+      this._setState({
+        snr: Number.isFinite(message.snr) ? message.snr : null,
+        squelchOpen: Boolean(message.squelchOpen),
+      });
+      return;
+    }
     if (message.type === 'adsb') {
       this._applyAdsbUpdate(message, Date.now());
     }
@@ -556,11 +611,17 @@ export class SdrController {
    *   published then.
    */
   async _configureDevice(mode, frequencyHz, token = this._sessionToken) {
-    const preset =
-      mode === 'adsb' ? SDR_RECEIVER_PRESETS.adsb : SDR_RECEIVER_PRESETS.fm;
+    const preset = SDR_RECEIVER_PRESETS[normalizeMode(mode)];
     const sampleRate = preset.sampleRate;
+    // Airband listens at `frequencyHz` with the tuner centre offset above it.
+    const listenFrequency =
+      mode === 'air' ? clampAirFrequency(frequencyHz) : null;
     const tunedFrequency =
-      mode === 'adsb' ? preset.frequencyHz : clampFmFrequency(frequencyHz);
+      mode === 'adsb'
+        ? preset.frequencyHz
+        : mode === 'air'
+          ? airbandCenterFrequency(listenFrequency)
+          : clampFmFrequency(frequencyHz);
     const gain = this._gainByMode[mode];
     const device = this._device;
     if (!this._owns(token, device)) return false;
@@ -580,12 +641,15 @@ export class SdrController {
       }
       if (!this._owns(token, device)) return false;
       const [actualRate, , actualFrequency] = results;
+      const centerFrequency = Number.isFinite(actualFrequency)
+        ? actualFrequency
+        : tunedFrequency;
+      if (mode === 'air') this._airOffsetHz = listenFrequency - centerFrequency;
       this._setState({
         sampleRate: Number.isFinite(actualRate) ? actualRate : sampleRate,
-        frequencyHz: Number.isFinite(actualFrequency)
-          ? actualFrequency
-          : tunedFrequency,
+        frequencyHz: mode === 'air' ? listenFrequency : centerFrequency,
         gain,
+        squelchOpen: false,
       });
       return true;
     });
@@ -618,7 +682,7 @@ export class SdrController {
       // Resume audio completely before opening the USB chooser. A context that
       // has only been constructed can still be suspended after the chooser
       // consumes the click activation.
-      if (nextMode === 'fm' && !(await this._ensureAudio())) {
+      if (modeHasAudio(nextMode) && !(await this._ensureAudio())) {
         throw new Error(
           'Browser audio is suspended; press Connect again to resume it',
         );
@@ -645,7 +709,7 @@ export class SdrController {
       acquisition = null;
       const configured = await this._configureDevice(
         this.state.mode,
-        this._fmFrequencyHz,
+        this._listenFrequency(this.state.mode),
         token,
       );
       // A stop() during configuration already closed this device.
@@ -1019,9 +1083,8 @@ export class SdrController {
       this._setState({
         mode: nextMode,
         gain: this._gainByMode[nextMode],
-        frequencyHz:
-          nextMode === 'adsb' ? ADSB_FREQUENCY_HZ : this._fmFrequencyHz,
-        sampleRate: nextMode === 'adsb' ? ADSB_SAMPLE_RATE : FM_SAMPLE_RATE,
+        frequencyHz: this._listenFrequency(nextMode),
+        sampleRate: SDR_RECEIVER_PRESETS[nextMode].sampleRate,
       });
       return true;
     }
@@ -1040,12 +1103,12 @@ export class SdrController {
       status: 'tuning',
       mode: nextMode,
       gain: this._gainByMode[nextMode],
-      message: `Switching to ${nextMode === 'adsb' ? 'ADS-B' : 'FM'}…`,
+      message: `Switching to ${modeName(nextMode)}…`,
     });
     try {
-      if (nextMode === 'fm' && !(await this._ensureAudio())) {
+      if (modeHasAudio(nextMode) && !(await this._ensureAudio())) {
         throw new Error(
-          'Browser audio is suspended; select FM again to resume it',
+          `Browser audio is suspended; select ${nextMode === 'air' ? 'AIR' : 'FM'} again to resume it`,
         );
       }
       // A stall teardown, stop() or reconnect during the switch supersedes
@@ -1053,7 +1116,7 @@ export class SdrController {
       if (!this._owns(token, device)) return false;
       const configured = await this._configureDevice(
         nextMode,
-        this._fmFrequencyHz,
+        this._listenFrequency(nextMode),
         token,
       );
       if (!configured || !this._owns(token, device)) return false;
@@ -1061,6 +1124,7 @@ export class SdrController {
         status: 'streaming',
         message: streamingMessage(nextMode),
         snr: null,
+        squelchOpen: false,
         workerBlocks: 0,
         iqLevelDbfs: null,
         audioLevelDbfs: null,
@@ -1076,6 +1140,12 @@ export class SdrController {
       });
       return false;
     }
+  }
+
+  /** The frequency a mode listens on: remembered FM/airband, or 1090 MHz. */
+  _listenFrequency(mode) {
+    if (mode === 'adsb') return ADSB_FREQUENCY_HZ;
+    return mode === 'air' ? this._airFrequencyHz : this._fmFrequencyHz;
   }
 
   /** The authorized receiver selection would open for a mode, if any. */
@@ -1095,7 +1165,8 @@ export class SdrController {
    * Set the tuner gain for a mode and apply it live when that mode is active.
    * @param {'auto'|number|string} value `'auto'` or a gain in dB.
    * @param {object} [options]
-   * @param {'fm'|'adsb'} [options.mode] Mode to configure; defaults to current.
+   * @param {'fm'|'adsb'|'air'} [options.mode] Mode to configure; defaults to
+   *   current.
    * @returns {Promise<'auto'|number|null>} Applied setting, or null if invalid.
    */
   async setGain(value, { mode = this.state.mode } = {}) {
@@ -1125,7 +1196,7 @@ export class SdrController {
 
   /**
    * Current gain setting for a mode.
-   * @param {'fm'|'adsb'} [mode]
+   * @param {'fm'|'adsb'|'air'} [mode]
    * @returns {'auto'|number}
    */
   getGain(mode = this.state.mode) {
@@ -1172,6 +1243,96 @@ export class SdrController {
       });
       return false;
     }
+  }
+
+  /**
+   * Listen to an airband channel: clamp to 118.000-136.975 MHz, round to
+   * 1 kHz, tune the centre AIRBAND_TUNING_OFFSET_HZ above it and point the
+   * worker's demodulator at the channel. Switches to airband mode first when
+   * another mode is active.
+   * @param {number} frequencyHz Requested listen frequency in Hz.
+   * @param {object} [options]
+   * @param {boolean} [options.quiet] Keep the current status message.
+   * @returns {Promise<boolean>} False when the retune failed or was superseded.
+   */
+  async tuneAir(frequencyHz, { quiet = false } = {}) {
+    const frequency = clampAirFrequency(frequencyHz);
+    this._airFrequencyHz = frequency;
+    if (!this._device) {
+      this._setState({
+        mode: 'air',
+        gain: this._gainByMode.air,
+        frequencyHz: frequency,
+        sampleRate: AIRBAND_SAMPLE_RATE,
+      });
+      return true;
+    }
+    // The mode switch tunes straight to the remembered channel.
+    if (this.state.mode !== 'air') return this.setMode('air');
+    const token = this._sessionToken;
+    const device = this._device;
+    const current = () =>
+      this._owns(token, device) && this.state.mode === 'air';
+    const center = airbandCenterFrequency(frequency);
+    try {
+      let actualCenter = center;
+      const owned = await this._queueUsb(async () => {
+        if (!current()) return false;
+        const tuned = await device.setCenterFrequency(center);
+        if (Number.isFinite(tuned)) actualCenter = tuned;
+        if (!current()) return false;
+        await device.resetBuffer();
+        return true;
+      });
+      // A later retune, mode change or stop owns the receiver now.
+      if (!owned || !current() || this._airFrequencyHz !== frequency)
+        return false;
+      this._airOffsetHz = frequency - actualCenter;
+      this._worker?.postMessage({ type: 'reset', offsetHz: this._airOffsetHz });
+      this._audioNode?.port.postMessage({ type: 'clear' });
+      this._setState({
+        frequencyHz: frequency,
+        status: 'streaming',
+        squelchOpen: false,
+        ...(quiet
+          ? {}
+          : { message: `Tuned to ${formatAirMhz(frequency)} MHz AM` }),
+      });
+      return true;
+    } catch (error) {
+      if (!current()) return false;
+      this._setState({
+        status: 'error',
+        message: describeConnectionError(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Step the airband listen frequency one 25 kHz channel up or down.
+   * @param {number} [direction] Negative steps down, otherwise up.
+   * @returns {Promise<boolean>}
+   */
+  stepAir(direction = 1) {
+    const step =
+      direction < 0 ? -AIRBAND_CHANNEL_STEP_HZ : AIRBAND_CHANNEL_STEP_HZ;
+    return this.tuneAir(this._airFrequencyHz + step);
+  }
+
+  /**
+   * Set the airband squelch threshold (channel SNR in dB; 0 = always open).
+   * Remembered in browser storage and applied live.
+   * @param {number|string} value Threshold in dB, clamped to 0-30.
+   * @returns {number|null} The applied threshold, or null when invalid.
+   */
+  setSquelch(value) {
+    const db = normalizeAirSquelch(value);
+    if (db === null) return null;
+    writeAirSquelch(this._storage, db);
+    this._setState({ squelchDb: db });
+    this._worker?.postMessage({ type: 'squelch', db });
+    return db;
   }
 
   _waitForSpectrum(afterSequence, timeoutMs = 900) {
@@ -1335,6 +1496,7 @@ export class SdrController {
         ? {}
         : { message: message || 'RTL-SDR disconnected' }),
       snr: null,
+      squelchOpen: false,
       samplesPerSecond: 0,
       workerBlocks: 0,
       iqLevelDbfs: null,
@@ -1365,3 +1527,10 @@ export const SDR_FM_BAND = Object.freeze({
   maxHz: FM_MAX_HZ,
 });
 export const SDR_ADSB_FREQUENCY_HZ = ADSB_FREQUENCY_HZ;
+export const SDR_AIR_BAND = Object.freeze({
+  minHz: AIRBAND_MIN_HZ,
+  maxHz: AIRBAND_MAX_HZ,
+  defaultHz: AIRBAND_DEFAULT_HZ,
+  offsetHz: AIRBAND_TUNING_OFFSET_HZ,
+  channelStepHz: AIRBAND_CHANNEL_STEP_HZ,
+});

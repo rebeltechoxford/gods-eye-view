@@ -10,6 +10,7 @@ function stubDocument() {
     getElementById(id) {
       if (!elements.has(id)) {
         const listeners = new Map();
+        const attributes = new Map();
         elements.set(id, {
           id,
           value: '',
@@ -17,8 +18,10 @@ function stubDocument() {
           disabled: false,
           textContent: '',
           ownerDocument: doc,
+          attributes,
           classList: { toggle() {} },
-          setAttribute() {},
+          setAttribute: (name, value) => attributes.set(name, String(value)),
+          removeAttribute: (name) => attributes.delete(name),
           closest: () => null,
           addEventListener(type, handler) {
             listeners.set(type, handler);
@@ -76,6 +79,24 @@ function stubReceiver() {
       calls.push(['tuneFm', hz]);
       return true;
     },
+    async tuneAir(hz) {
+      calls.push(['tuneAir', hz]);
+      return true;
+    },
+    async seekFm(direction) {
+      calls.push(['seekFm', direction]);
+      return null;
+    },
+    async stepAir(direction) {
+      calls.push(['stepAir', direction]);
+      return true;
+    },
+    setSquelch(value) {
+      calls.push(['setSquelch', value]);
+      const db = Math.max(0, Math.min(30, Math.round(Number(value))));
+      this.emit({ squelchDb: db });
+      return db;
+    },
   };
 }
 
@@ -120,6 +141,106 @@ test('starting internet radio stops local FM, and local FM stops internet radio'
   radio.emit({ audioState: 'playing' });
   receiver.emit({ connected: true, status: 'streaming', mode: 'fm' });
   assert.deepEqual(radio.calls, [{ origin: 'user' }]);
+});
+
+test('local airband audio and internet radio stop each other, like FM', async (t) => {
+  const receiver = stubReceiver();
+  const radio = stubRadio();
+  const controls = new LocalSdrControls({
+    document: stubDocument(),
+    receiver,
+    radio,
+  });
+  t.after(() => controls.destroy());
+
+  receiver.emit({ connected: true, status: 'streaming', mode: 'air' });
+  radio.emit({ audioState: 'loading' });
+  assert.deepEqual(receiver.calls.at(-1), [
+    'stop',
+    { message: 'Local airband stopped: internet radio started' },
+  ]);
+
+  radio.emit({ audioState: 'playing' });
+  receiver.emit({ connected: true, status: 'streaming', mode: 'air' });
+  assert.deepEqual(radio.calls, [{ origin: 'user' }]);
+});
+
+test('the AIR button, tune, channel steps and squelch drive airband', async (t) => {
+  const doc = stubDocument();
+  const receiver = stubReceiver();
+  const radio = stubRadio();
+  const layerCalls = [];
+  const controls = new LocalSdrControls({
+    document: doc,
+    receiver,
+    radio,
+    actions: {
+      isLocalAdsbEnabled: () => true,
+      setLocalAdsbEnabled: async (enabled) => layerCalls.push(enabled),
+    },
+  });
+  t.after(() => controls.destroy());
+  const squelchRow = doc.getElementById('sdr-squelch-row');
+  const frequency = doc.getElementById('sdr-frequency-input');
+  assert.equal(squelchRow.hidden, true, 'squelch hidden in FM');
+  assert.equal(frequency.value, '98.5');
+  assert.equal(doc.getElementById('sdr-frequency-label').textContent, 'FM MHZ');
+  assert.equal(frequency.attributes.has('list'), false);
+
+  radio.emit({ audioState: 'playing' });
+  receiver.emit({ connected: true, status: 'streaming', mode: 'adsb' });
+  await doc.getElementById('sdr-mode-air-btn').fire('click');
+  assert.deepEqual(radio.calls, [{ origin: 'user' }], 'internet radio stops');
+  assert.deepEqual(layerCalls, [false], 'the Local ADS-B layer turns off');
+  assert.deepEqual(receiver.calls.at(-1), ['setMode', 'air']);
+
+  receiver.emit({ frequencyHz: 121_500_000, squelchDb: 6 });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(squelchRow.hidden, false, 'squelch shows in airband');
+  assert.equal(doc.getElementById('sdr-air-help').hidden, false);
+  assert.equal(frequency.value, '121.500');
+  assert.equal(frequency.attributes.get('list'), 'sdr-air-frequencies');
+  assert.equal(frequency.attributes.get('step'), '0.005');
+  assert.equal(
+    doc.getElementById('sdr-frequency-label').textContent,
+    'AIR MHZ',
+  );
+  const back = doc.getElementById('sdr-seek-back-btn');
+  const forward = doc.getElementById('sdr-seek-forward-btn');
+  assert.equal(back.textContent, '◀ 25 KHZ');
+  assert.equal(forward.textContent, '25 KHZ ▶');
+  assert.equal(
+    forward.attributes.get('title'),
+    'Step up one 25 kHz airband channel',
+  );
+  assert.equal(doc.getElementById('sdr-squelch-value').textContent, '6 dB');
+
+  frequency.value = '122.75';
+  doc.getElementById('sdr-tune-btn').fire('click');
+  assert.deepEqual(receiver.calls.at(-1), ['tuneAir', 122_750_000]);
+  forward.fire('click');
+  assert.deepEqual(receiver.calls.at(-1), ['stepAir', 1]);
+  back.fire('click');
+  assert.deepEqual(receiver.calls.at(-1), ['stepAir', -1]);
+
+  const squelch = doc.getElementById('sdr-squelch');
+  squelch.value = '0';
+  squelch.fire('input');
+  assert.deepEqual(receiver.calls.at(-1), ['setSquelch', '0']);
+  assert.equal(doc.getElementById('sdr-squelch-value').textContent, 'OFF');
+
+  // Back in FM, tune and seek go to the FM controls again.
+  await doc.getElementById('sdr-mode-fm-btn').fire('click');
+  assert.deepEqual(receiver.calls.at(-1), ['setMode', 'fm']);
+  frequency.value = '101.1';
+  doc.getElementById('sdr-tune-btn').fire('click');
+  assert.deepEqual(receiver.calls.at(-1), ['tuneFm', 101_100_000]);
+  forward.fire('click');
+  assert.deepEqual(receiver.calls.at(-1), ['seekFm', 1]);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(squelchRow.hidden, true);
+  assert.equal(frequency.attributes.has('list'), false);
+  assert.equal(forward.textContent, 'SEEK ▶');
 });
 
 test('ADS-B reception and internet radio play together', async (t) => {

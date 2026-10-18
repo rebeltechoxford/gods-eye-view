@@ -3,12 +3,14 @@ import test from 'node:test';
 
 import {
   createRememberingWebUsb,
+  SDR_AIR_BAND,
   SDR_RECEIVER_PRESETS,
   SdrController,
 } from './controller.js';
 import { RTL2832U_Provider } from '@jtarrio/webrtlsdr/rtlsdr.js';
 import { RTL_SDR_USB_FILTERS } from './usbDevices.js';
 import { SDR_GAIN_STORAGE_KEY } from './gain.js';
+import { AIRBAND_SQUELCH_STORAGE_KEY } from './airbandTuning.js';
 
 function replaceGlobal(name, value) {
   const prior = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -168,6 +170,7 @@ test('ADS-B opens at manual 28.0 dB and gain changes apply live without reconnec
   assert.deepEqual(JSON.parse(storage.values.get(SDR_GAIN_STORAGE_KEY)), {
     fm: 'auto',
     adsb: 'auto',
+    air: 'auto',
   });
 
   const before = events.length;
@@ -1018,4 +1021,307 @@ test("a device selection that resolves after its acquisition was superseded cann
   const state = controller.getState();
   assert.equal(state.status, 'streaming');
   assert.equal(state.connected, true);
+});
+
+/** A worker double that keeps every message it was sent. */
+function recordingWorkers() {
+  const workers = [];
+  class RecordingWorker {
+    constructor() {
+      this.messages = [];
+      workers.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+    }
+
+    terminate() {}
+  }
+  return { workers, RecordingWorker };
+}
+
+/** A controller whose audio always resumes; `audio.calls` counts resumes. */
+function airbandController(t, { events = [], storage, getDevice } = {}) {
+  let opens = 0;
+  const controller = new SdrController({
+    storage: storage || memoryStorage(),
+    webUsb: {},
+    providerFactory: () => ({
+      async get() {
+        opens += 1;
+        return getDevice ? getDevice() : fakeDevice(events);
+      },
+    }),
+  });
+  const audio = { calls: 0, posted: [] };
+  controller._ensureAudio = async () => {
+    audio.calls += 1;
+    controller._audioNode ||= {
+      port: { postMessage: (message) => audio.posted.push(message) },
+    };
+    return true;
+  };
+  t.after(() => controller.destroy());
+  return { controller, audio, opens: () => opens };
+}
+
+test('airband frequencies clamp to 118.000-136.975 MHz and round to 1 kHz', async (t) => {
+  const { controller } = airbandController(t);
+  assert.equal(SDR_AIR_BAND.minHz, 118_000_000);
+  assert.equal(SDR_AIR_BAND.maxHz, 136_975_000);
+  assert.equal(SDR_AIR_BAND.defaultHz, 121_500_000);
+  assert.equal(await controller.tuneAir(117_000_000), true);
+  let state = controller.getState();
+  assert.equal(state.mode, 'air');
+  assert.equal(state.frequencyHz, 118_000_000);
+  assert.equal(state.sampleRate, 1_024_000);
+  assert.equal(state.gain, 'auto', 'airband defaults to tuner AGC');
+  await controller.tuneAir(140_000_000);
+  assert.equal(controller.getState().frequencyHz, 136_975_000);
+  await controller.tuneAir(121_500_400);
+  assert.equal(controller.getState().frequencyHz, 121_500_000);
+  // An 8.33 kHz channel label stays usable at 1 kHz resolution.
+  await controller.tuneAir(118_005_499);
+  assert.equal(controller.getState().frequencyHz, 118_005_000);
+  await controller.tuneAir('not a frequency');
+  assert.equal(controller.getState().frequencyHz, 121_500_000);
+  assert.deepEqual(SDR_RECEIVER_PRESETS.air, {
+    frequencyHz: 121_500_000,
+    sampleRate: 1_024_000,
+    ppm: 0,
+    rtlAgc: false,
+  });
+  // FM keeps its own remembered frequency.
+  await controller.setMode('fm');
+  state = controller.getState();
+  assert.equal(state.frequencyHz, 98_500_000);
+  assert.equal(state.sampleRate, 2_048_000);
+});
+
+test('airband tunes the centre 250 kHz above the channel, reports the channel and tells the worker the offset', async (t) => {
+  const events = [];
+  const { workers, RecordingWorker } = recordingWorkers();
+  t.after(replaceGlobal('Worker', RecordingWorker));
+  const { controller, audio } = airbandController(t, { events });
+  assert.equal(await controller.connect('air'), true);
+  assert.equal(audio.calls, 1, 'audio resumes before the device opens');
+  assert.ok(events.includes('device:tune:121750000'));
+  assert.ok(events.includes('device:gain:null'), 'airband uses tuner AGC');
+  let state = controller.getState();
+  assert.equal(state.frequencyHz, 121_500_000, 'the listened channel');
+  assert.equal(state.sampleRate, 1_024_000);
+  assert.equal(state.status, 'streaming');
+  assert.equal(state.message, 'Receiving airband AM');
+  const configure = workers[0].messages.find((m) => m.type === 'configure');
+  assert.deepEqual(configure, {
+    type: 'configure',
+    mode: 'air',
+    sampleRate: 1_024_000,
+    location: null,
+    offsetHz: -250_000,
+    squelchDb: 6,
+  });
+
+  assert.equal(await controller.tuneAir(136_975_000), true);
+  assert.equal(events.at(-1), 'device:tune:137225000', 'valid at the top edge');
+  assert.deepEqual(workers[0].messages.at(-1), {
+    type: 'reset',
+    offsetHz: -250_000,
+  });
+  state = controller.getState();
+  assert.equal(state.frequencyHz, 136_975_000);
+  assert.equal(state.message, 'Tuned to 136.975 MHz AM');
+  assert.ok(audio.posted.some((message) => message.type === 'clear'));
+
+  await controller.tuneAir(118_000_000);
+  assert.equal(events.at(-1), 'device:tune:118250000', 'valid at the bottom');
+  assert.equal(controller.getState().message, 'Tuned to 118.000 MHz AM');
+});
+
+test('the worker offset follows the centre frequency the tuner actually reached', async (t) => {
+  const events = [];
+  const { workers, RecordingWorker } = recordingWorkers();
+  t.after(replaceGlobal('Worker', RecordingWorker));
+  const device = fakeDevice(events);
+  // The tuner PLL lands a few hertz off the requested centre.
+  device.setCenterFrequency = async (frequency) => {
+    events.push(`device:tune:${frequency}`);
+    return frequency + 3;
+  };
+  const { controller } = airbandController(t, { getDevice: () => device });
+  await controller.connect('air');
+  const configure = workers[0].messages.find((m) => m.type === 'configure');
+  assert.equal(configure.offsetHz, -250_003);
+  assert.equal(controller.getState().frequencyHz, 121_500_000);
+  await controller.tuneAir(122_750_000);
+  assert.deepEqual(workers[0].messages.at(-1), {
+    type: 'reset',
+    offsetHz: -250_003,
+  });
+  assert.equal(controller.getState().frequencyHz, 122_750_000);
+});
+
+test('one receiver switches FM, airband and ADS-B by retuning, resuming audio for both audio modes', async (t) => {
+  const events = [];
+  const { workers, RecordingWorker } = recordingWorkers();
+  t.after(replaceGlobal('Worker', RecordingWorker));
+  const { controller, audio, opens } = airbandController(t, { events });
+  assert.equal(await controller.connect('fm'), true);
+  assert.ok(events.includes('device:tune:98500000'));
+  assert.equal(audio.calls, 1);
+
+  assert.equal(await controller.setMode('air'), true);
+  assert.equal(audio.calls, 2, 'airband resumes audio like FM');
+  assert.equal(events.at(-3), 'device:tune:121750000');
+  let state = controller.getState();
+  assert.equal(state.mode, 'air');
+  assert.equal(state.frequencyHz, 121_500_000);
+  assert.equal(state.sampleRate, 1_024_000);
+  assert.equal(state.message, 'Receiving airband AM');
+  await controller.tuneAir(118_100_000);
+  assert.equal(events.at(-1), 'device:tune:118350000');
+
+  assert.equal(await controller.setMode('adsb'), true);
+  assert.equal(audio.calls, 2, 'ADS-B needs no audio');
+  assert.ok(events.includes('device:tune:1090000000'));
+  assert.ok(events.includes('device:gain:28'));
+  assert.equal(controller.getState().frequencyHz, 1_090_000_000);
+  assert.equal(controller.getState().message, 'Receiving 1090 MHz ADS-B');
+
+  assert.equal(await controller.setMode('fm'), true);
+  assert.equal(controller.getState().frequencyHz, 98_500_000);
+  assert.equal(await controller.setMode('air'), true);
+  state = controller.getState();
+  assert.equal(state.frequencyHz, 118_100_000, 'airband channel remembered');
+  assert.ok(events.includes('device:tune:118350000'));
+  assert.equal(audio.calls, 4);
+  assert.equal(opens(), 1, 'mode changes never reopen the receiver');
+  const modes = workers[0].messages
+    .filter((message) => message.type === 'configure')
+    .map((message) => message.mode);
+  assert.deepEqual(modes, ['fm', 'air', 'adsb', 'fm', 'air']);
+
+  // tuneFm from airband switches back to FM.
+  assert.equal(await controller.tuneFm(101_100_000), true);
+  assert.equal(controller.getState().mode, 'fm');
+  assert.equal(controller.getState().frequencyHz, 101_100_000);
+});
+
+test('airband stays on the receiver FM uses instead of reopening a dual board', async (t) => {
+  const events = [];
+  t.after(replaceGlobal('Worker', FakeWorker));
+  const uat = {
+    vendorId: 0x0bda,
+    productId: 0x2838,
+    productName: 'FlyCatcher_UAT',
+    serialNumber: '00000001',
+  };
+  const adsb = { ...uat, productName: 'FlyCatcher_ADS_B' };
+  const controller = new SdrController({
+    storage: memoryStorage(),
+    webUsb: {
+      async getDevices() {
+        return [uat, adsb];
+      },
+      async requestDevice() {
+        throw new Error('picker should not open');
+      },
+    },
+    providerFactory: (selectingUsb) => ({
+      async get() {
+        const chosen = await selectingUsb.requestDevice({
+          filters: RTL_SDR_USB_FILTERS,
+        });
+        return fakeDevice(events, chosen.productName);
+      },
+    }),
+  });
+  t.after(() => controller.stop());
+  controller._ensureAudio = async () => true;
+  assert.equal(await controller.connect('fm'), true);
+  assert.equal(await controller.setMode('air'), true);
+  assert.ok(!events.includes('FlyCatcher_UAT:close'));
+  assert.ok(events.includes('FlyCatcher_UAT:tune:121750000'));
+  assert.equal(controller.getState().deviceLabel, 'FlyCatcher_UAT');
+});
+
+test('stepAir moves one 25 kHz channel and stops at the band edges', async (t) => {
+  const events = [];
+  t.after(replaceGlobal('Worker', FakeWorker));
+  const { controller } = airbandController(t, { events });
+  await controller.tuneAir(121_500_000);
+  assert.equal(await controller.stepAir(1), true);
+  assert.equal(controller.getState().frequencyHz, 121_525_000);
+  await controller.stepAir(-1);
+  await controller.stepAir(-1);
+  assert.equal(controller.getState().frequencyHz, 121_475_000);
+  await controller.tuneAir(136_975_000);
+  await controller.stepAir(1);
+  assert.equal(controller.getState().frequencyHz, 136_975_000);
+  await controller.tuneAir(118_000_000);
+  await controller.stepAir(-1);
+  assert.equal(controller.getState().frequencyHz, 118_000_000);
+
+  assert.equal(await controller.connect('air'), true);
+  await controller.stepAir(1);
+  assert.equal(events.at(-1), 'device:tune:118275000');
+  assert.equal(controller.getState().frequencyHz, 118_025_000);
+  assert.equal(controller.getState().message, 'Tuned to 118.025 MHz AM');
+});
+
+test('squelch is bounded to 0-30 dB, remembered and applied live', async (t) => {
+  const storage = memoryStorage();
+  const { workers, RecordingWorker } = recordingWorkers();
+  t.after(replaceGlobal('Worker', RecordingWorker));
+  const { controller } = airbandController(t, { storage });
+  assert.equal(controller.getState().squelchDb, 6, 'default threshold');
+  assert.equal(controller.getState().squelchOpen, false);
+  assert.equal(controller.setSquelch(-5), 0);
+  assert.equal(controller.setSquelch(45), 30);
+  assert.equal(controller.setSquelch('12.4'), 12);
+  assert.equal(controller.setSquelch('loud'), null);
+  assert.equal(controller.setSquelch(''), null);
+  assert.equal(controller.getState().squelchDb, 12);
+  assert.equal(storage.values.get(AIRBAND_SQUELCH_STORAGE_KEY), '12');
+
+  await controller.connect('air');
+  assert.equal(
+    workers[0].messages.find((m) => m.type === 'configure').squelchDb,
+    12,
+  );
+  assert.equal(controller.setSquelch(0), 0);
+  assert.deepEqual(workers[0].messages.at(-1), { type: 'squelch', db: 0 });
+
+  const restored = new SdrController({ storage, webUsb: {} });
+  assert.equal(restored.getState().squelchDb, 0);
+  const corrupt = new SdrController({
+    storage: memoryStorage({ [AIRBAND_SQUELCH_STORAGE_KEY]: '{bad' }),
+    webUsb: {},
+  });
+  assert.equal(corrupt.getState().squelchDb, 6);
+});
+
+test('airband worker output plays through the shared audio path', async (t) => {
+  const { controller, audio } = airbandController(t);
+  await controller._ensureAudio();
+  const samples = new Float32Array([0.1, -0.1]);
+  controller._handleWorkerMessage({
+    type: 'air',
+    samples,
+    snr: 14.2,
+    squelchOpen: true,
+  });
+  assert.equal(audio.posted.at(-1).type, 'samples');
+  assert.equal(audio.posted.at(-1).samples, samples);
+  assert.equal(controller.getState().snr, 14.2);
+  assert.equal(controller.getState().squelchOpen, true);
+  controller._handleWorkerMessage({
+    type: 'air',
+    samples: new Float32Array(2),
+    snr: null,
+    squelchOpen: false,
+  });
+  assert.equal(controller.getState().snr, null);
+  assert.equal(controller.getState().squelchOpen, false);
 });
