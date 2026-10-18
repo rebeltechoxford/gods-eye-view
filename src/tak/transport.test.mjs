@@ -8,6 +8,7 @@ import {
   MAX_TRANSPORT_BUFFER_BYTES,
   MAX_TRANSPORT_FRAME_BYTES,
   SESSION_PROBE_TIMEOUT_MS,
+  PRESENCE_STOP_TIMEOUT_MS,
 } from './transport.js';
 
 function setup({ fetchImpl } = {}) {
@@ -433,4 +434,132 @@ test('named failed upgrade compares cookie scope and retires mismatched account 
   assert.equal(s.transport.state(), 'refused');
   assert.equal(s.timers.size, 0);
   s.transport.disconnect();
+});
+
+test('presence STOP requires authenticated transport and an exact current operation ACK', () => {
+  const s = setup();
+  s.connect();
+  const socket = s.sockets[0];
+  socket.open();
+  assert.equal(s.transport.stopPresence(), null);
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  const id = s.transport.stopPresence();
+  assert.match(id, /^[A-Za-z0-9_-]{1,64}$/);
+  assert.equal(s.transport.stopPresence(), id);
+  assert.deepEqual(JSON.parse(socket.sent.at(-1)), {
+    op: 'presence',
+    enabled: false,
+    id,
+  });
+  assert.equal(s.timers.size, 1);
+  for (const wrong of [
+    { uid: 'other', id },
+    { uid: s.identity.uid, id: 'old' },
+    { uid: s.identity.uid, id, extra: true },
+  ])
+    socket.control({ op: 'presence', enabled: false, ...wrong });
+  assert.equal(s.timers.size, 1);
+  socket.control({ op: 'presence', enabled: false, uid: s.identity.uid, id });
+  assert.equal(s.timers.size, 0);
+  assert.equal(s.controls.at(-1).id, id);
+  s.transport.disconnect();
+});
+
+test('old same-socket STOP ACK and deadline cannot confirm or retire a newer operation', () => {
+  const s = setup();
+  s.connect();
+  const socket = s.sockets[0];
+  socket.open();
+  socket.control({ op: 'identity', uid: s.identity.uid });
+  const first = s.transport.stopPresence(),
+    oldDeadline = [...s.timers.values()][0].fn;
+  socket.control({
+    op: 'presence',
+    enabled: false,
+    uid: s.identity.uid,
+    id: first,
+  });
+  assert(s.transport.send('<new-authorized-SA/>'));
+  const second = s.transport.stopPresence();
+  assert.notEqual(first, second);
+  const before = s.controls.length;
+  socket.control({
+    op: 'presence',
+    enabled: false,
+    uid: s.identity.uid,
+    id: first,
+  });
+  oldDeadline();
+  assert.equal(s.controls.length, before);
+  assert.equal(s.transport.state(), 'open');
+  assert.equal(s.timers.size, 1);
+  socket.control({
+    op: 'presence',
+    enabled: false,
+    uid: s.identity.uid,
+    id: second,
+  });
+  assert.equal(s.timers.size, 0);
+  assert.equal(s.controls.at(-1).id, second);
+  s.transport.disconnect();
+});
+
+test('unacknowledged STOP retires its socket and reconnect plan, and old callbacks cannot touch a new socket', () => {
+  const s = setup();
+  s.connect();
+  const old = s.sockets[0];
+  old.open();
+  old.control({ op: 'identity', uid: s.identity.uid });
+  const id = s.transport.stopPresence(),
+    deadline = [...s.timers.values()].find(
+      (t) => t.ms === PRESENCE_STOP_TIMEOUT_MS,
+    ).fn;
+  deadline();
+  assert.equal(old.readyState, 3);
+  assert.equal(s.transport.state(), 'closed');
+  assert.equal(s.timers.size, 0);
+  s.connect();
+  const next = s.sockets[1];
+  next.open();
+  next.control({ op: 'identity', uid: s.identity.uid });
+  const controls = s.controls.length;
+  old.control({ op: 'presence', enabled: false, uid: s.identity.uid, id });
+  deadline();
+  assert.equal(s.controls.length, controls);
+  assert.equal(s.transport.state(), 'open');
+  s.transport.disconnect();
+});
+
+test('STOP write failures and a correlated refusal close rather than retrying or claiming confirmation', () => {
+  for (const mode of ['buffer', 'throw', 'refusal']) {
+    const s = setup();
+    s.connect();
+    const socket = s.sockets[0];
+    socket.open();
+    socket.control({ op: 'identity', uid: s.identity.uid });
+    if (mode === 'buffer') socket.bufferedAmount = MAX_TRANSPORT_BUFFER_BYTES;
+    if (mode === 'throw') socket.fail = true;
+    const id = s.transport.stopPresence();
+    if (mode === 'refusal') {
+      socket.control({
+        op: 'reject',
+        command: 'presence',
+        id: 'old',
+        reason: 'wrong operation',
+      });
+      assert.equal(s.transport.state(), 'open');
+      socket.control({ op: 'reject', reason: 'unrelated submission' });
+      assert.equal(s.transport.state(), 'open');
+      socket.control({
+        op: 'reject',
+        command: 'presence',
+        id,
+        reason: 'Only the active publisher may stop',
+      });
+      assert.equal(s.controls.at(-1).command, 'presence');
+    } else assert.equal(id, null);
+    assert.equal(socket.readyState, 3);
+    assert.equal(s.transport.state(), 'closed');
+    assert.equal(s.timers.size, 0);
+  }
 });

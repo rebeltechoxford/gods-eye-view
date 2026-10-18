@@ -7,7 +7,15 @@ import path from 'node:path';
 export function createTakTlsFixtures({
   clientName = 'Synthetic client',
   authorityName = 'Synthetic',
+  serverHosts = [],
 } = {}) {
+  if (
+    !Array.isArray(serverHosts) ||
+    !serverHosts.every((host) =>
+      /^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})*$/.test(host),
+    )
+  )
+    throw new Error('Invalid synthetic TLS server host name');
   if (!/^[A-Za-z0-9 -]{1,64}$/.test(clientName))
     throw new Error('Invalid synthetic TLS client name');
   if (!/^[A-Za-z0-9 -]{1,64}$/.test(authorityName))
@@ -86,7 +94,7 @@ export function createTakTlsFixtures({
       ]);
     writeFileSync(
       file('server.ext'),
-      'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n',
+      `subjectAltName=DNS:localhost,IP:127.0.0.1${serverHosts.map((host) => `,DNS:${host}`).join('')}\nextendedKeyUsage=serverAuth\n`,
     );
     writeFileSync(
       file('wrong-host.ext'),

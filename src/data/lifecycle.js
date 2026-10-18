@@ -70,6 +70,18 @@ function refreshFailureFromStats(stats, label) {
 }
 
 /**
+ * Layers that work without the network and may still be switched on under
+ * EMCON: on-device routing and data bundled with the app. Local ADS-B is not
+ * one: it reads the private host, and a request to the host is a transmission.
+ */
+export const EMCON_LOCAL_LAYER_IDS = Object.freeze([
+  'directions',
+  'local-dams',
+  'local-datacenters',
+  'telegeography-submarine-cables',
+]);
+
+/**
  * LayerLifecycle — Manages registration, toggling, and update loops
  * for real-time data overlays on the CesiumJS globe.
  */
@@ -86,6 +98,7 @@ export class LayerLifecycle {
     this._visibilityRequestListeners = new Set();
     this._beforeDestroyListeners = new Set();
     this._visibilityGuards = new Set();
+    this._emcon = false;
     this._registrationsFinalized = false;
     this._registrationDispositions = null;
     this._allowQaRegistration = allowQaRegistration === true;
@@ -250,7 +263,35 @@ export class LayerLifecycle {
       loading: lifecycleLoading || moduleStats.loading === true,
       refreshing: entry.refreshing || moduleStats.refreshing === true,
       managerRefreshError: entry.managerRefreshError,
+      // Under EMCON a network layer keeps its last data, which ages.
+      ...(this._emcon &&
+      entry.enabled &&
+      !EMCON_LOCAL_LAYER_IDS.includes(entry.module.id)
+        ? { stale: true, emcon: true }
+        : {}),
     };
+  }
+
+  /**
+   * EMCON (emissions control): stop every periodic refresh and refuse to
+   * start layers that need the network. Enabled layers keep their last data
+   * on screen, marked stale; switching layers off is never refused and no
+   * layer state is persisted, so leaving EMCON (a reload) restores the
+   * operator's layers.
+   * @param {boolean} active
+   */
+  setEmcon(active) {
+    const next = active === true;
+    if (next === this._emcon) return;
+    this._emcon = next;
+    for (const [layerId, entry] of this.layers)
+      this._invalidateRefresh(layerId, entry, 'emcon');
+    this._notifyListeners({ type: 'emcon', active: next });
+    this._publishActivity({ type: 'status' });
+  }
+
+  isEmcon() {
+    return this._emcon;
   }
 
   _invalidateRefresh(layerId, entry, reason = 'invalidated') {
@@ -272,6 +313,7 @@ export class LayerLifecycle {
 
   async _runPeriodicUpdate(layerId, entry, { signal = null } = {}) {
     if (
+      this._emcon ||
       !entry.enabled ||
       entry.lifecycleState !== 'enabled' ||
       entry.destroying ||
@@ -2302,6 +2344,15 @@ export class LayerLifecycle {
   }
 
   async _visibilityBlockReason(change) {
+    // Never refuse switching off, or a layer that is already on: adoption
+    // would otherwise compensate it to off.
+    if (
+      this._emcon &&
+      change.enabled &&
+      !this.layers.get(change.layerId)?.enabled &&
+      !EMCON_LOCAL_LAYER_IDS.includes(change.layerId)
+    )
+      return 'EMCON is on: this layer needs the network';
     const availability = this._sourceAvailability(change.layerId);
     if (change.enabled && availability?.available === false)
       return availability.reason || 'Data source unavailable';

@@ -25,12 +25,22 @@ storage, restart and field acceptance remain unverified.
 - At most 5,000 unique tiles, each at most 2 MiB. Metadata is UTF-8, at most
   64 entries and 64 KiB overall, with at most 16 KiB per value. Required `name`
   and supported `format` metadata must exist. Declared zoom limits must agree
-  with the actual inventory.
+  with the actual inventory for a whole-file import. An optional bounded area/zoom
+  subset must remain within the source's declared zoom range; its actual extrema
+  may be narrower.
 - The operator supplies a pack name, source title, license/permission notice,
   optional edition and informational HTTP(S) source URL, and explicitly asserts
   permission to copy and retain it. URL userinfo is rejected. This assertion is
   recorded as `operator-asserted`; the application has not independently
   verified the data's license or edition.
+
+For a larger supported archive, enable **Limit import to area and zooms entered
+above** and use the West/East/South/North and zoom fields. It is off by default.
+The selected potential grid must fit the same 5,000-tile cap; sparse sources can
+contain fewer actual retained tiles. Boundary tiles remain whole. The entire
+original file still uploads, is hashed and counts against the same source/output
+quota. Original metadata stays intact while `provenance.selection` records the
+requested area/zooms; gaps stay blank. See [subset implementation and acceptance](TAK_MBTILES_SUBSET_PLAN.md).
 
 Vector PBF, WebP, 512-pixel tiles, GeoTIFF, PMTiles, other projections and 3D
 terrain are unsupported. Static PNG imports reject APNG and compressed ancillary
@@ -81,13 +91,13 @@ every read and write; mutation Origin must exactly match the configured private
 host. Dev/lab uses its existing guarded loopback Bearer token. No credential is
 placed in a URL, manifest, child environment or returned job status.
 
-| Request                    | Result                                                                                                                                                    |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /imports`            | JSON `{name,fileBytes,sourceTitle,sourceUrl?,license,edition?,authorized:true}`; 202 with an `awaiting-upload` job. Request cap 16 KiB.                   |
-| `PUT /imports/:id/file`    | Raw file, exact `Content-Length`, `Content-Type: application/vnd.sqlite3`, no transfer encoding. 202 acknowledges complete staging; conversion continues. |
-| `GET /imports/:id`         | Bounded state/progress: `awaiting-upload`, `uploading`, `validating`, `converting`, `ready`, `failed` or `cancelled`; ready includes `packId`.            |
-| `POST /imports/:id/cancel` | No body; stops the owned upload/worker, waits for its active parent write, then removes staging.                                                          |
-| `DELETE /imports/:id`      | No body; removes the transient job and its unfinished staging, 204. It does not delete an already committed pack.                                         |
+| Request                    | Result                                                                                                                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /imports`            | JSON `{name,fileBytes,sourceTitle,sourceUrl?,license,edition?,authorized:true,selection?:{bounds,minZoom,maxZoom}}`; 202 with an `awaiting-upload` job. Request cap 16 KiB. |
+| `PUT /imports/:id/file`    | Raw file, exact `Content-Length`, `Content-Type: application/vnd.sqlite3`, no transfer encoding. 202 acknowledges complete staging; conversion continues.                   |
+| `GET /imports/:id`         | Bounded state/progress: `awaiting-upload`, `uploading`, `validating`, `converting`, `ready`, `failed` or `cancelled`; ready includes `packId`.                              |
+| `POST /imports/:id/cancel` | No body; stops the owned upload/worker, waits for its active parent write, then removes staging.                                                                            |
+| `DELETE /imports/:id`      | No body; removes the transient job and its unfinished staging, 204. It does not delete an already committed pack.                                                           |
 
 The existing `/packs` list and `/packs/:id` manifest/tile/delete routes handle
 completed imports. List summaries omit sparse key lists and raw original

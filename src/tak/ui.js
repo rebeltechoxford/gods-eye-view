@@ -77,6 +77,7 @@ const PANEL_HTML = `
       <button type="button" data-tak-fix-center>Set to map center</button>
     </div>
     <label class="tak-web-check"><input type="checkbox" data-tak-sa/> Broadcast my position (SA)</label>
+    <p class="tak-web-hint" data-tak-presence hidden></p>
     <button type="button" class="tak-web-alert" data-tak-emergency aria-pressed="false">RAISE 911 ALERT</button>
   </details>
 
@@ -144,20 +145,59 @@ function describeGateway(link, gatewayInfo) {
     : 'Gateway available. Connect to exchange CoT with mesh and TAK Server peers.';
 }
 
-function describeUplinks(link) {
+const SERVER_ENCODINGS = Object.freeze({
+  requested: ' · requesting TAK protocol v1',
+  v1: ' · TAK protocol v1',
+});
+
+function describeDevicePresence(link) {
+  if (!link.gateway?.server?.deviceStreams && !link.presenceStop) return '';
+  switch (link.presenceStop?.state) {
+    case 'requested':
+      return 'Device route stop requested; gateway confirmation pending. New position sending waits.';
+    case 'confirmed':
+      return 'Gateway confirmed this tab’s device route stop. Another tab may still publish.';
+    case 'refused':
+      return 'Gateway refused this tab’s device route stop; its browser connection was closed.';
+    case 'unconfirmed':
+      return 'Device route stop unconfirmed; browser connection closed.';
+    default:
+      return link.gateway?.server?.presence?.active
+        ? 'Device route active for this UID; another tab may own it. Peer registration is unconfirmed.'
+        : 'No active device presence reported; shared receive feed selected.';
+  }
+}
+
+/** Gateway uplink summary; protocol counts are gateway observations only. */
+export function describeUplinks(link) {
   const g = link.gateway;
   if (!g || g.enabled === false) return '';
   const parts = [];
+  const mesh = g.mesh;
+  const refused =
+    (mesh?.protobufRejected || 0) + (mesh?.protobufUnsupported || 0);
   parts.push(
-    g.mesh
-      ? `Mesh ${g.mesh.group}: ${g.mesh.state} (rx ${g.mesh.rx} / tx ${g.mesh.tx})`
+    mesh
+      ? `Mesh ${mesh.group}: ${mesh.state} (rx ${mesh.rx} / tx ${mesh.tx}` +
+          (mesh.protobuf ? ` · TAK v1 ${mesh.protobuf}` : '') +
+          (mesh.protobufIncomplete
+            ? ` · partly decoded ${mesh.protobufIncomplete}`
+            : '') +
+          (refused ? ` · refused ${refused}` : '') +
+          ')'
       : 'Mesh: off',
   );
   parts.push(
     g.server
-      ? `Server ${g.server.endpoint}: ${g.server.state}`
+      ? `Server ${g.server.endpoint}: ${g.server.state}` +
+          (SERVER_ENCODINGS[g.server.encoding] || '') +
+          (g.server.protobufIncomplete
+            ? ` · partly decoded ${g.server.protobufIncomplete}`
+            : '')
       : 'TAK Server: off',
   );
+  const presence = describeDevicePresence(link);
+  if (presence) parts.push(presence);
   parts.push(`Bridge: ${g.bridge ? 'on' : 'off'} · Browsers: ${g.browsers}`);
   return parts.join('\n');
 }
@@ -243,6 +283,8 @@ export function createTakPanel({
     $('[data-tak-submission-count]').textContent = '';
     renderedSubmissions = null;
     $('[data-tak-fix]').textContent = 'No position set.';
+    $('[data-tak-presence]').hidden = true;
+    $('[data-tak-presence]').textContent = '';
     $('[data-tak-whoami]').textContent = '';
     $('[data-tak-uid]').textContent = '';
     $('[data-tak-sa]').checked = false;
@@ -475,6 +517,9 @@ export function createTakPanel({
       $('[data-tak-gateway]').textContent +=
         ` Account ${account.principal} · ${account.role === 'observer' ? 'RECEIVE ONLY — local drafts and maps remain available.' : 'OPERATOR'}`;
     $('[data-tak-uplinks]').textContent = describeUplinks(link);
+    const presence = describeDevicePresence(link);
+    $('[data-tak-presence]').hidden = !presence;
+    $('[data-tak-presence]').textContent = presence;
     const id = client.identity();
     const whoami = $('[data-tak-whoami]');
     whoami.textContent = `${id.callsign} · ${id.team}`;
@@ -651,6 +696,7 @@ export function createTakPanel({
   $('[data-tak-gps]').addEventListener('click', () => {
     if (gpsOn) {
       geolocation.stop();
+      client.refreshPositionAvailability();
       gpsOn = false;
       report('Device GPS stopped. Last position kept.');
       scheduleRender();
@@ -660,6 +706,7 @@ export function createTakPanel({
       (fix) => client.setFix({ ...fix, source: 'GPS' }),
       (message) => {
         geolocation.stop();
+        client.refreshPositionAvailability();
         gpsOn = false;
         report(message, true);
         scheduleRender();
@@ -681,6 +728,7 @@ export function createTakPanel({
       if (!center) throw new Error('Map center is not on the globe.');
       if (gpsOn) {
         geolocation.stop();
+        client.refreshPositionAvailability();
         gpsOn = false;
       }
       client.setFix({ ...center, source: 'USER' });
@@ -805,6 +853,7 @@ export function createTakPanel({
       unsubscribe();
       if (frame) cancelAnimationFrame(frame);
       geolocation.stop();
+      client.refreshPositionAvailability();
       root.remove();
     },
   });

@@ -367,6 +367,7 @@ export async function createMbtilesImporter({
           await readMbtilesImpl(source, {
             signal: controller.signal,
             maxBytes: limits.packBytes,
+            ...(job.input.selection ? { selection: job.input.selection } : {}),
             async onHeader(header) {
               await check();
               if (
@@ -395,7 +396,12 @@ export async function createMbtilesImporter({
                 maxZoom: header.maxZoom,
                 plannedKeys: header.plannedKeys,
                 sourceUrl: job.input.sourceUrl,
-                credit: [job.input.sourceTitle, attribution, job.input.license]
+                credit: [
+                  job.input.selection ? 'Imported subset' : '',
+                  job.input.sourceTitle,
+                  attribution,
+                  job.input.license,
+                ]
                   .filter(Boolean)
                   .join('\n'),
                 provenance: {
@@ -411,6 +417,9 @@ export async function createMbtilesImporter({
                   license: job.input.license,
                   edition: job.input.edition,
                   metadata: header.metadata,
+                  ...(job.input.selection
+                    ? { selection: job.input.selection }
+                    : {}),
                 },
                 createdAt: importedAt,
               });
@@ -501,7 +510,8 @@ export async function createMbtilesImporter({
         } finally {
           clearInterval(monitor);
           controller.signal.removeEventListener('abort', stopRequest);
-          request.setTimeout?.(0);
+          // A logout or timeout may already have detached the socket.
+          request.socket?.setTimeout(0);
           await handle?.close().catch(() => {});
           try {
             if (job.quarantined)

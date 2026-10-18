@@ -1,6 +1,6 @@
 # God's Eye View Current State
 
-## Additive TAK foundation — October 16, 2026
+## Additive TAK foundation — October 18, 2026 release candidate
 
 `src/tak/` adds session CoT contacts, bounded movement trails, affiliation
 frames/callsign cards in the shared overlay host, self position with explicit
@@ -8,13 +8,26 @@ SA broadcast, local/shared markers, broadcast GeoChat and alerts. Existing GEV
 catalog sources, HUD/camera ownership, voice, scenes and public layers remain
 under their existing owners. TAK is separate from public layer/share tokens.
 
-The optional Node gateway accepts only authenticated browsers on the machine
-running it. It validates real loopback sockets, Origin/Host/port, device identity
-and owned marker commands; multiuser/group hosting is not implemented. Configured
-TAK Server uplinks validate TLS certificates/hostnames and keep all certificate
-material on the server. Mesh and server bridging is explicit. Input, replay,
-rate, connection and outgoing buffers are bounded. Network send status means
-gateway submission; actual peer delivery is not acknowledged.
+The development Node gateway accepts authenticated loopback browser connections
+and validates socket address, Origin/Host/port, device identity and owned commands.
+The separate built-app host supports private HTTPS on explicitly configured
+loopback/RFC1918 listeners. Optional named accounts have distinct mTLS upstream
+identities, operator/receive-only roles, revocable sessions and isolated
+replay/ownership/queue/map storage; browser requests bind their expected account
+to the server session. Configure it through [TAK_MULTIOPERATOR.md](TAK_MULTIOPERATOR.md).
+TAK Server uplinks validate certificates and hostnames and keep private keys
+server-side. Server group provisioning and native-peer acceptance remain open.
+Mesh/server bridging is explicit, and input, replay, rate, connection and
+outgoing buffers are bounded. Submitted means a local transport write, not
+acknowledged peer delivery.
+
+The default-off `TAK_DEVICE_STREAMS` adapter includes correlated browser presence
+STOP, with requested/confirmed/refused/unconfirmed status. Its release integration
+checks and official-server pool acceptance are pending; directed chat remains
+refused. [TAK_DEVICE_STREAMS.md](TAK_DEVICE_STREAMS.md) records the consent,
+ownership and resource limits. Application EMCON pauses controlled app requests
+and closes owned streams; it does not disable device radios, cancel every
+in-flight transmission or stop independent private-host uplinks.
 
 Loading TAK information activates sticky page-session privacy protection.
 App-owned AI/voice images/context, public view sharing, scene capture/export and
@@ -28,8 +41,10 @@ Run `npm run tak:lab` for the app and a synthetic, isolated local TCP peer;
 Connect bootstraps an ephemeral local token. `npm run qa:tak -- --url
 http://127.0.0.1:4174 --lab` exercises the real local transport return path,
 privacy, rendering, mobile/embedded views and teardown. Unit security tests use
-fresh local mTLS certificates. These are local evidence, not acceptance against
-ATAK-CIV/iTAK/WinTAK or a real TAK Server. Run instructions and remaining work
+fresh local mTLS certificates. These gates are synthetic evidence. Separately,
+the official-source TAK Server core with a documented loopback patch passed
+eight synthetic-peer transport checks ([record](TAK_REAL_SERVER_ACCEPTANCE.md));
+stock-server and ATAK-CIV/iTAK/WinTAK acceptance remain open. Run instructions and remaining work
 are in [HOW_TO_RUN.md](../HOW_TO_RUN.md) and [TAK_TODO.md](../TAK_TODO.md); the
 capability inventory is [TAK_FEATURE_MATRIX.md](TAK_FEATURE_MATRIX.md).
 
@@ -4954,18 +4969,25 @@ play action; the source does not relay or record streams.
 The Radio panel holds a Local RTL-SDR card below internet radio. One browser
 WebUSB session (`src/sdr/controller.js`) drives a USB RTL-SDR in desktop Chrome
 or Edge on localhost or HTTPS; nothing opens until CONNECT. Demodulation and
-Mode S decoding run in a worker; FM audio plays through an audio worklet.
-Local FM and internet radio are one listening surface: starting local FM stops
-internet-radio playback, and starting internet radio stops local FM. ADS-B
-reception does not interrupt internet radio.
+Mode S decoding run in a worker; FM and airband audio play through an audio
+worklet. Local FM or airband and internet radio are one listening surface:
+starting local audio stops internet-radio playback, and starting internet radio
+stops local FM or airband. ADS-B reception does not interrupt internet radio.
 
-- **Modes.** FM (87.5–108 MHz, tune, seek, volume) or ADS-B at 1090 MHz.
-  With a receiver open, selecting ADS-B enables the Local ADS-B layer;
-  selecting FM disables it.
+- **Modes.** FM (87.5–108 MHz, tune, seek, volume), AIR (airband AM voice,
+  118.000–136.975 MHz, tune, 25 kHz channel steps, squelch, volume) or ADS-B
+  at 1090 MHz. With a receiver open, selecting ADS-B enables the Local ADS-B
+  layer; selecting FM or AIR disables it.
+- **Airband.** 1.024 MS/s with the tuner centre 250 kHz above the listened
+  channel (offset tuning keeps the RTL-SDR DC spike off it); the worker
+  demodulates AM in a 10 kHz channel. Squelch 0–30 dB of channel SNR (0 = off,
+  default 6 dB, 300 ms hang) is stored in `gev:sdr:air-squelch:v1`. Airband
+  shares FM's device preference and remembered device.
   Enabling the layer switches the receiver to ADS-B; disabling it leaves the
   receiver mode unchanged.
 - **Gain.** AUTO (tuner AGC) or a manual R820T step from 0.0 to 49.6 dB,
-  stored per mode in `gev:sdr:gain:v1`. Defaults: ADS-B 28.0 dB, FM AUTO.
+  stored per mode in `gev:sdr:gain:v1`. Defaults: ADS-B 28.0 dB, FM and
+  airband AUTO.
   Changes apply to the open receiver without reconnecting.
 - **Receiver stats (ADS-B).** CRC-valid messages per second, aircraft heard,
   aircraft with a fresh position and the IQ level.

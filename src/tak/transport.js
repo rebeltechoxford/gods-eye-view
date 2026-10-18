@@ -12,6 +12,7 @@ export const MAX_TRANSPORT_BUFFER_BYTES = 256 * 1024;
 export const MAX_TRANSPORT_FRAME_BYTES = 64 * 1024;
 export const CONNECT_TIMEOUT_MS = 15_000;
 export const SESSION_PROBE_TIMEOUT_MS = 5_000;
+export const PRESENCE_STOP_TIMEOUT_MS = 2_500;
 const encoder = new TextEncoder();
 
 /**
@@ -51,6 +52,13 @@ export function createGatewayTransport({
   let connectTimer = null;
   let generation = 0;
   let sessionProbe = null;
+  let presenceStop = null;
+  let presenceSequence = 0;
+
+  function clearPresenceStop() {
+    if (presenceStop) clearTimer(presenceStop.timer);
+    presenceStop = null;
+  }
 
   function clearSessionProbe() {
     if (!sessionProbe) return;
@@ -209,6 +217,36 @@ export function createGatewayTransport({
       if (text.startsWith('{')) {
         try {
           const control = JSON.parse(text);
+          if (control?.op === 'presence') {
+            if (
+              !opened ||
+              !presenceStop ||
+              presenceStop.socket !== socket ||
+              presenceStop.epoch !== generation ||
+              control.uid !== identity?.uid ||
+              control.enabled !== false ||
+              control.id !== presenceStop.id ||
+              Object.keys(control).length !== 4
+            )
+              return;
+            clearPresenceStop();
+          } else if (
+            control?.op === 'reject' &&
+            control.command === 'presence'
+          ) {
+            if (
+              !presenceStop ||
+              presenceStop.socket !== socket ||
+              presenceStop.epoch !== generation ||
+              control.id !== presenceStop.id
+            )
+              return;
+            disconnect(
+              'Gateway refused device presence stop; connection closed, route stop unconfirmed',
+            );
+            onControl(control);
+            return;
+          }
           if (
             !opened &&
             control?.op === 'identity' &&
@@ -230,12 +268,22 @@ export function createGatewayTransport({
       if (ws !== socket) return;
       ws = null;
       clearConnectTimer();
+      const stopUnconfirmed = !!presenceStop;
+      clearPresenceStop();
       if (
         sessionAuthenticated &&
         event?.code === 1008 &&
         event?.reason === 'session expired'
       ) {
         expireSession();
+        return;
+      }
+      if (stopUnconfirmed) {
+        wanted = false;
+        setState(
+          'closed',
+          'Device presence stop was not confirmed; connection closed',
+        );
         return;
       }
       if (!wanted) {
@@ -267,6 +315,7 @@ export function createGatewayTransport({
 
   function disconnect(detail = '') {
     generation++;
+    clearPresenceStop();
     clearSessionProbe();
     wanted = false;
     clearConnectTimer();
@@ -284,6 +333,7 @@ export function createGatewayTransport({
     /** Connect (or reconnect with a new token). */
     connect(options = {}) {
       generation++;
+      clearPresenceStop();
       clearSessionProbe();
       token = options.token ? String(options.token) : null;
       sessionAuthenticated = options.session === true;
@@ -345,6 +395,39 @@ export function createGatewayTransport({
         'Cancellation could not be sent; connection closed, peer receipt unconfirmed',
       );
       return false;
+    },
+    /** Stop only this authenticated socket's owned device route; never queue/replay it. */
+    stopPresence() {
+      if (state !== 'open' || !ws) return null;
+      if (presenceStop) return presenceStop.id;
+      const pending = {
+        socket: ws,
+        epoch: generation,
+        id: `presence-${generation}-${++presenceSequence}`,
+        timer: null,
+      };
+      presenceStop = pending;
+      pending.timer = setTimer(() => {
+        if (
+          presenceStop !== pending ||
+          pending.socket !== ws ||
+          pending.epoch !== generation
+        )
+          return;
+        disconnect(
+          'Gateway did not confirm device presence stop; connection closed, route stop unconfirmed',
+        );
+      }, PRESENCE_STOP_TIMEOUT_MS);
+      if (
+        write(
+          JSON.stringify({ op: 'presence', enabled: false, id: pending.id }),
+        )
+      )
+        return pending.id;
+      disconnect(
+        'Device presence stop could not be sent; connection closed, route stop unconfirmed',
+      );
+      return null;
     },
     identify(next) {
       if (next?.uid !== identity?.uid) return false;

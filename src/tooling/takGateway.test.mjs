@@ -15,7 +15,10 @@ import {
   createTakGateway,
   gatewayPolicy,
 } from '../../server/providers/tak/gateway.js';
-import { createMeshLink } from '../../server/providers/tak/meshLink.js';
+import {
+  MESH_LIMITS,
+  createMeshLink,
+} from '../../server/providers/tak/meshLink.js';
 import {
   createServerLink,
   loadTlsOptions,
@@ -39,6 +42,11 @@ import {
   IDENTITY,
   WINTAK_HOSTILE as ORIGINAL_WINTAK,
 } from '../tak/protocol/fixtures.mjs';
+import {
+  cotEventToTakPayload,
+  encodeTakMeshDatagram,
+} from '../tak/protocol/takProto.js';
+import { TAK_PROTO_ORACLE } from '../tak/protocol/takProtoOracle.mjs';
 
 const TOKEN = 'synthetic-local-operator-token-0123456789';
 
@@ -1149,7 +1157,7 @@ function fakeDgram() {
   return { sockets, factory };
 }
 
-test('mesh link joins SA + chat groups, routes chat to the chat group, skips protobuf', async () => {
+test('mesh link joins SA + chat groups, routes chat to the chat group, decodes TAK protocol v1', async () => {
   const dgram = fakeDgram();
   const inbound = [];
   const config = readTakGatewayConfig({
@@ -1179,14 +1187,101 @@ test('mesh link joins SA + chat groups, routes chat to the chat group, skips pro
   assert.equal(chat.sent[0].port, 17012);
 
   sa.emit('message', Buffer.from(ATAK_SA));
+  // Independent oracle datagrams: a v1 SA and a standalone TakControl.
+  sa.emit('message', Buffer.from(TAK_PROTO_ORACLE.saFull.mesh, 'hex'));
+  sa.emit('message', Buffer.from(TAK_PROTO_ORACLE.controlOnly.mesh, 'hex'));
+  chat.emit(
+    'message',
+    Buffer.from(TAK_PROTO_ORACLE.chatWithControl.mesh, 'hex'),
+  );
   sa.emit('message', Buffer.from([0xbf, 0x01, 0xbf, 0x0a]));
-  assert.equal(inbound.length, 1);
-  assert.equal(mesh.status().protobuf, 1);
+  sa.emit('message', Buffer.from([0xbf, 0x02, 0xbf, 0x12, 0x00]));
+  assert.equal(inbound.length, 3);
+  const decoded = parseCotEvent(inbound[1]);
+  assert.equal(decoded.uid, 'ANDROID-0000synthetic01');
+  assert.equal(decoded.detail.callsign, 'VIPER');
+  assert.equal(parseCotEvent(inbound[2]).detail.chat.senderCallsign, 'VIPER');
+  assert.deepEqual(
+    {
+      rx: mesh.status().rx,
+      protobuf: mesh.status().protobuf,
+      protobufControl: mesh.status().protobufControl,
+      protobufRejected: mesh.status().protobufRejected,
+      protobufUnsupported: mesh.status().protobufUnsupported,
+    },
+    {
+      rx: 3,
+      protobuf: 3,
+      protobufControl: 2,
+      protobufRejected: 1,
+      protobufUnsupported: 1,
+    },
+  );
+  // An unknown field (e.g. an unadvertised detail extension) is flagged.
+  sa.emit(
+    'message',
+    Buffer.concat([
+      Buffer.from([0xbf, 0x01, 0xbf, 0x9a, 0x06, 0x01, 0x00]),
+      Buffer.from(TAK_PROTO_ORACLE.markerMinimal.payload, 'hex'),
+    ]),
+  );
+  assert.equal(inbound.length, 4);
+  assert.equal(mesh.status().protobufIncomplete, 1);
 
   mesh.send('x'.repeat(9000), marker);
   assert.equal(mesh.status().oversized, 1);
   mesh.close();
   assert.equal(sa.closed && chat.closed, true);
+});
+
+test('a TAK protocol v1 flood is limited before conversion, like XML at the router', async () => {
+  const dgram = fakeDgram();
+  let clock = 1_000_000;
+  const inbound = [];
+  const mesh = createMeshLink({
+    config: readTakGatewayConfig({ TAK_MESH: '1' }).mesh,
+    onXml: (xml) => inbound.push(xml),
+    createSocket: dgram.factory,
+    now: () => clock,
+  });
+  const datagram = Buffer.from(TAK_PROTO_ORACLE.saFull.mesh, 'hex');
+  for (let i = 0; i < 1000; i++) dgram.sockets[0].emit('message', datagram);
+  assert.equal(inbound.length, MESH_LIMITS.burst);
+  assert.equal(mesh.status().protobufLimited, 1000 - MESH_LIMITS.burst);
+  clock += 1000; // one second refills `rate` tokens
+  for (let i = 0; i < 200; i++) dgram.sockets[0].emit('message', datagram);
+  assert.equal(inbound.length, MESH_LIMITS.burst + MESH_LIMITS.rate);
+  mesh.close();
+});
+
+test('a TAK protocol v1 mesh peer reaches browsers through the real mesh link and router', async (t) => {
+  const dgram = fakeDgram();
+  const meshConfig = readTakGatewayConfig({ TAK_MESH: '1' }).mesh;
+  const g = await startGateway(
+    { mesh: meshConfig },
+    {
+      createMesh: (options) =>
+        createMeshLink({ ...options, createSocket: dgram.factory }),
+    },
+  );
+  t.after(g.close);
+  const ws = connect(g.port);
+  t.after(() => ws.terminate());
+  await ws.next(isOp('identity'));
+  await new Promise((r) => setTimeout(r, 10));
+  const [sa] = dgram.sockets;
+  const report = parseCotEvent(ATAK_SA);
+  sa.emit(
+    'message',
+    Buffer.from(encodeTakMeshDatagram(cotEventToTakPayload(report))),
+  );
+  const received = parseCotEvent(await ws.next(isXml));
+  assert.equal(received.uid, report.uid);
+  assert.equal(received.detail.callsign, 'VIPER');
+  assert.deepEqual(received.point, report.point);
+  assert.equal(received.staleMs, report.staleMs);
+  // Mesh input is never reflected back onto the mesh it arrived from.
+  assert.equal(sa.sent.length, 0);
 });
 
 test('browser identity and marker ownership are enforced at the gateway', async (t) => {

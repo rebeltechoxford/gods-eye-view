@@ -935,7 +935,11 @@ try {
       }
       assert.deepEqual(
         evidence.layers,
-        [...LAYER_STATE_REGISTRY.map((entry) => entry.id), 'local-adsb'].sort(),
+        [
+          ...LAYER_STATE_REGISTRY.map((entry) => entry.id),
+          'local-adsb',
+          'fisb',
+        ].sort(),
       );
       await screenshot(page, 'retained-map.png');
       return {

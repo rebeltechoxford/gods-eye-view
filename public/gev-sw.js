@@ -4,8 +4,77 @@ const STATE = 'gev-offline-shell-state-v1';
 const STATE_URL = new URL('/__gev_offline_shell_state__', self.location.origin)
   .href;
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>GEV TAK · Offline</title><style>body{background:#0a0a0f;color:#e8eaed;font:17px/1.6 system-ui;max-width:32rem;margin:12vh auto;padding:24px}a{display:inline-block;padding:12px;color:#64c4ff}</style></head><body><h1>GEV TAK · Offline</h1><p>Reconnect to your approved private network, then reopen the app.</p><p>No offline application has been saved on this device. Previous tactical positions and messages are not restored.</p><a href="/">Try again</a></body></html>`;
+const EMCON_URL = new URL('/__gev_emcon_state__', self.location.origin).href;
 let saving = null;
 let deleting = false;
+// EMCON (emissions control): null until read from Cache Storage after a
+// cold start, then true or false. While true, every request is answered
+// here from the saved application or refused; nothing reaches the network.
+let emcon = null;
+let emconLoad = null;
+function loadEmcon() {
+  emconLoad ||= (async () => {
+    try {
+      // Reading must not create the state cache as a side effect.
+      const response = (await caches.has(STATE))
+        ? await (await caches.open(STATE)).match(EMCON_URL)
+        : null;
+      const value = response ? await response.json() : null;
+      if (emcon === null) emcon = value?.active === true;
+    } catch {
+      if (emcon === null) emcon = false;
+    }
+  })();
+  // A message may have changed the flag since it was first read.
+  return emconLoad.then(() => emcon);
+}
+async function storeEmcon(active) {
+  emcon = active;
+  if (active) {
+    saving?.abort.abort();
+    await (
+      await caches.open(STATE)
+    ).put(
+      EMCON_URL,
+      new Response(JSON.stringify({ active: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    return;
+  }
+  // EMCON off is the default: persist nothing, and drop the state cache if
+  // EMCON was all it held (the page reports "off" on every load).
+  if (!(await caches.has(STATE))) return;
+  const cache = await caches.open(STATE);
+  await cache.delete(EMCON_URL);
+  if (!(await cache.keys()).length) await caches.delete(STATE);
+}
+async function emconResponse(request) {
+  const url = new URL(request.url);
+  const sameOrigin = url.origin === self.location.origin;
+  if (sameOrigin && ['GET', 'HEAD'].includes(request.method)) {
+    const state = await readState();
+    const navigation = request.mode === 'navigate';
+    const key =
+      navigation && ['/', '/index.html'].includes(url.pathname)
+        ? '/index.html'
+        : url.pathname;
+    if (state?.files?.includes(key)) {
+      const cached = await (await caches.open(state.cacheName)).match(key);
+      if (cached) return cached;
+    }
+    if (navigation)
+      return new Response(OFFLINE_PAGE, {
+        status: 503,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      });
+  }
+  return Response.error();
+}
+loadEmcon();
 const hex = (buffer) =>
   [...new Uint8Array(buffer)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -18,6 +87,10 @@ function allowedPath(value) {
       '/manifest.webmanifest',
       '/favicon.svg',
       '/logo.svg',
+      '/mic.svg',
+      '/pin.svg',
+      '/location.svg',
+      '/visual-presets.svg',
     ].includes(value)
   )
     return true;
@@ -221,6 +294,23 @@ self.addEventListener('activate', (event) =>
   event.waitUntil(self.clients.claim()),
 );
 self.addEventListener('message', (event) => {
+  if (event.data?.type === 'GEV_EMCON') {
+    event.waitUntil(
+      (async () => {
+        const client = await self.clients.get(event.source?.id);
+        if (
+          !client ||
+          client.type !== 'window' ||
+          new URL(client.url).origin !== self.location.origin ||
+          typeof event.data.active !== 'boolean'
+        )
+          return;
+        await storeEmcon(event.data.active);
+        event.ports?.[0]?.postMessage({ ok: true, active: emcon });
+      })(),
+    );
+    return;
+  }
   const port = event.ports?.[0];
   if (
     !port ||
@@ -250,6 +340,8 @@ self.addEventListener('message', (event) => {
           (typeof scope !== 'string' || !/^[a-f0-9]{64}$/.test(scope))
         )
           throw new Error('Invalid offline application account scope');
+        if (event.data.type === 'GEV_SHELL_SAVE' && (await loadEmcon()))
+          throw new Error('Leave EMCON before downloading the application');
         if (event.data.type === 'GEV_SHELL_SAVE')
           result = await saveShell(port, scope);
         else if (event.data.type === 'GEV_SHELL_DELETE') {
@@ -260,6 +352,8 @@ self.addEventListener('message', (event) => {
             for (const name of await caches.keys())
               if (name === STATE || name.startsWith(PREFIX))
                 await caches.delete(name);
+            // Removing saved files must not remove the independent pause flag.
+            if (emcon === true) await storeEmcon(true);
           } finally {
             deleting = false;
           }
@@ -286,38 +380,57 @@ self.addEventListener('message', (event) => {
     })(),
   );
 });
-self.addEventListener('fetch', (event) => {
-  const request = event.request;
-  if (request.method !== 'GET') return;
+// The saved application, network first: which requests it covers.
+function shellRoute(request) {
+  if (request.method !== 'GET') return null;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || url.search) return;
+  if (url.origin !== self.location.origin || url.search) return null;
   const navigation =
     request.mode === 'navigate' && ['/', '/index.html'].includes(url.pathname);
-  if (!navigation && !allowedPath(url.pathname)) return;
-  event.respondWith(
-    (async () => {
-      try {
-        return await fetch(request);
-      } catch (error) {
-        const state = await readState();
-        const key = navigation ? '/index.html' : url.pathname;
-        if (state?.files?.includes(key)) {
-          const cached = await (await caches.open(state.cacheName)).match(key);
-          if (cached) return cached;
-        }
-        if (!navigation) throw error;
-        return new Response(OFFLINE_PAGE, {
-          status: 503,
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store',
-            'Content-Security-Policy':
-              "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-            'Referrer-Policy': 'no-referrer',
-            'X-Content-Type-Options': 'nosniff',
-          },
-        });
-      }
-    })(),
-  );
+  if (!navigation && !allowedPath(url.pathname)) return null;
+  return { url, navigation };
+}
+async function shellResponse(request, { url, navigation }) {
+  try {
+    return await fetch(request);
+  } catch (error) {
+    const state = await readState();
+    const key = navigation ? '/index.html' : url.pathname;
+    if (state?.files?.includes(key)) {
+      const cached = await (await caches.open(state.cacheName)).match(key);
+      if (cached) return cached;
+    }
+    if (!navigation) throw error;
+    return new Response(OFFLINE_PAGE, {
+      status: 503,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy':
+          "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        'Referrer-Policy': 'no-referrer',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+}
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (emcon === true) {
+    event.respondWith(emconResponse(request));
+    return;
+  }
+  const route = shellRoute(request);
+  if (emcon === null) {
+    // Every fetch waits: a worker or an existing page may issue non-shell
+    // traffic before this service worker has read its persisted mode.
+    event.respondWith(
+      loadEmcon().then((active) => {
+        if (active) return emconResponse(request);
+        return route ? shellResponse(request, route) : fetch(request);
+      }),
+    );
+    return;
+  }
+  if (route) event.respondWith(shellResponse(request, route));
 });

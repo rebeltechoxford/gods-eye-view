@@ -141,6 +141,85 @@ test('approved raster import is atomic, provenance-preserving, durable and never
   assert.equal(store.list().length, 0);
 });
 
+test('selected import retains original hash/notices and selected envelope, charges the entire source and persists its exact keys', async (t) => {
+  const f = await fixture(t);
+  const selection = {
+    bounds: { west: -89, south: 10, east: -1, north: 80 },
+    minZoom: 2,
+    maxZoom: 2,
+  };
+  let store = await f.openStore();
+  const job = await store.createImport({ ...f.input, selection });
+  assert.ok(store.stats().reservedBytes >= f.bytes.length);
+  await store.uploadImport(job.id, f.upload(), { isAuthorized: () => true });
+  const result = await finished(store, job.id);
+  assert.equal(result.state, 'ready', result.error);
+  const manifest = store.get(result.packId);
+  assert.deepEqual(manifest.plannedKeys, ['2/1/0']);
+  assert.deepEqual(manifest.provenance.selection, selection);
+  assert.equal(manifest.provenance.fileBytes, f.bytes.length);
+  assert.equal(
+    manifest.provenance.sha256,
+    createHash('sha256').update(f.bytes).digest('hex'),
+  );
+  assert.equal(manifest.provenance.license, f.input.license);
+  assert.match(manifest.credit, /^Imported subset\n/);
+  assert.deepEqual(store.list()[0].provenance.selection, selection);
+  await store.close();
+  store = await f.openStore();
+  assert.deepEqual(store.get(manifest.id).provenance.selection, selection);
+  assert.equal(store.list().length, 1);
+  const limited = await f.openStore({
+    root: f.root + '-limited',
+    limits: { packBytes: f.bytes.length - 1 },
+  });
+  await assert.rejects(
+    () => limited.createImport({ ...f.input, selection }),
+    /source exceeds/,
+  );
+});
+
+test('selected conversion revoked while a tile write is paused cannot publish or leave late staged files', async (t) => {
+  const f = await fixture(t);
+  let authorized = true,
+    entered,
+    release;
+  const paused = new Promise((resolve) => {
+    release = resolve;
+  });
+  const writing = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const store = await f.openStore({
+    writeImpl: async (handle, bytes) => {
+      if (bytes[0] !== 123) {
+        entered();
+        await paused;
+      }
+      await handle.writeFile(bytes);
+      await handle.sync();
+    },
+  });
+  const selection = {
+    bounds: { west: -89, south: 10, east: -1, north: 80 },
+    minZoom: 2,
+    maxZoom: 2,
+  };
+  const job = await store.createImport({ ...f.input, selection });
+  await store.uploadImport(job.id, f.upload(), {
+    isAuthorized: () => authorized,
+  });
+  try {
+    await writing;
+    authorized = false;
+  } finally {
+    release();
+  }
+  assert.equal((await finished(store, job.id)).state, 'failed');
+  assert.equal(store.list().length, 0);
+  assert.deepEqual(await readdir(path.join(f.root, '.imports')), []);
+});
+
 test('source plus normalized output share the existing quota; no incomplete pack becomes visible', async (t) => {
   const f = await fixture(t);
   const store = await f.openStore({

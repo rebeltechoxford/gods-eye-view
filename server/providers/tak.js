@@ -10,6 +10,11 @@ import {
   createOfflineMapsHandler,
   isOfflineMapsRequest,
 } from '../maps/offline/http.js';
+import {
+  createRoadPacksHandler,
+  defaultRoadPackRoot,
+  isRoadPackRequest,
+} from '../routing/packs.js';
 import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[tak-gateway]';
@@ -42,6 +47,7 @@ export function takGatewayProxy({ env, offlineMaps } = {}) {
   let upgradeListener = null;
   let offlineStorePromise;
   let offlineHandler;
+  let roadPacksHandler;
   let offlineClose = Promise.resolve();
   let installationGeneration = 0;
 
@@ -94,23 +100,47 @@ export function takGatewayProxy({ env, offlineMaps } = {}) {
         errors: config.errors,
       };
     }
+    // Saved maps and road packs share the local-token authorization.
+    const authorizeLocal = (request, { mutation }) => {
+      const local = authorizeLocalRequest(request, {
+        requireOrigin: mutation,
+      });
+      if (!local.ok) return local;
+      const authorization = request.headers.authorization;
+      if (
+        !config.enabled ||
+        typeof authorization !== 'string' ||
+        !authorization.startsWith('Bearer ') ||
+        !matchesToken(authorization.slice(7), config.token)
+      )
+        return { ok: false, status: 401 };
+      return { ok: true };
+    };
+    roadPacksHandler = createRoadPacksHandler({
+      root: defaultRoadPackRoot(env || process.env),
+      authorize: (request) => authorizeLocal(request, { mutation: false }),
+    });
     server.middlewares.use((req, res, next) => {
+      if (isRoadPackRequest(req)) {
+        roadPacksHandler(req, res).catch(() => {
+          if (res.headersSent) res.destroy();
+          else {
+            res.writeHead(503, {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store',
+            });
+            res.end(
+              JSON.stringify({
+                error: 'Road packs unavailable',
+                code: 'STORE',
+              }),
+            );
+          }
+        });
+        return;
+      }
       if (isOfflineMapsRequest(req)) {
-        const authorize = (request, { mutation }) => {
-          const local = authorizeLocalRequest(request, {
-            requireOrigin: mutation,
-          });
-          if (!local.ok) return local;
-          const authorization = request.headers.authorization;
-          if (
-            !config.enabled ||
-            typeof authorization !== 'string' ||
-            !authorization.startsWith('Bearer ') ||
-            !matchesToken(authorization.slice(7), config.token)
-          )
-            return { ok: false, status: 401 };
-          return { ok: true };
-        };
+        const authorize = authorizeLocal;
         const allowed = authorize(req, {
           mutation: !['GET', 'HEAD'].includes(req.method),
         });

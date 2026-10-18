@@ -6,7 +6,18 @@ import {
   parseCotEvent,
   serializeCotEvent,
 } from '../../../src/tak/protocol/cot.js';
-import { createCotStreamFramer } from '../../../src/tak/protocol/stream.js';
+import { createRateLimiter } from '../../../src/tak/protocol/router.js';
+import {
+  TAK_NEGOTIATION_TIMEOUT_MS,
+  TAK_PROTOCOL_VERSION,
+  buildTakProtocolRequest,
+  cotEventToTakPayload,
+  createTakStreamReader,
+  encodeTakStreamFrame,
+  mayBeTakProtocolControl,
+  readTakProtocolControl,
+  takPayloadToCot,
+} from '../../../src/tak/protocol/takProto.js';
 
 export const SERVER_QUEUE_LIMIT = 256;
 export const SERVER_QUEUE_BYTES_LIMIT = 1024 * 1024;
@@ -14,6 +25,8 @@ export const SERVER_WRITE_BUFFER_BYTES_LIMIT = 256 * 1024;
 export const SERVER_QUEUE_MAX_AGE_MS = 30_000;
 export const SERVER_BACKOFF_MS = Object.freeze({ min: 1_000, max: 30_000 });
 export const SERVER_IDLE_TIMEOUT_MS = 120_000;
+/** Router ingress budget for the server link. */
+export const SERVER_LIMITS = Object.freeze({ rate: 200, burst: 1000 });
 export const TAK_STREAM_DECLARATION =
   '<?xml version="1.0" encoding="UTF-8"?>\n';
 
@@ -49,7 +62,12 @@ export function loadTlsOptions(config, readFile = readFileSync) {
   return options;
 }
 
-/** Bounded XML uplink. Queued sends are attempts, never peer delivery acknowledgements. */
+/**
+ * Bounded streaming uplink. XML by default; with `config.protobuf` it asks
+ * a server that offers TAK protocol v1 to switch this connection to it,
+ * following the published negotiation. Queued sends are attempts, never
+ * peer delivery acknowledgements.
+ */
 export function createServerLink({
   config,
   onXml,
@@ -58,6 +76,8 @@ export function createServerLink({
   now = Date.now,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
+  dialAdmission,
+  handshakeMs = 15_000,
 }) {
   const counters = {
     rx: 0,
@@ -68,6 +88,12 @@ export function createServerLink({
     coalesced: 0,
     reconnects: 0,
     discarded: 0,
+    protocolControl: 0,
+    protocolLimited: 0,
+    protocolDenied: 0,
+    protocolErrors: 0,
+    protobufIncomplete: 0,
+    protobufLimited: 0,
   };
   const queue = [];
   let queueBytes = 0;
@@ -80,6 +106,25 @@ export function createServerLink({
   let blocked = false;
   let expiryTimer = null;
   const writing = new Set();
+  // Per-connection encoding: xml -> requested -> v1 (or back to xml if denied).
+  // A timed-out request disables further requests for this link's lifetime.
+  const negotiation = {
+    encoding: 'xml',
+    offered: [],
+    uid: null,
+    timer: null,
+    disabled: false,
+  };
+  let cancelAdmission = null;
+  let handshake = null;
+  let generation = 0;
+  function releaseHandshake(expected) {
+    if (!handshake || handshake.generation !== expected) return;
+    const lease = handshake;
+    handshake = null;
+    clearTimer(lease.timer);
+    lease.release();
+  }
   function outcome(entry, state, reason) {
     if (entry.finished) return;
     if (state !== 'queued') entry.finished = true;
@@ -109,13 +154,119 @@ export function createServerLink({
       expiryTimer?.unref?.();
     }
   }
-  const framer = createCotStreamFramer({
-    onEvent: (xml) => {
+  function clearNegotiationTimer() {
+    if (negotiation.timer !== null) clearTimer(negotiation.timer);
+    negotiation.timer = null;
+    negotiation.uid = null;
+  }
+  function requestProtobuf(control) {
+    const s = socket;
+    negotiation.encoding = 'requested';
+    negotiation.uid = control.uid;
+    reader.hold();
+    try {
+      s.write(
+        TAK_STREAM_DECLARATION +
+          buildTakProtocolRequest({ uid: control.uid, nowMs: now() }),
+      );
+    } catch {
+      lastError = 'WRITE_FAILED';
+      negotiation.uid = null;
+      s.destroy();
+      return;
+    }
+    negotiation.timer = setTimer(() => {
+      negotiation.timer = null;
+      if (socket !== s || negotiation.encoding !== 'requested') return;
+      // The negotiation is indeterminate: reconnect and stay on XML.
+      negotiation.disabled = true;
+      negotiation.uid = null;
+      lastError = 'TAK_PROTOCOL_TIMEOUT';
+      s.destroy();
+    }, TAK_NEGOTIATION_TIMEOUT_MS);
+    negotiation.timer?.unref?.();
+  }
+  // Negotiation events describe this connection, not the tactical picture:
+  // they are consumed here and never reach the router or browsers.
+  function receiveControl(control) {
+    counters.protocolControl++;
+    if (control.kind === 'support') {
+      negotiation.offered = control.versions;
+      if (
+        config.protobuf &&
+        !negotiation.disabled &&
+        negotiation.encoding === 'xml' &&
+        control.versions.includes(TAK_PROTOCOL_VERSION) &&
+        socket &&
+        state === 'connected'
+      )
+        requestProtobuf(control);
+    } else if (
+      control.kind === 'response' &&
+      negotiation.encoding === 'requested' &&
+      control.uid === negotiation.uid &&
+      control.status !== null
+    ) {
+      clearNegotiationTimer();
+      if (control.status) {
+        negotiation.encoding = 'v1';
+        reader.acceptProtobuf();
+      } else {
+        negotiation.encoding = 'xml';
+        counters.protocolDenied++;
+        reader.release();
+      }
+      report();
+      queueMicrotask(flush);
+    }
+  }
+  // Controls are consumed before the router sees them. Share this lifetime
+  // budget with binary conversion so neither path bypasses pre-parse limits.
+  const decodeLimiter = createRateLimiter({ ...SERVER_LIMITS, now });
+  const reader = createTakStreamReader({
+    onXml: (xml) => {
+      if (mayBeTakProtocolControl(xml)) {
+        if (!decodeLimiter.take()) {
+          counters.protocolLimited++;
+          return;
+        }
+        let control = null;
+        try {
+          control = readTakProtocolControl(xml);
+        } catch {
+          counters.discarded++;
+          return;
+        }
+        if (control) return receiveControl(control);
+      }
       counters.rx++;
       onXml(xml);
     },
+    onPayload: (payload) => {
+      // Same budget as the router, applied before conversion work.
+      if (!decodeLimiter.take()) {
+        counters.protobufLimited++;
+        return;
+      }
+      let result;
+      try {
+        result = takPayloadToCot(payload);
+      } catch {
+        counters.discarded++;
+        return;
+      }
+      if (result.incomplete) counters.protobufIncomplete++;
+      if (result.xml === null) return;
+      counters.rx++;
+      onXml(result.xml);
+    },
     onDiscard: (_reason, count) => {
       counters.discarded += count;
+    },
+    onError: () => {
+      counters.protocolErrors++;
+      lastError = 'TAK_PROTOCOL_ERROR';
+      socket?.destroy();
     },
   });
   const status = () => ({
@@ -123,6 +274,9 @@ export function createServerLink({
     lastError,
     endpoint: `${config.protocol}://${config.host}:${config.port}`,
     ...counters,
+    encoding: negotiation.encoding,
+    protobufRequested: !!config.protobuf && !negotiation.disabled,
+    protocolOffered: [...negotiation.offered],
     queue: queue.length,
     queueBytes,
     bufferedBytes: socket?.writableLength || 0,
@@ -158,7 +312,16 @@ export function createServerLink({
     if (closed || timer !== null) return;
     state = 'reconnecting';
     report();
-    const delay = backoff;
+    if (closed) return;
+    const delay = dialAdmission
+      ? Math.max(
+          backoff,
+          Math.min(
+            SERVER_BACKOFF_MS.max,
+            dialAdmission.retryDelay(backoff, SERVER_BACKOFF_MS.max),
+          ),
+        )
+      : backoff;
     backoff = Math.min(SERVER_BACKOFF_MS.max, backoff * 2);
     timer = setTimer(() => {
       timer = null;
@@ -173,6 +336,7 @@ export function createServerLink({
       writing.size < SERVER_QUEUE_LIMIT &&
       socket &&
       state === 'connected' &&
+      negotiation.encoding !== 'requested' &&
       !blocked
     ) {
       const entry = queue[0];
@@ -191,11 +355,25 @@ export function createServerLink({
         blocked = true;
         break;
       }
+      let frame = entry.xml;
+      if (negotiation.encoding === 'v1') {
+        try {
+          frame = encodeTakStreamFrame(cotEventToTakPayload(entry.event));
+        } catch {
+          outcome(
+            removeAt(0),
+            'rejected',
+            'Event cannot be encoded as TAK protocol v1',
+          );
+          counters.discarded++;
+          continue;
+        }
+      }
       removeAt(0);
       writing.add(entry);
       try {
         blocked =
-          socket.write(entry.xml, (error) => {
+          socket.write(frame, (error) => {
             writing.delete(entry);
             outcome(
               entry,
@@ -223,22 +401,70 @@ export function createServerLink({
     if (closed) return;
     state = 'connecting';
     blocked = false;
-    framer.reset();
+    reader.reset();
+    clearNegotiationTimer();
+    negotiation.encoding = 'xml';
+    negotiation.offered = [];
     expire();
+    const attempt = ++generation;
+    if (dialAdmission) {
+      let admitted = false;
+      const cancel = dialAdmission.request(
+        (release) => {
+          admitted = true;
+          cancelAdmission = null;
+          if (closed || generation !== attempt) {
+            release();
+            return;
+          }
+          const lease = { generation: attempt, release, timer: null };
+          handshake = lease;
+          lease.timer = setTimer(
+            () => {
+              if (closed || generation !== attempt || handshake !== lease)
+                return;
+              lastError = 'TLS_HANDSHAKE_TIMEOUT';
+              releaseHandshake(attempt);
+              if (socket) socket.destroy();
+              else scheduleReconnect();
+            },
+            Math.max(1, Math.min(15_000, handshakeMs)),
+          );
+          lease.timer?.unref?.();
+          connectSocket(attempt);
+        },
+        () => {
+          if (closed || generation !== attempt) return;
+          releaseHandshake(attempt);
+          lastError = 'CONNECT_FAILED';
+          socket?.destroy();
+          scheduleReconnect();
+        },
+      );
+      if (!admitted) cancelAdmission = cancel;
+      if (!cancel) {
+        lastError = 'DIAL_CAPACITY';
+        scheduleReconnect();
+      }
+    } else connectSocket(attempt);
+  }
+  function connectSocket(attempt) {
     let s;
     try {
       s = (connect || defaultConnect)(config);
     } catch (error) {
       lastError = error?.code || 'CONNECT_FAILED';
+      releaseHandshake(attempt);
       scheduleReconnect();
       return;
     }
     socket = s;
-    s.setEncoding?.('utf8');
+    // Bytes, not text: a negotiated connection switches to binary frames.
     s.setKeepAlive?.(true, 30_000);
     s.setTimeout?.(SERVER_IDLE_TIMEOUT_MS);
     s.on(config.protocol === 'tls' ? 'secureConnect' : 'connect', () => {
       if (closed || socket !== s) return;
+      releaseHandshake(attempt);
       if (config.protocol === 'tls' && s.authorized !== true) {
         lastError = 'TLS_UNAUTHORIZED';
         s.destroy();
@@ -257,18 +483,26 @@ export function createServerLink({
       }
     });
     s.on('data', (chunk) => {
-      if (socket === s && state === 'connected')
-        framer.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+      if (socket === s && state === 'connected') reader.push(chunk);
     });
     s.on('timeout', () => {
+      if (dialAdmission && (closed || socket !== s || generation !== attempt))
+        return;
       lastError = 'IDLE_TIMEOUT';
       s.destroy();
     });
     s.on('error', (error) => {
+      if (dialAdmission && (closed || socket !== s || generation !== attempt))
+        return;
       lastError = error?.code || 'CONNECTION_FAILED';
+      if (dialAdmission) {
+        releaseHandshake(attempt);
+        s.destroy();
+      }
     });
     s.on('close', () => {
       if (socket !== s) return;
+      releaseHandshake(attempt);
       for (const entry of writing)
         outcome(
           entry,
@@ -278,6 +512,9 @@ export function createServerLink({
       writing.clear();
       socket = null;
       blocked = false;
+      clearNegotiationTimer();
+      negotiation.encoding = 'xml';
+      reader.reset();
       if (!closed) scheduleReconnect();
     });
   }
@@ -285,7 +522,7 @@ export function createServerLink({
   return Object.freeze({
     id: 'server',
     kind: 'server',
-    limits: { rate: 200, burst: 1000 },
+    limits: SERVER_LIMITS,
     send(xml, parsedEvent, tracking) {
       if (closed) return false;
       let event;
@@ -302,7 +539,10 @@ export function createServerLink({
       }
       if (
         cotKind(event.type) === 'ping' &&
-        (!socket || state !== 'connected' || blocked)
+        (!socket ||
+          state !== 'connected' ||
+          blocked ||
+          negotiation.encoding === 'requested')
       )
         return false;
       let framed;
@@ -327,6 +567,7 @@ export function createServerLink({
       }
       queue.push({
         uid: target,
+        event,
         xml: framed,
         bytes,
         staleMs: event.staleMs,
@@ -364,11 +605,16 @@ export function createServerLink({
     close() {
       if (closed) return;
       closed = true;
+      const attempt = generation++;
+      cancelAdmission?.();
+      cancelAdmission = null;
+      releaseHandshake(attempt);
       state = 'closed';
       if (timer !== null) clearTimer(timer);
       timer = null;
       if (expiryTimer !== null) clearTimer(expiryTimer);
       expiryTimer = null;
+      clearNegotiationTimer();
       for (const entry of queue)
         outcome(entry, 'rejected', 'Gateway closed before upstream write');
       for (const entry of writing)

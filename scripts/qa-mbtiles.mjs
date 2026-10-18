@@ -20,6 +20,12 @@ import {
 import { interceptFixtures } from './qa-fixtureInterception.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
+const subset = args.includes('--subset');
+const selection = {
+  bounds: { west: -180, south: -85, east: 180, north: 85 },
+  minZoom: 0,
+  maxZoom: 1,
+};
 const option = (name, fallback) => {
   const i = args.indexOf(name);
   if (i < 0) return fallback;
@@ -439,6 +445,25 @@ async function fillImport(page, name = firstName) {
     },
     { name, source: sourceTitle, license, edition, url: sourceUrl },
   );
+  if (subset) {
+    await page.evaluate((value) => {
+      for (const [key, number] of Object.entries({
+        ...value.bounds,
+        min: value.minZoom,
+        max: value.maxZoom,
+      })) {
+        const input = document.querySelector(`[data-offline-${key}]`);
+        input.value = String(number);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, selection);
+    if (!(await page.$eval('[data-mbtiles-subset]', (el) => el.checked)))
+      await tap(page, '[data-mbtiles-subset]');
+    assert.match(
+      await page.$eval('[data-mbtiles-selection]', (el) => el.textContent),
+      /Subset:.*at most 5 cells/,
+    );
+  }
 }
 async function serverPacks(page) {
   return page.evaluate(async () => {
@@ -665,6 +690,10 @@ try {
   insert.run(0, 0, 0, image);
   insert.run(1, 0, 1, image);
   insert.run(1, 0, 0, southernImage);
+  if (subset) {
+    insert.run(2, 0, 0, image); // A valid source row intentionally outside the selected zooms.
+    db.exec("INSERT INTO metadata VALUES('minzoom','0'),('maxzoom','2')");
+  }
   db.exec('COMMIT');
   db.close();
   assert(
@@ -703,6 +732,10 @@ try {
         window.__godsEyeView.takClient.operatorContext(),
       );
       assert.equal(c.principal, 'importer');
+      assert.equal(
+        await page.$eval('[data-mbtiles-subset]', (el) => el.checked),
+        false,
+      );
       await fillImport(page);
       assert.equal(
         await page.$eval('[data-mbtiles-rights]', (el) => el.checked),
@@ -783,6 +816,12 @@ try {
       assert.equal(m.provenance.edition, edition);
       assert.equal(m.sourceUrl, sourceUrl);
       assert.deepEqual(m.plannedKeys, ['0/0/0', '1/0/0', '1/0/1']);
+      assert.deepEqual(m.provenance.selection, subset ? selection : undefined);
+      if (subset)
+        assert.equal(
+          m.provenance.metadata.find((row) => row.name === 'maxzoom').value,
+          '2',
+        );
       assert.equal(
         await page.$eval('[data-mbtiles-file]', (el) => el.files.length),
         0,
@@ -816,6 +855,7 @@ try {
         tiles: 3,
         rawFileUpload: true,
         serverAndDeviceReady: true,
+        ...(subset ? { selection, originalTiles: 4, retainedTiles: 3 } : {}),
       };
     },
   );
@@ -829,7 +869,7 @@ try {
       );
       assert.deepEqual(
         e.layers,
-        [...LAYER_STATE_REGISTRY.map((e) => e.id), 'local-adsb'].sort(),
+        [...LAYER_STATE_REGISTRY.map((e) => e.id), 'local-adsb', 'fisb'].sort(),
       );
       const samples = await page.evaluate(async () => {
         const p =
@@ -1054,6 +1094,19 @@ try {
       const local = await deviceSnapshot(page);
       assert.equal(local.packs[0].provenance.sha256, sourceHash);
       assert.equal(local.packs[0].provenance.license, license);
+      assert.deepEqual(
+        local.packs[0].provenance.selection,
+        subset ? selection : undefined,
+      );
+      if (subset) {
+        assert.equal(
+          local.packs[0].provenance.metadata.find(
+            (row) => row.name === 'maxzoom',
+          ).value,
+          '2',
+        );
+        assert.match(e.credit, /Imported subset/);
+      }
       const p = await privacyEvidence(page);
       assert.deepEqual(p.privacy, { private: true, authorized: false });
       assert(p.permissions.every((p) => !p.checked));
@@ -1154,6 +1207,7 @@ try {
         node: process.version,
         browser: await browser.version(),
         synthetic: true,
+        subset,
         realPhoneAcceptance: false,
         results,
         http,

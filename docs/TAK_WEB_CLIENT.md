@@ -95,18 +95,25 @@ requires `TAK_BRIDGE=1`; enabling two uplinks does not silently bridge them.
 
 ## Protocol scope
 
-Implemented transport uses traditional CoT XML. The official
+The official
 [TAK protocol reference](https://github.com/TAK-Product-Center/atak-civ/blob/main/takproto/README.txt)
 describes legacy XML mesh/streaming and later protobuf framing. Server XML
 output uses an XML declaration and newline before each event and does not add
-arbitrary newlines after its closing tag, following that reference. Protocol-v1
-protobuf is currently recognized/refused rather than decoded and is not a
-supported interoperability mode.
+arbitrary newlines after its closing tag, following that reference. Mesh
+datagrams in protocol v1 are decoded, and a TAK Server stream can negotiate v1
+with `TAK_SERVER_PROTOBUF=1`. Every v1 event is converted to XML and passes the
+same validation; outbound mesh traffic stays XML. See
+[TAK protocol v1](TAK_PROTOCOL_V1.md) for scope, evidence and the real-peer
+acceptance still required.
 
 Builders cover self SA/PPLI, spot markers, broadcast GeoChat, own-marker delete,
 ping, emergency/cancel and a bounded line/polygon/route subset. The drawing
 editor renders real geometry, supports ordered waypoint edits and requires an
 explicit sharing choice; see [drawings and routes](TAK_DRAWINGS_ROUTES.md).
+
+**EMCON** (above the TAK launcher and in the panel header) stops every
+transmission from the app: the TAK link closes and Connect is refused until it
+is left. See [EMCON](TAK_EMCON.md) for what stays usable and its limits.
 Parsing a type or preserving an unknown detail extension does not implement its
 complete ATAK workflow. Directed/group chat, server mission/data sync, broader
 native shape types, route guidance, full 2525 symbols and native plugins remain

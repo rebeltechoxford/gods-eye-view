@@ -8,7 +8,12 @@ import { createMissionPackagePanel } from './packagesUi.js';
 import { createGeolocation } from './geolocation.js';
 import { createMobileSession } from './mobile.js';
 import { signOutOperator } from './session.js';
-import { createSavedMaps } from '../maps/offline/ui.js';
+import { createSavedMaps, shellMessage } from '../maps/offline/ui.js';
+import { createOfflineRoadsPanel } from '../routing/roadPacksUi.js';
+import {
+  offlineRouting,
+  openCurrentRoadPackStore,
+} from '../routing/deviceRouting.js';
 import { createNavigationPanel } from './navigationUi.js';
 import { createDrawingsPanel } from './drawingsUi.js';
 import { createNavigationFocus } from './navigationCamera.js';
@@ -19,6 +24,7 @@ import {
   identityStorageKey,
   subscribeOperatorContextInvalidation,
   clearOfflineOperatorContext,
+  activateOfflineOperatorContext,
 } from './operatorContext.js';
 import {
   authorizeTakDisclosure,
@@ -27,6 +33,8 @@ import {
   takPrivacyState,
   takDisclosurePermissions,
 } from './privacy.js';
+import { emconState, syncEmconWorker } from '../emcon/boot.js';
+import { mountEmconControl } from '../emcon/ui.js';
 
 const browserStorage = Object.freeze({
   get(key) {
@@ -124,6 +132,10 @@ export function initTakWebClient({
     canShare: mayShare,
     canReportPosition: () => !document.hidden && geolocation.isActive(),
   });
+  // EMCON closes the TAK link but keeps the received picture on screen.
+  const stopEmconWatch = emconState.subscribe((record) => {
+    if (record) client.disconnect();
+  });
   const overlay = createCotOverlay(viewer, overlays, {
     onActivate: (uid) => overlay.focus(uid),
     navigate,
@@ -149,6 +161,10 @@ export function initTakWebClient({
     },
     gatewayInfo: () => gatewayInfo,
     async connect(token, signal) {
+      if (emconState.isActive())
+        throw new Error(
+          'EMCON is on: TAK stays disconnected until you leave EMCON',
+        );
       if (!gatewayInfo) await gatewayReady;
       if (signal.aborted || controller.signal.aborted || retired) return false;
       if (!accountCurrent() || !accountContext.online)
@@ -210,6 +226,41 @@ export function initTakWebClient({
   });
   let mapBootstrap = null;
   let mapBootstrapAt = 0;
+  // Saved maps and road packs authenticate the same way.
+  async function takAccessHeaders(signal) {
+    if (!gatewayInfo) await gatewayReady;
+    signal?.throwIfAborted();
+    if (!accountCurrent() || retired)
+      throw new Error('Operator account context changed');
+    if (gatewayInfo?.sessionAuthenticated)
+      return accountContext.multiOperator
+        ? { 'X-TAK-Storage-Scope': accountContext.storageScope }
+        : {};
+    if (gatewayInfo?.bootstrapAllowed) {
+      if (!mapBootstrap || Date.now() - mapBootstrapAt > 30_000) {
+        mapBootstrapAt = Date.now();
+        mapBootstrap = fetchGatewaySession(globalThis.fetch, signal).catch(
+          (error) => {
+            mapBootstrap = null;
+            throw error;
+          },
+        );
+      }
+      return { Authorization: `Bearer ${(await mapBootstrap).token}` };
+    }
+    const token = document.querySelector('[data-tak-token]')?.value.trim();
+    if (!token)
+      throw new Error(
+        'Sign in to the private server, or enter the configured local gateway token in Network',
+      );
+    return { Authorization: `Bearer ${token}` };
+  }
+  function markSessionExpired() {
+    if (gatewayInfo?.sessionAuthenticated) {
+      gatewayInfo = { ...gatewayInfo, sessionExpired: true };
+      renderScene();
+    }
+  }
   const savedMaps = mapStackController
     ? createSavedMaps({
         container: document.getElementById('tak-web-panel'),
@@ -217,46 +268,23 @@ export function initTakWebClient({
         viewer,
         getMapCenter: () => mapCenter(viewer),
         markPrivate: () => markTakDataPrivate(viewer),
-        onSessionExpired: () => {
-          if (gatewayInfo?.sessionAuthenticated) {
-            gatewayInfo = { ...gatewayInfo, sessionExpired: true };
-            renderScene();
-          }
-        },
+        onSessionExpired: markSessionExpired,
         navigate,
-        async getAccessHeaders(signal) {
-          if (!gatewayInfo) await gatewayReady;
-          signal?.throwIfAborted();
-          if (!accountCurrent() || retired)
-            throw new Error('Saved-map account context changed');
-          if (gatewayInfo?.sessionAuthenticated)
-            return accountContext.multiOperator
-              ? { 'X-TAK-Storage-Scope': accountContext.storageScope }
-              : {};
-          if (gatewayInfo?.bootstrapAllowed) {
-            if (!mapBootstrap || Date.now() - mapBootstrapAt > 30_000) {
-              mapBootstrapAt = Date.now();
-              mapBootstrap = fetchGatewaySession(
-                globalThis.fetch,
-                signal,
-              ).catch((error) => {
-                mapBootstrap = null;
-                throw error;
-              });
-            }
-            return { Authorization: `Bearer ${(await mapBootstrap).token}` };
-          }
-          const token = document
-            .querySelector('[data-tak-token]')
-            ?.value.trim();
-          if (!token)
-            throw new Error(
-              'Sign in to the private server, or enter the configured local gateway token in Network',
-            );
-          return { Authorization: `Bearer ${token}` };
-        },
+        getAccessHeaders: takAccessHeaders,
       })
     : null;
+  const offlineRoads = createOfflineRoadsPanel({
+    container: document.getElementById('tak-web-panel'),
+    getAccessHeaders: takAccessHeaders,
+    openStore: () => openCurrentRoadPackStore(),
+    engine: offlineRouting,
+    async saveOfflineApp(onProgress) {
+      const saved = await shellMessage('GEV_SHELL_SAVE', onProgress);
+      activateOfflineOperatorContext();
+      return saved;
+    },
+    onSessionExpired: markSessionExpired,
+  });
 
   function retire({ revokeOffline = false, redirect } = {}) {
     if (retired) return;
@@ -267,6 +295,8 @@ export function initTakWebClient({
     client.disconnect();
     client.clearPrivateState();
     authorizeTakDisclosure(viewer, false);
+    // Installed packs are public OSM roads and stay; the decoded copy is freed.
+    offlineRouting.unload();
     panel.clearPrivateInputs();
     navigation?.clearPrivateInputs();
     packages?.clearPrivateInputs();
@@ -304,8 +334,12 @@ export function initTakWebClient({
     panel.render();
   }, 15_000);
   const unsubscribePrivacy = subscribeTakPrivacy(viewer, () => panel.render());
-  const unsubscribeMobile = mobile.subscribe(() => panel.render());
+  const unsubscribeMobile = mobile.subscribe(() => {
+    client.refreshPositionAvailability();
+    panel.render();
+  });
   const positionTimer = setInterval(() => {
+    client.refreshPositionAvailability();
     if (client.fix() && !document.hidden) panel.render();
   }, 1000);
 
@@ -313,6 +347,14 @@ export function initTakWebClient({
     retire({ redirect: '/' }),
   );
   gatewayReady = Promise.resolve(gatewayInfo).then(() => panel.render());
+
+  const emconControl = embedded
+    ? null
+    : mountEmconControl({
+        host: document.querySelector('.tak-web-root'),
+        state: emconState,
+        syncWorker: syncEmconWorker,
+      });
 
   const api = Object.freeze({
     client,
@@ -324,6 +366,8 @@ export function initTakWebClient({
     privacy: () => takPrivacyState(viewer),
     operatorContext: () => ({ ...accountContext, retired }),
     destroy() {
+      stopEmconWatch();
+      emconControl?.destroy();
       controller.abort();
       logoutController?.abort();
       unsubscribeAccount();
@@ -335,6 +379,7 @@ export function initTakWebClient({
       mobile.destroy();
       geolocation.destroy();
       savedMaps?.destroy();
+      offlineRoads.destroy();
       navigation.destroy();
       packages.destroy();
       drawings.destroy();

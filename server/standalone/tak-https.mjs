@@ -40,6 +40,11 @@ import {
   createOfflineMapsHandler,
   isOfflineMapsRequest,
 } from '../maps/offline/http.js';
+import {
+  createRoadPacksHandler,
+  defaultRoadPackRoot,
+  isRoadPackRequest,
+} from '../routing/packs.js';
 import { createOfflineShellManifest } from '../maps/offline/shell.js';
 
 const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -222,6 +227,7 @@ export async function startTakHttpsServer({
   distRoot = path.join(workspaceRoot, 'dist'),
   providerPlugins,
   offlineMaps,
+  roadPacks,
   now = Date.now,
   port,
 } = {}) {
@@ -303,6 +309,7 @@ export async function startTakHttpsServer({
   let gateway;
   let offlineStorePromise;
   let offlineHandler;
+  let roadPacksHandler;
   let shellManifestPromise;
   let policy;
   let closed = false;
@@ -324,7 +331,11 @@ export async function startTakHttpsServer({
       const principal = principals.get(authenticated.principal);
       if (!principal?.enabled) throw new Error('Principal unavailable');
       instance = createTakGateway({
-        config: principalGatewayConfig(principal, policy),
+        config: principalGatewayConfig(principal, policy, {
+          deviceStreams: /^(1|true|yes|on)$/i.test(
+            String(env.TAK_DEVICE_STREAMS || '').trim(),
+          ),
+        }),
         WebSocketServer,
         now,
         authenticateSession,
@@ -592,6 +603,20 @@ export async function startTakHttpsServer({
       return res.end();
     }
     if (sessionGateway(authenticated).handleHttpRequest(req, res)) return;
+    if (isRoadPackRequest(req)) {
+      if (!scopeMatches(req, authenticated)) return refuseScope(res);
+      // Road packs hold public OSM roads, shared read-only by every account.
+      roadPacksHandler ||= createRoadPacksHandler({
+        root: roadPacks?.root || defaultRoadPackRoot(env),
+        now,
+        authorize: (request) =>
+          authenticateSession(request)
+            ? authorizeBrowserRequest(request, policy, { requireOrigin: false })
+            : { ok: false, status: 401 },
+      });
+      await roadPacksHandler(req, res);
+      return;
+    }
     if (isOfflineMapsRequest(req)) {
       if (!scopeMatches(req, authenticated)) return refuseScope(res);
       if (multiOperator) {

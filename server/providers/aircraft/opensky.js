@@ -106,6 +106,12 @@ const ADSBLOL_POINT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 // the viewport-scoped adsb.lol source is more honest and keeps local motion
 // current instead of coasting a stale worldwide frame indefinitely.
 const OPENSKY_SOURCE_STALE_MS = 120_000;
+// The last-good worldwide body is served as STALE through rate limits and
+// outages, but not forever: past this age it no longer shows where aircraft
+// are, and the regional fallback or an honest error replaces it.
+export const OPENSKY_MAX_STALE_MS = 15 * 60_000;
+const openSkyCacheServable = (now) =>
+  Boolean(_openskyCacheBody) && now - _openskyCacheTime <= OPENSKY_MAX_STALE_MS;
 
 /**
  * Obtain a valid OpenSky OAuth2 bearer token, refreshing if needed.
@@ -396,7 +402,8 @@ export function openSkyProxy() {
         // is deliberate (credit governor): last-good planes beat a dead layer.
         if (
           _openskyCacheBody &&
-          (now - _openskyCacheTime < _openskyTtlMs || inCooldown)
+          (now - _openskyCacheTime < _openskyTtlMs ||
+            (inCooldown && openSkyCacheServable(now)))
         ) {
           if (
             openSkySourceIsStale(_openskyCacheSourceEpochMs, now) &&
@@ -559,7 +566,7 @@ export function openSkyProxy() {
           _openskyCooldownUntil = now + cooldownMs;
           // Serve the last-good body instead of the 429 when we have one —
           // the layer keeps rendering (STALE-cued) instead of dying.
-          if (_openskyCacheBody && _openskyCacheStatus === 200) {
+          if (_openskyCacheStatus === 200 && openSkyCacheServable(now)) {
             res.writeHead(
               200,
               buildOpenSkyHeaders({
@@ -576,7 +583,7 @@ export function openSkyProxy() {
           }
         }
 
-        if (!upstream.ok && !_openskyCacheBody) {
+        if (!upstream.ok && !openSkyCacheServable(now)) {
           const servedFallback = await serveAdsbLolPointFallback(
             req,
             res,
@@ -656,9 +663,14 @@ export function openSkyProxy() {
           // Credit governor: adapt the cache TTL to the remaining daily
           // budget so a continuously-open app stretches its polls instead of
           // exhausting the quota mid-day. Success also clears any cooldown.
-          const remaining = Number(
-            upstream.headers.get('x-rate-limit-remaining'),
+          // A missing header is unknown, not zero credits left.
+          const remainingHeader = upstream.headers.get(
+            'x-rate-limit-remaining',
           );
+          const remaining =
+            remainingHeader === null || remainingHeader === ''
+              ? NaN
+              : Number(remainingHeader);
           _openskyTtlMs = openskyAdaptiveTtlMs(remaining);
           _openskyCooldownUntil = 0;
         }
@@ -675,7 +687,8 @@ export function openSkyProxy() {
         res.end(body);
       } catch (e) {
         console.error('[OpenSky Proxy]', e.message);
-        if (_openskyCacheBody) {
+        const failedAt = Date.now();
+        if (openSkyCacheServable(failedAt)) {
           const cachedMeta = _openskyCacheMeta || {
             requestedMode: normalizeOpenSkyAuthMode(
               process.env.OPENSKY_AUTH_MODE,
@@ -691,6 +704,7 @@ export function openSkyProxy() {
                 cachedMeta.requestedMode || OPENSKY_AUTH_MODE_DEFAULT,
               usedMode: cachedMeta.usedMode || 'unknown',
               reason: cachedMeta.reason || 'cached_stale',
+              staleSeconds: (failedAt - _openskyCacheTime) / 1000,
             }),
           );
           res.end(_openskyCacheBody);

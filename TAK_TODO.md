@@ -1,15 +1,39 @@
 # God's Eye View × TAK remaining work
 
-Updated: 2026-10-17 UTC. This is the remaining-work handoff for the additive TAK
+Updated: 2026-10-18 UTC. This is the remaining-work handoff for the additive TAK
 foundation on `dev/tak-web-foundation`. Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to run
 the local app/lab. The detailed preservation inventory and parity ledger are in
 [TAK_FEATURE_MATRIX.md](docs/TAK_FEATURE_MATRIX.md); ordered acceptance criteria
 are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 
+The release candidate targets `main` after verification. Candidate integration
+checks and physical iPhone acceptance remain separate from the earlier evidence below;
+this document does not record a completed main merge.
+
+## Release checkpoint
+
+- The [owner-private Sites preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
+  is available as a frontend preview. The private Node gateway, operator login,
+  TAK transport and server map storage still run on the private host described
+  in the run guide; Sites does not supply those services.
+- The retained [unsigned arm64 IPA](https://gev-tak-field-preview.jesselsullivan.chatgpt.site/downloads/GEVTAK-unsigned.ipa)
+  is available for personal signing. Its verified source remains `28eb0c9e`,
+  predating the release candidate. The native sources and build script are
+  unchanged, so this wrapper is reused; it loads the current private web app.
+  Rebuild when native sources change. Physical iPhone acceptance remains open.
+- Runtime `3d762106` passed all five normal CI jobs, 7,027 ordinary tests
+  (one existing skip), 14 allocation checks and all offline-road, EMCON,
+  FIS-B and protobuf TAK browser scenarios. The cold-start Cesium errors are
+  fixed. The added tracking gate still needs a successful rerun after correcting
+  its offline terrain-height fixture; its first run passed 107 and failed three
+  assertions. [Exact review record](docs/TAK_RELEASE_REVIEW.md).
+- Complete final acceptance before merging to `main`. Full ATAK parity and
+  native-peer/device acceptance remain open independently of those CI checks.
+
 ## First: real peer acceptance
 
 - **iPhone/AltStore acceptance.** A real unsigned arm64 IPA and simulator
-  startup are verified for development revision `8c96791c`; the run guide links the
+  startup are verified for development revision `28eb0c9e`; the run guide links the
   package and hash. Personal signing/install and actual device TLS/login/WSS,
   touch, GPS/media, Files export and offline WebKit behavior still need testing.
   Native exports cap at 256 MiB and `data:` downloads are unsupported. The
@@ -53,7 +77,8 @@ running.
    Server IN/OUT group provisioning, group-revocation acceptance and physical
    EUD account-switch/offline tests. The real-server lab verified separation for
    the exercised marker and broadcast-chat flows; broader directional ACL and
-   revocation cases remain open. Public hosting remains outside scope.
+   revocation cases remain open. Operational TAK hosting remains private; the
+   owner-private Sites frontend preview does not host its gateway.
 2. **Delivery state and synchronization.** Correlated pending/queued/submitted/
    rejected/expired states are implemented. Submitted confirms a local transport
    write, not a peer receipt. Add compatible peer acknowledgements where available
@@ -64,9 +89,13 @@ running.
    authorization, receipts and explicit durable-history policy. The real-server
    routing experiment mapped only the first UID on a shared TLS stream; an
    experimental position-free control also entered latest-SA replay. Do not
-   silently publish placeholder positions. Resolve per-device stream ownership
-   and explicit presence consent before enabling directed replies, then validate
-   each supported native peer. Unsupported directed/group chat remains refused.
+   silently publish placeholder positions. The opt-in device-stream adapter and
+   correlated browser presence STOP are implemented in the candidate. Confirm
+   their combined release checks, actual official-server routing and rapid UID
+   replacement before enabling directed replies, then validate each supported
+   native peer. STOP confirmation means the gateway closed the owned route;
+   it is not peer receipt or a server-registration acknowledgment. Unsupported
+   directed/group chat remains refused.
 4. **Shared drawings and routes.** Lines, simple regional polygons and ordered
    routes now have real globe geometry, phone editing, stable waypoint IDs,
    ownership/conflict/delete handling and explicit gateway sharing. Complete
@@ -94,20 +123,37 @@ running.
    storage/restart/eviction acceptance before broad field claims. Local authorized
    MBTiles import now has a phone file form, source/license notices, bounded raw
    upload, cancel/reselect, server/device copies and saved-app integration; see
-   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Broader chart
-   acceptance remains: a real NOAA bundle exceeded the unchanged 5,000-tile cap,
-   and FAA GeoTIFF conversion/import is unsupported. Add 3D elevation packs
-   separately from rendered topographic maps. Add unsent tactical queue reconciliation with an explicit
+   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Explicit area/zoom
+   selection imports bounded subsets from larger files; six synthetic phone
+   scenarios and a retained NOAA `SG_AREA` file passed import, rendering and
+   stopped-server reopening. That overlay had observed 2024 dates; current chart
+   coverage remains unverified. Whole-file, selected-cell and account limits
+   remain unchanged. FAA GeoTIFF conversion/import is unsupported. Add 3D
+   elevation packs separately from rendered topographic maps. Offline car routing
+   from OSM road packs is implemented ([scope](docs/TAK_OFFLINE_ROADS.md)); verify
+   physical iPhone capacity, then add live guidance, turn restrictions and
+   multi-region packs. EMCON pauses app requests ([limits](docs/TAK_EMCON.md));
+   it does not establish complete device radio or network isolation. Verify
+   physical iPhone Airplane Mode behavior, add host-side controls and retain the
+   received TAK picture across reload. FIS-B weather decodes receiver weather
+   and NOTAMs ([scope](docs/FISB.md)); verify a real ground station, then draw
+   lightning, icing, turbulence and cloud tops. Add unsent tactical queue
+   reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs
    and georeferencing metadata with limits/cleanup. Add hardware bridges where
    required. Existing public CCTV/HLS and Local ADS-B do not constitute general
    TAK video, MANET, Meshtastic/LoRa or ATAK plugin support.
-9. **Broader protocol and symbology coverage.** Add TAK protocol-v1 protobuf
-   handling, a documented supported MIL-STD-2525 symbol subset and extensions
-   only when tested/licensed. Current affiliation frames are a limited visual
-   treatment. Android APKs/JNI/plugins are not browser modules.
+9. **Broader protocol and symbology coverage.** TAK protocol v1 is now
+   decoded on the mesh and negotiable on TAK Server links with
+   `TAK_SERVER_PROTOBUF=1` ([scope and evidence](docs/TAK_PROTOCOL_V1.md)).
+   Observe a real v1 mesh (ATAK-CIV, WinTAK, iTAK separately) and a real TAK
+   Server negotiation before claiming interoperability. Mesh send stays XML;
+   registered detail extensions are unsupported and partial decodes are only
+   counted. Add a documented supported MIL-STD-2525 symbol subset and
+   extensions only when tested/licensed. Current affiliation frames are a
+   limited visual treatment. Android APKs/JNI/plugins are not browser modules.
 
 ## Preserve, measure and harden
 

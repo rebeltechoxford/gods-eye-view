@@ -66,6 +66,8 @@ export function createTakClient({
   let emergencyActive = false;
   let destroyed = false;
   let sessionExpired = false;
+  let ownPositionSubmitted = false;
+  let presenceStop = null;
 
   let identity = loadIdentity();
   store.setSelfUid(identity.uid);
@@ -134,7 +136,17 @@ export function createTakClient({
         };
       } else if (message?.op === 'hello' || message?.op === 'status')
         gateway = message.status || null;
-      else if (message?.op === 'submission') {
+      else if (message?.op === 'presence') {
+        if (
+          message.enabled !== false ||
+          message.uid !== identity.uid ||
+          presenceStop?.state !== 'requested' ||
+          message.id !== presenceStop.id
+        )
+          return;
+        presenceStop = { ...presenceStop, state: 'confirmed' };
+        if (saEnabled) beacon();
+      } else if (message?.op === 'submission') {
         if (delivery.update(message) && message.state === 'rejected')
           lastReject = {
             reason:
@@ -143,18 +155,27 @@ export function createTakClient({
               'Submission rejected by uplink',
             atMs: now(),
           };
-      } else if (message?.op === 'reject')
+      } else if (message?.op === 'reject') {
+        if (message.command === 'presence' && message.id === presenceStop?.id)
+          presenceStop = { ...presenceStop, state: 'refused' };
         lastReject = {
           reason: String(message.reason || 'rejected'),
           atMs: now(),
         };
+      }
       notify();
     },
     onState(state, detail) {
       if (destroyed) return;
       linkState = state;
       linkDetail = detail || '';
-      if (state !== 'open') delivery.interrupt();
+      if (state !== 'open') {
+        delivery.interrupt();
+        ownPositionSubmitted = false;
+        if (presenceStop?.state === 'requested')
+          presenceStop = { ...presenceStop, state: 'unconfirmed' };
+      }
+      if (state === 'open') presenceStop = null;
       if (state === 'open' && saEnabled) beacon();
       notify();
     },
@@ -167,6 +188,18 @@ export function createTakClient({
   }, SWEEP_INTERVAL_MS);
 
   function submit(event) {
+    if (
+      presenceStop?.state === 'requested' &&
+      event.uid === identity.uid &&
+      cotKind(event.type) === 'sa'
+    ) {
+      counters.txLocalOnly++;
+      return {
+        sent: false,
+        reason:
+          'Device presence stop confirmation is pending; position kept local',
+      };
+    }
     if (destroyed || !mayShare()) {
       counters.txLocalOnly++;
       return {
@@ -186,8 +219,13 @@ export function createTakClient({
     const sent = transport.submit
       ? transport.submit(id, xml)
       : transport.send(xml);
-    if (sent) counters.tx++;
-    else {
+    if (sent) {
+      counters.tx++;
+      if (event.uid === identity.uid && cotKind(event.type) === 'sa') {
+        ownPositionSubmitted = true;
+        presenceStop = null;
+      }
+    } else {
       counters.txLocalOnly++;
       delivery.update({
         id,
@@ -216,11 +254,15 @@ export function createTakClient({
 
   function beacon() {
     if (!saEnabled || !fix || destroyed) return { sent: false };
+    if (presenceStop?.state === 'requested')
+      return { sent: false, reason: 'presence-stop-pending' };
     if (
       fix.source === 'GPS' &&
       (!canReportPosition() || !isGpsFixFresh(fix, now()))
-    )
+    ) {
+      stopOwnPresence();
       return { sent: false, reason: 'position-unavailable' };
+    }
     return emit(buildSelfSa(identity, fix, { nowMs: now() }), true);
   }
 
@@ -229,7 +271,34 @@ export function createTakClient({
     saTimer = saEnabled ? every(beacon, SA_INTERVAL_MS) : null;
   }
 
+  function stopOwnPresence() {
+    if (!ownPositionSubmitted || gateway?.server?.deviceStreams !== true)
+      return;
+    ownPositionSubmitted = false;
+    presenceStop = { state: 'requested', id: null };
+    const id = transport.stopPresence?.();
+    if (typeof id === 'string') presenceStop = { ...presenceStop, id };
+    else {
+      presenceStop = { ...presenceStop, state: 'unconfirmed' };
+      if (linkState === 'open')
+        transport.disconnect(
+          'Device presence stop unavailable; connection closed, route stop unconfirmed',
+        );
+    }
+    notify();
+  }
+
+  function refreshPositionAvailability() {
+    if (destroyed) return;
+    if (
+      fix?.source === 'GPS' &&
+      (!canReportPosition() || !isGpsFixFresh(fix, now()))
+    )
+      stopOwnPresence();
+  }
+
   function clearPrivateState() {
+    stopOwnPresence();
     transport.cancelSubmissions?.();
     delivery.clear();
     saEnabled = false;
@@ -265,6 +334,7 @@ export function createTakClient({
     },
     connect(token) {
       if (destroyed) return;
+      stopOwnPresence();
       sessionExpired = false;
       const authentication =
         token && typeof token === 'object'
@@ -278,6 +348,7 @@ export function createTakClient({
       transport.connect({ ...authentication, identity });
     },
     disconnect() {
+      stopOwnPresence();
       transport.disconnect();
     },
     link: () => ({
@@ -286,6 +357,7 @@ export function createTakClient({
       gateway,
       lastReject,
       sessionExpired,
+      presenceStop: presenceStop ? { ...presenceStop } : null,
     }),
     clearPrivateState,
     counters: () => ({ ...counters }),
@@ -309,10 +381,13 @@ export function createTakClient({
             source: next.source === 'GPS' ? 'GPS' : 'USER',
           })
         : null;
+      if (!fix) stopOwnPresence();
+      refreshPositionAvailability();
       if (saEnabled && fix) beacon();
       notify();
     },
     fix: () => fix,
+    refreshPositionAvailability,
     /** Turn the periodic self-SA broadcast on/off. */
     setSaEnabled(enabled) {
       if (destroyed) return;
@@ -322,6 +397,7 @@ export function createTakClient({
         );
       saEnabled = !!enabled;
       restartSaTimer();
+      if (!saEnabled) stopOwnPresence();
       if (saEnabled) beacon();
       notify();
     },
@@ -490,6 +566,7 @@ export function createTakClient({
     },
     destroy({ forgetIdentity = false } = {}) {
       if (destroyed) return;
+      stopOwnPresence();
       destroyed = true;
       stopEvery(sweepTimer);
       if (saTimer) stopEvery(saTimer);
@@ -507,6 +584,8 @@ export function createTakClient({
       gateway = null;
       lastReject = null;
       linkState = 'closed';
+      ownPositionSubmitted = false;
+      presenceStop = null;
       if (forgetIdentity) identity = createIdentity();
     },
   });

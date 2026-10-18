@@ -5,6 +5,10 @@ Use this repository's `dev/tak-web-foundation` development line from
 public globe, layers, HUD, camera, scenes and voice remain available under their
 existing provider/key requirements.
 
+The current release candidate is intended for `main` after integration checks.
+This guide does not imply that the candidate has already been merged or that
+physical-device and native TAK peer acceptance are complete.
+
 The full GEV globe is the workspace for TAK. Google photorealistic 3D remains
 the preferred map when a configured Google/Cesium provider can supply it; the
 existing keyless globe is its fallback. The synthetic lab does not replace GEV
@@ -16,6 +20,18 @@ FAA VFR/IFR references alongside the original quick map controls. Read the
 source's coverage, edition/lifecycle and attribution notes. A chart rendering
 on the globe does not establish current navigation coverage or operational
 acceptance; see [TAK_MAP_SOURCES.md](docs/TAK_MAP_SOURCES.md).
+
+## Open the owner-private preview
+
+Open the [GEV TAK field preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
+with its owner account. This Sites deployment serves the built frontend. It
+does not run the private Node gateway, TAK Server connection, operator login
+service or server-side map storage. Use synthetic data for previewing the UI.
+
+For the local working lab, follow the next section. For operational TAK use,
+run the private HTTPS Node host described below and open that authorized origin
+in the browser or iPhone wrapper. The preview is not evidence of native-peer,
+physical-phone or full ATAK feature acceptance.
 
 ## Start the local working project
 
@@ -162,8 +178,15 @@ LAN mesh UDP is an opt-in gateway bridge, configured with `TAK_MESH=1` and
 `TAK_MESH_INTERFACE=<authorized-interface-IPv4>`. Browser JavaScript does not
 open raw UDP sockets. Enable it only on an authorized TAK segment. Mesh and TAK
 Server do not bridge to each other unless `TAK_BRIDGE=1` is explicitly set.
-Protocol-v1 protobuf, private/group chat and native plugins remain unsupported
-unless listed otherwise in [TAK_TODO.md](TAK_TODO.md).
+The mesh link decodes TAK protocol v1 (protobuf) datagrams as well as XML and
+sends XML, which every TAK client must accept. To let an authorized TAK Server
+switch the streaming connection to v1 when it offers it, add
+`TAK_SERVER_PROTOBUF=1` and use one of its `tls` streaming inputs (TAK Server
+5.7 does not offer v1 on `stcp`/`tcp`, and `prototls` inputs are unsupported);
+the default stays XML. The TAK panel's uplink line shows v1 counts and the
+negotiated server encoding. Scope, evidence and limits are in
+[TAK_PROTOCOL_V1.md](docs/TAK_PROTOCOL_V1.md). Private/group chat and native
+plugins remain unsupported unless listed otherwise in [TAK_TODO.md](TAK_TODO.md).
 
 ## Run the private HTTPS console on an EUD
 
@@ -255,16 +278,22 @@ to produce those local results.
 
 ## Install the iPhone package through AltStore Classic
 
+Download the retained [unsigned arm64 IPA](https://gev-tak-field-preview.jesselsullivan.chatgpt.site/downloads/GEVTAK-unsigned.ipa)
+from the owner-private preview. It requires personal signing before installation;
+it is a wrapper that opens your private HTTPS app, not a bundled Node gateway.
+
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is
-`output/ios/8c96791c/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
+`output/ios/28eb0c9e/GEVTAK-unsigned.ipa`, with adjacent `SHA256SUMS`,
 `provenance.json` and a simulator screenshot. The same package is in the
-[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/38999554419)
+[verified build artifact](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39002095999)
 while GitHub retains it. Its SHA-256 is
-`71ab99f7e74c1e9efb3321410f5e10b6a18b14da823441506620f1e8dbea5867`.
-Its PR test-merge `34edc257` has the same file tree as development `8c96791c`.
-The iOS job passed; a separate fresh browser CI run exposed an intermittent
-fixture-interception failure still under investigation. The archive was built
+`e412622077b8fc56349bb2fb6ad3df60e0e064a0e0a464c0029cf12619e992b5`.
+Its source is PR test-merge `2a59b57aefa4af8b41d282ea613e065d8332fd5a`,
+whose tree `941cc2a09065064f4519b11c7593e31d7115345d` matches development
+`28eb0c9e`. This retained package predates the current release candidate;
+it is not evidence that the candidate has passed iOS validation. The iOS job
+passed. The archive was built
 with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
 establish a physical-phone or configured-private-endpoint result.
 
@@ -313,6 +342,15 @@ MBTiles**. The default creates server and device copies and saves the offline
 app. **Source / license / edition** shows the retained notices and original
 file SHA-256. These notices survive `.gevmap` backups.
 
+To retain part of a larger file, set the area and minimum/maximum zoom in the
+controls above, then enable **Limit import to area and zooms entered above**.
+The unchecked default imports the whole file. A subset retains only existing
+tiles intersecting those limits; boundary tiles remain whole and sparse gaps
+remain blank. The panel shows the maximum cell count before upload. The entire
+original file still uploads and counts against quota, and its hash, original
+metadata and notices remain separate from the recorded selection. Showing or
+reopening a saved subset frames the requested area.
+
 Named accounts default to 128 MiB per pack and 256 MiB per account. During
 import the original SQLite file and normalized output both need reserved space.
 
@@ -325,7 +363,9 @@ there is no byte-upload resume. A completed server copy remains usable if a
 later device copy fails: use **Save to this device** or **Verify / refresh device
 copy**. Incomplete imported packs require the original file again; the USGS
 resume action does not repair them. Whole NOAA chart bundles can exceed the
-5,000-tile limit and are not automatically cropped or accepted. Read the
+5,000-tile limit; explicitly select a smaller area/detail to import a subset.
+The exercised retained NOAA file was an `SG_AREA` service-area overlay with
+observed May 2024 dates, not a verified current navigational chart. Read the
 [MBTiles format, permissions and limits](docs/TAK_MBTILES_IMPORT.md).
 
 Limits are 5,000 tiles and 512 MiB per pack, 32 packs and 2 GiB per store, with
@@ -363,6 +403,32 @@ app requires `npm run build` and the production HTTPS host. Read
 [the source/download ledger](docs/TAK_OFFLINE_MAP_PLAN.md) for licensed sources,
 terrain and chart import work that remains.
 
+## Drive offline with road packs
+
+Driving directions can be computed on the phone with no signal. Build a road
+pack at home from an OpenStreetMap extract, for example Geofabrik's
+`mississippi-latest.osm.pbf`:
+
+```sh
+node scripts/build-road-pack.mjs --input mississippi-latest.osm.pbf \
+  --name Mississippi --out mississippi.gevroads
+```
+
+Put the `.gevroads` file and its `.gevroads.json` manifest in
+`GEV_ROAD_PACK_DIR` on the private host (default `gods-eye-view/road-packs`
+under `LOCALAPPDATA`, `XDG_DATA_HOME` or `~/.local/share`). On the phone open
+**TAK → OFFLINE ROADS / ROUTING** and choose **Download to this device**. On
+the built private HTTPS app this also saves the app for offline launch, as a
+saved map does. Turn on Directions and choose Drive: when both ends are inside
+an installed pack, the route is computed on the device, never sent to a router,
+and its summary ends in `· offline`. Other trips and walking/cycling stay
+online.
+
+Car routing only, from OSM roads: no turn restrictions, traffic, closures or
+live guidance. Read [what the router knows and the evidence](docs/TAK_OFFLINE_ROADS.md).
+A physical iPhone has not yet been tested; install a pack, enable airplane
+mode, relaunch from the home screen and route before relying on it.
+
 ## Reproduce verification
 
 ```sh
@@ -381,6 +447,7 @@ loopback HTTPS servers and synthetic fixtures; run them sequentially:
 npm run qa:tak:private
 npm run qa:maps:offline
 npm run qa:maps:mbtiles
+node scripts/qa-offline-roads.mjs --https --pack-dir <road pack directory>
 ```
 
 Their reports and screenshots are written under `qa-artifacts/`. The latest

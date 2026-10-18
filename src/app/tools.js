@@ -7,6 +7,7 @@ import { initDrawTool } from '../annotations/drawTool.js';
 import { initImageryBoxTool } from '../ui/imageryBoxTool.js';
 import { createRecentImageryPanel } from '../ui/recentImagery.js';
 import { initGevVoiceCommands } from '../voice/gevRealtime.js';
+import { emconState } from '../emcon/boot.js';
 import { installViews, isEmbeddedInline } from './embed.js';
 import { installScopeMask, destroyScopeMask } from '../scopeMask.js';
 import {
@@ -62,6 +63,8 @@ export function createApplicationTools({
   // DATA ▸ Recent Imagery: the box tool claims the pointer like Draw and the
   // panel lives on the right rail, so both belong to the application
   // lifetime. The tileset lets the layer drape while the globe is hidden.
+  // FIS-B radar drapes on the tileset too while the globe is hidden.
+  dataManager.layers.get('fisb')?.module.attachTileset?.(tileset);
   const recentImagery = dataManager.layers.get('recent-imagery')?.module;
   if (recentImagery) {
     recentImagery.attachTileset(tileset);
@@ -200,6 +203,22 @@ export function createApplicationTools({
       delete window.__gevVoiceCommands;
   });
   debug.voiceCommands = voiceCommands;
+  defer(
+    emconState.subscribe((record) => {
+      if (!record) return;
+      for (const stop of [
+        () => voiceCommands.stop(),
+        () => dataManager.layers.get('radio')?.module.stopRadioPlayback?.(),
+        () => styleManager.hud?._summaryRequest?.abort(),
+      ]) {
+        try {
+          stop();
+        } catch {
+          // Independent owners must all get a chance to release their resources.
+        }
+      }
+    }),
+  );
   defer(
     installViews({
       shell: styleManager,

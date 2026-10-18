@@ -415,7 +415,11 @@ try {
       }));
       assert.deepEqual(
         initial.layers,
-        [...LAYER_STATE_REGISTRY.map(({ id }) => id), 'local-adsb'].sort(),
+        [
+          ...LAYER_STATE_REGISTRY.map(({ id }) => id),
+          'local-adsb',
+          'fisb',
+        ].sort(),
       );
       assert.deepEqual(initial.chips, CORE_MAP_IDS);
       assert.equal(initial.options.length, 8);
@@ -467,7 +471,8 @@ try {
         });
         assert.equal(state.active, source.id);
         assert(state.tak);
-        assert.equal(state.layers, 30);
+        // Every catalog layer survives the map change.
+        assert.equal(state.layers, LAYER_STATE_REGISTRY.length + 2);
         assert(state.details.includes(source.credit));
         assert(state.credits.includes(source.credit));
         assert.equal(state.maximumLevel, source.maximumLevel);

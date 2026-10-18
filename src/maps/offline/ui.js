@@ -161,6 +161,8 @@ export function createSavedMaps({
       <textarea data-mbtiles-license maxlength="8192" placeholder="License / permission notice" aria-label="Imported map license or permission notice" required></textarea>
       <input data-mbtiles-edition maxlength="512" placeholder="Edition / effective date (optional)" aria-label="Imported map edition or effective date">
       <input data-mbtiles-url maxlength="2048" type="url" placeholder="Source URL (optional; never fetched)" aria-label="Imported map informational source URL">
+      <label class="tak-web-check"><input type="checkbox" data-mbtiles-subset> Limit import to area and zooms entered above</label>
+      <p class="tak-web-hint" data-mbtiles-selection>Whole file: all supported tiles are imported within existing limits.</p>
       <label class="tak-web-check"><input type="checkbox" data-mbtiles-rights required> I am authorized to copy and retain this map and its notices.</label>
       <label class="tak-web-check"><input type="checkbox" data-mbtiles-phone checked> Also retain on this device and save the offline app</label>
       <p class="tak-web-hint">This assertion records your permission; it does not verify the license or authorize AI, screenshots, sharing or recording. File contents and source notices remain private.</p>
@@ -204,6 +206,8 @@ export function createSavedMaps({
         controller.removeLocalSource(stack.id);
     void storePromise?.then((store) => store.close()).catch(() => {});
     $('[data-offline-list]').replaceChildren();
+    $('[data-mbtiles-selection]').textContent =
+      'Reopen the application before choosing an import area.';
     for (const input of root.querySelectorAll('input, textarea')) {
       input.disabled = true;
       if (input.type === 'checkbox') input.checked = false;
@@ -239,6 +243,19 @@ export function createSavedMaps({
         `${tiles.length.toLocaleString()} tiles. Approx. ${size(tiles.length * 25_000)}; actual size varies. Limit ${OFFLINE_LIMITS.maxTiles.toLocaleString()} tiles / ${size(OFFLINE_LIMITS.maxPackBytes)}.`;
     } catch (error) {
       $('[data-offline-estimate]').textContent = error.message;
+    }
+    const subset = $('[data-mbtiles-subset]').checked;
+    try {
+      const { bounds, minZoom, maxZoom } = parameters();
+      const count = subset
+        ? planOfflineTiles({ bounds, minZoom, maxZoom }).length
+        : 0;
+      $('[data-mbtiles-selection]').textContent = subset
+        ? `Subset: area and zoom limits entered above; at most ${count} cells. Boundary tiles remain whole. The entire original file still uploads and counts against quota.`
+        : 'Whole file: all supported tiles are imported within existing limits.';
+    } catch (error) {
+      $('[data-mbtiles-selection]').textContent =
+        `Subset refused: ${error.message}`;
     }
   }
   function center() {
@@ -330,19 +347,20 @@ export function createSavedMaps({
     signal?.throwIfAborted();
     await controller.setStack(source.descriptor.id);
     if (destroyed || signal?.aborted) return;
+    const bounds = manifest.provenance?.selection?.bounds || manifest.bounds;
     navigate(() =>
       viewer.camera.flyTo({
         destination: Cesium.Rectangle.fromDegrees(
-          manifest.bounds.west,
-          manifest.bounds.south,
-          manifest.bounds.east,
-          manifest.bounds.north,
+          bounds.west,
+          bounds.south,
+          bounds.east,
+          bounds.north,
         ),
         duration: 1,
       }),
     );
     status(
-      `Showing saved ${manifest.name}. Outside its area/detail, tiles remain blank. ${manifest.provenance ? `Imported ${manifest.provenance.importedAt}. Edition: ${manifest.provenance.edition || 'not supplied'}.` : `Acquired ${manifest.acquiredAt || manifest.updatedAt}.`}`,
+      `Showing saved ${manifest.name}${manifest.provenance?.selection ? ' (imported subset)' : ''}. Outside its area/detail, tiles remain blank. ${manifest.provenance ? `Imported ${manifest.provenance.importedAt}. Edition: ${manifest.provenance.edition || 'not supplied'}.` : `Acquired ${manifest.acquiredAt || manifest.updatedAt}.`}`,
     );
   }
   async function copyToDevice(manifest, signal) {
@@ -468,7 +486,7 @@ export function createSavedMaps({
       const pack = entry.local || entry.server;
       const row = document.createElement('li');
       const label = document.createElement('p');
-      label.textContent = `${pack.name} · server ${entry.server?.state || 'unavailable'} · device ${entry.local?.state || 'absent'} · ${size(pack.downloadedBytes || 0)}`;
+      label.textContent = `${pack.name}${pack.provenance?.selection ? ' · imported subset' : ''} · server ${entry.server?.state || 'unavailable'} · device ${entry.local?.state || 'absent'} · ${size(pack.downloadedBytes || 0)}`;
       row.append(label);
       if (pack.sourceId === OFFLINE_IMPORTED_SOURCE)
         button(row, 'Source / license / edition', async (nextSignal) => {
@@ -486,7 +504,8 @@ export function createSavedMaps({
             row.append(notice);
           }
           const p = full.provenance;
-          notice.textContent = `Source: ${p.sourceTitle}\nLicense / permission: ${p.license}\nEdition / effective date: ${p.edition || 'not supplied'}\nImported: ${p.importedAt}\nOriginal SHA-256: ${p.sha256}\nInformational URL (not fetched): ${full.sourceUrl || 'not supplied'}`;
+          const s = p.selection;
+          notice.textContent = `Source: ${p.sourceTitle}\nLicense / permission: ${p.license}\nEdition / effective date: ${p.edition || 'not supplied'}\nImported: ${p.importedAt}\n${s ? `Imported subset: west ${s.bounds.west}, south ${s.bounds.south}, east ${s.bounds.east}, north ${s.bounds.north}; zoom ${s.minZoom}–${s.maxZoom}. Whole boundary tiles; sparse gaps remain blank.\n` : ''}Original SHA-256: ${p.sha256}\nInformational URL (not fetched): ${full.sourceUrl || 'not supplied'}`;
         });
       if (entry.local?.state === 'ready') {
         button(row, 'Show saved map', (nextSignal) =>
@@ -588,6 +607,9 @@ export function createSavedMaps({
   $('[data-mbtiles-form]').addEventListener('input', markPrivate, {
     signal: lifetime.signal,
   });
+  $('[data-mbtiles-subset]').addEventListener('change', estimate, {
+    signal: lifetime.signal,
+  });
   $('[data-mbtiles-form]').addEventListener(
     'submit',
     (event) => {
@@ -602,6 +624,10 @@ export function createSavedMaps({
         sourceUrl: $('[data-mbtiles-url]').value.trim(),
         authorized: $('[data-mbtiles-rights]').checked,
       };
+      if ($('[data-mbtiles-subset]').checked) {
+        const { bounds, minZoom, maxZoom } = parameters();
+        metadata.selection = { bounds, minZoom, maxZoom };
+      }
       const deviceCopy = $('[data-mbtiles-phone]').checked;
       selectedFile = null;
       $('[data-mbtiles-file]').value = '';

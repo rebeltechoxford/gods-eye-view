@@ -1,4 +1,4 @@
-# God's Eye View × TAK implementation and acceptance plan
+# God's Eye View Ã— TAK implementation and acceptance plan
 
 Updated: 2026-10-17 UTC. Work is integrated into `dev/tak-web-foundation` in
 `rebeltechoxford/gods-eye-view`; `main` is outside this work's execution authority.
@@ -315,9 +315,9 @@ assertion remains. The final foundation CI passed before PR #3 was integrated.
 
 ### Final preservation checks, 2026-10-16
 
-Locked development dependencies received compatible patches: `sharp` 0.35.4 →
+Locked development dependencies received compatible patches: `sharp` 0.35.4 â†’
 0.35.5 with matching platform binaries and `@img/sharp-libvips-*` 1.3.4 packages,
-and `source-map-js` 1.2.1 → 1.2.2, addressing the
+and `source-map-js` 1.2.1 â†’ 1.2.2, addressing the
 [sharp advisory](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) and
 [source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
 Full `npm audit` after the update reported zero vulnerabilities on 2026-10-16
@@ -506,9 +506,9 @@ PR #6 iOS job `38999554419` passed archive/payload/policy and iPhone 17 simulato
 checks; test-merge `34edc257` has the same file tree as dev. The downloaded IPA
 hash is recorded in the run guide. Fresh repository CI `38999554396` passed
 Node 24, Node 26 and Windows, but the named-account browser gate failed with
-unmatched `Fetch.fulfillRequest: Invalid InterceptionId` errors. That failure
-is retained and under investigation; the earlier 28 local browser passes do
-not erase it.
+unmatched `Fetch.fulfillRequest: Invalid InterceptionId` errors. That historical
+failure is retained. The causal navigation/commit correction below subsequently
+passed the full final-head CI run; earlier local passes alone did not resolve it.
 
 ## Local MBTiles integration, 2026-10-17 UTC
 
@@ -531,7 +531,7 @@ All **six** production Chromium phone scenarios passed after the final saved-map
 credit fix: actual File/HTTPS import, source notices and server/device retention,
 Cesium pixels/TMS inversion/sparse blank coverage, cancellation, real stopped-
 server fresh-page reopening, and logout clearing private form data before its
-request. The 390 × 844 viewport retained all 30 GEV registrations. The complete
+request. The 390 Ã— 844 viewport retained all 30 GEV registrations. The complete
 long notice remains keyboard-scrollable and unobstructed, verified by nine
 interior hit tests and screenshot review. These are synthetic Chromium results,
 not physical-phone acceptance. `npm run qa:maps:mbtiles` now runs in CI.
@@ -541,15 +541,140 @@ interception and a matching successful document commit before retiring its old
 request. Twenty-seven focused regressions include mismatched/late/unrelated
 navigation failures; unmatched protocol errors still fail. The earlier candidate
 passed all five jobs in [CI run 39000173643](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39000173643).
-That run predates the complete UI and final causal correction; a fresh final-head
-run is required before merging [PR #11](https://github.com/rebeltechoxford/gods-eye-view/pull/11).
+That run predates the complete UI and final causal correction. Final-head
+[CI run 39001491533](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39001491533)
+then passed all five jobs at `9d6e3c38`, including the whole-file phone gate.
+Its Linux Node 24 run passed 6,792 ordinary tests, one platform skip and all
+14 allocation checks. [PR #11](https://github.com/rebeltechoxford/gods-eye-view/pull/11)
+merged into development as `28eb0c9e`; main remained unchanged.
 
-A complete real NOAA MBTiles bundle exceeded the unchanged 5,000-tile cap. A
-small read-only experiment extracted one valid tile under the same resource
-limits, but production area/zoom selection is a separate increment described in
-[the subset plan](TAK_MBTILES_SUBSET_PLAN.md). Neither test establishes source
-currency, operational chart coverage, 3D terrain or a license to retain arbitrary
-commercial map data.
+A complete real NOAA MBTiles bundle exceeded the unchanged 5,000-tile cap.
+The subsequent area/zoom increment adds explicit selection in the phone form,
+bounded indexed SQLite reads with index-integrity verification, immutable original
+provenance, device/backup retention and selected-area camera framing. Whole-file
+behavior remains the unchecked default, and full source bytes still count against
+quota. CI exercises both modes independently.
+
+Six synthetic subset phone scenarios passed. The same single retained NOAA file
+also passed actual full-file HTTPS upload, one selected tile on server/device,
+Cesium rendering and a real stopped-listener fresh-page reopen. The observed
+`SG_AREA` content was a service-area overlay with 2024 source dates, not verified
+current navigation coverage. [The subset evidence](TAK_MBTILES_SUBSET_PLAN.md)
+records the exact file, tile, limits and the initial unsuccessful scratch pixel
+measurement. Physical EUD storage, broader chart packages, 3D terrain and source
+download rights remain separate acceptance work.
+
+## TAK protocol v1 lab run
+
+TAK Protocol Version 1 (protobuf) receive on the mesh and opt-in TAK Server
+stream negotiation are described, with scope and limits, in
+[TAK_PROTOCOL_V1.md](TAK_PROTOCOL_V1.md). Recorded on 2026-10-17 UTC with Node
+`24.14.0` on Linux x64:
+
+- The codec decodes four payloads built by an independent Google protobuf
+  `7.36.1` oracle from the published TAK descriptors, and re-encodes them
+  byte-identically, including mesh and stream framing.
+- Full unit suite: **6,857 passed**, one existing skip, zero failures (6,806
+  before this change). Formatting, import/package boundaries, setup doctor, the
+  layer-token check against `origin/main` and the production build passed.
+- `npm run tak:lab -- --protobuf` with
+  `npm run qa:tak -- --url http://127.0.0.1:4174 --lab --protobuf` passed all
+  **12** Chromium scenarios (Chromium `141.0.7390.37`, 07:46Z). The gate
+  requires the server uplink to report a negotiated `v1` encoding and the panel
+  to show `TAK protocol v1`.
+  The lab's marker correction and chat reply therefore crossed binary frames
+  both ways through the real gateway. The same `--protobuf` gate against the
+  XML-only lab failed at that wait, as intended.
+- The official TAK Server 5.7 negotiation and conversion source was read and
+  the codec aligned to it. That source was not built or run here.
+
+These are synthetic results. Real ATAK-CIV, WinTAK and iTAK v1 mesh traffic and
+a running TAK Server v1 negotiation remain open in [TAK_TODO.md](../TAK_TODO.md).
+
+## Offline driving directions run
+
+On-device car routing from OpenStreetMap road packs is described, with what
+the router does and does not model, in
+[TAK_OFFLINE_ROADS.md](TAK_OFFLINE_ROADS.md). Recorded on 2026-10-17 UTC with
+Node `24.14.0` on Linux x64 and Chromium `141.0.7390.37`:
+
+- A Mississippi pack (96.2 MiB; 876,340 junctions; 1,084,806 road segments;
+  OSM edition 2026-10-17T00:27Z) was built from the OSM France `us-south`
+  extract in 212 s with a 1.49 GB peak. On it, A\* matched exhaustive Dijkstra
+  on 39 of 39 random trips.
+- 33 routing unit tests in six files pass, including mutation checks: reverting
+  the hung-worker recovery or the exact-bytes transfer fails its test. Full
+  unit suite: **6,890 passed**, one existing skip, zero failures (6,857 before
+  this change). Formatting, import/package boundaries, setup doctor, the
+  layer-token check against `origin/main` and the production build passed.
+- A pre-existing race in MBTiles upload cleanup (a logout detaching the socket
+  before the request timeout was reset) failed 4 of 24 loaded runs of its test
+  on unmodified `dev`. Fixed separately; 24 of 24 then passed.
+- `scripts/qa-offline-roads.mjs` against `npm run tak:lab` passed 5 scenarios
+  with every online router refused (a control request proves the refusal).
+- `scripts/qa-offline-roads.mjs --https` against the production build passed
+  6 scenarios at 390 Ã— 844. After native login it installs the pack through the
+  panel and saves the offline app. Then it stops the server and opens a fresh
+  page from the service worker; the status endpoint is unreachable. That page
+  routed Oxford to Tupelo on the device (80 km, 59 min, 23 steps) in 1.8 s.
+- An earlier run exposed Puppeteer request interception leaving the dev-mode
+  route worker's module imports pending. The gate now pauses only router URLs.
+  The engine now retires a worker that does not answer, so one hung worker
+  cannot block later routes.
+
+These are synthetic browser results. A physical iPhone (storage quota, worker
+memory, eviction, airplane-mode relaunch) remains open in
+[TAK_TODO.md](../TAK_TODO.md).
+
+## EMCON run
+
+Historical contributor evidence below predates the integration review. Its proxy
+cut existing tunnels, so it did not establish app-driven stream closure. The
+revised gate retains tunnels and observes a real WebSocket at both ends; see
+[the release review](TAK_RELEASE_REVIEW.md) for current acceptance status.
+
+Emissions control is described, with its limits, in
+[TAK_EMCON.md](TAK_EMCON.md). Recorded on 2026-10-18 UTC with Node `24.14.0`
+on Linux x64 and Chromium `141.0.7390.37`:
+
+- Nine new unit tests (page guard, persistence, layer freeze, service-worker
+  cache-only mode). Formatting, import/package boundaries, setup doctor and the
+  production build passed.
+- `npm run qa:emcon` passed 7 scenarios against the production build on a
+  non-loopback HTTPS origin. Server log, recording proxy and DevTools network
+  events all recorded zero app requests during 30 s of use under EMCON and
+  across a reload from the saved app; the browser's own service-worker update
+  check and Chromium services are counted separately. An offline drive, a
+  received contact and frozen flights stayed usable.
+- `qa-tak.mjs --lab --protobuf` (12), `qa:maps:offline` (8) and
+  `qa-offline-roads.mjs --https` (6) passed unchanged.
+
+Device radios, browser update checks and the private host's uplinks are out of
+reach of a web page; a physical iPhone in Airplane Mode and a host-side EMCON
+switch remain open in [TAK_TODO.md](../TAK_TODO.md).
+
+## FIS-B weather run
+
+The FIS-B Weather layer is described, with its limits, in [FISB.md](FISB.md).
+Recorded on 2026-10-18 UTC with Node `24.14.0` on Linux x64 and Chromium
+`141.0.7390.37`:
+
+- The independently written decoder matches fisb-decode's level-0 output
+  frame for frame on FIS-B test groups 28, 29 and a 64-uplink cover of group
+  30 (every product type, two segmented files), and reproduces the GDL 90 ICD
+  examples. The store decoded all 6,232 frames of the full group 30 capture
+  with zero errors. Seven deliberate decoder mutations each fail a test.
+- 32 new unit tests; full unit suite **6,917 passed**, one existing skip, zero
+  failures. Formatting, import/package boundaries, setup doctor and the
+  production build passed.
+- `npm run qa:fisb` passed 6 scenarios against the production HTTPS host fed
+  by a synthetic dump978-fa receiver: closed before sign-in, stations by flight
+  category, TFR and AIRMET outlines, NEXRAD image, a station card, clean
+  removal.
+- The catalog is now 31 layers (FIS-B is local-only, like Local ADS-B).
+  `qa-tak.mjs --lab --protobuf` passed 12 scenarios with the new catalog.
+
+A real ground station has not been heard yet; that needs the owner's receiver.
 
 ## Current external prerequisites
 

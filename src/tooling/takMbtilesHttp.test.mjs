@@ -296,6 +296,11 @@ test('real private HTTPS import inherits login, exact Origin and named scope; ot
   const f = await setup(t),
     { request } = f,
     api = '/api/maps/offline/imports';
+  const selection = {
+    bounds: { west: -89, south: -80, east: -1, north: -10 },
+    minZoom: 2,
+    maxZoom: 2,
+  };
   assert.equal(
     (
       await request(api, {
@@ -336,7 +341,7 @@ test('real private HTTPS import inherits login, exact Origin and named scope; ot
     ...alpha,
     method: 'POST',
     origin: f.app.origin,
-    body: JSON.stringify(f.input),
+    body: JSON.stringify({ ...f.input, selection }),
   });
   assert.equal(created.status, 202);
   const id = created.json().id;
@@ -370,6 +375,8 @@ test('real private HTTPS import inherits login, exact Origin and named scope; ot
   );
   assert.equal(manifest.status, 200);
   assert.equal(manifest.json().schemaVersion, 2);
+  assert.deepEqual(manifest.json().provenance.selection, selection);
+  assert.deepEqual(manifest.json().plannedKeys, ['2/1/3']);
   assert.equal(
     (await request(`/api/maps/offline/packs/${job.packId}`, bravo)).status,
     404,

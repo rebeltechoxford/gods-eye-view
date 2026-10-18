@@ -8,9 +8,16 @@ const worker = readFileSync(
   'utf8',
 );
 const origin = 'https://gev.internal.test';
-function run(fetchImpl, timers = { setTimeout, clearTimeout }, hooks = {}) {
+function runWithStorage(fetchImpl, storage) {
+  return run(fetchImpl, undefined, {}, storage);
+}
+function run(
+  fetchImpl,
+  timers = { setTimeout, clearTimeout },
+  hooks = {},
+  storage = new Map(),
+) {
   const handlers = new Map();
-  const storage = new Map();
   const requests = [];
   const caches = {
     async has(name) {
@@ -33,6 +40,12 @@ function run(fetchImpl, timers = { setTimeout, clearTimeout }, hooks = {}) {
         async put(key, response) {
           await hooks.beforePut?.(name, key);
           entries.set(new URL(key, origin).href, response.clone());
+        },
+        async delete(key) {
+          return entries.delete(new URL(key, origin).href);
+        },
+        async keys() {
+          return [...entries.keys()].map((url) => new Request(url));
         },
       };
     },
@@ -71,6 +84,8 @@ function run(fetchImpl, timers = { setTimeout, clearTimeout }, hooks = {}) {
   return {
     requests,
     storage,
+    // Let a cold-started worker finish reading its stored EMCON flag.
+    ready: () => new Promise((resolve) => setTimeout(resolve, 0)),
     fetch(path, mode = 'navigate', method = 'GET') {
       let response;
       handlers.get('fetch')({
@@ -126,6 +141,7 @@ function fixture() {
 }
 test('worker excludes private/API/share/external requests and persists nothing by default', async () => {
   const handle = run(async () => new Response('SYNTHETIC ONLINE RESPONSE'));
+  await handle.ready();
   for (const [path, mode, method] of [
     ['/api/tak/status', 'cors', 'GET'],
     ['/api/tak/session', 'cors', 'POST'],
@@ -562,4 +578,115 @@ test('named offline manifest scope mismatch propagates session retirement withou
   assert.equal(result.ok, false);
   assert.equal(result.sessionExpired, true);
   assert.equal(handle.storage.size, 0);
+});
+
+test('EMCON: the saved app answers everything and nothing reaches the network', async () => {
+  const { files, manifest } = fixture();
+  const handle = run(async (url) => {
+    if (url === '/api/maps/offline/shell')
+      return new Response(JSON.stringify(manifest));
+    const path = new URL(url, origin).pathname;
+    if (files.has(path)) return new Response(files.get(path));
+    return new Response('SYNTHETIC ONLINE RESPONSE');
+  });
+  await handle.ready();
+  assert.equal((await handle.message('GEV_SHELL_SAVE')).ok, true);
+  assert.equal(
+    (await handle.message('GEV_EMCON', 'approved', { active: true })).active,
+    true,
+  );
+  handle.requests.length = 0;
+  // Navigations, with or without a query, get the saved app.
+  for (const path of ['/', '/index.html', '/?lat=34&lon=-89'])
+    assert.equal(
+      await (await handle.fetch(path)).text(),
+      '<html>PUBLIC APPLICATION SHELL</html>',
+    );
+  assert.equal(
+    await (await handle.fetch('/assets/app.js', 'cors')).text(),
+    '/* synthetic public app */',
+  );
+  // Everything the worker normally lets through is refused here instead.
+  for (const [path, mode, method] of [
+    ['/api/tak/status', 'cors', 'GET'],
+    ['/api/tak/session', 'cors', 'POST'],
+    ['https://tile.example.org/1/2/3.png', 'no-cors', 'GET'],
+    ['/assets/missing.js', 'cors', 'GET'],
+    ['/fonts/x.woff2?v=2', 'cors', 'GET'],
+  ]) {
+    const response = await handle.fetch(path, mode, method);
+    assert.equal(response.type, 'error', path);
+  }
+  assert.equal((await handle.fetch('/login')).status, 503);
+  assert.deepEqual(handle.requests, [], 'no request left the worker');
+  // Turning EMCON off restores the normal network-first behaviour.
+  assert.equal(
+    (await handle.message('GEV_EMCON', 'approved', { active: false })).active,
+    false,
+  );
+  assert.equal(handle.fetch('/api/tak/status', 'cors'), undefined);
+});
+
+test('EMCON survives a worker restart and is read before the first navigation', async () => {
+  const { files, manifest } = fixture();
+  const network = async (url) => {
+    if (url === '/api/maps/offline/shell')
+      return new Response(JSON.stringify(manifest));
+    const path = new URL(url, origin).pathname;
+    if (files.has(path)) return new Response(files.get(path));
+    return new Response('SYNTHETIC ONLINE RESPONSE');
+  };
+  const first = run(network);
+  await first.ready();
+  assert.equal((await first.message('GEV_SHELL_SAVE')).ok, true);
+  await first.message('GEV_EMCON', 'approved', { active: true });
+  // A fresh worker over the same Cache Storage, as after the browser stops it.
+  const restarted = runWithStorage(network, first.storage);
+  // Non-shell requests can be the first event after a worker restart. They
+  // must wait for the same stored decision as navigation, including writes.
+  const early = [
+    restarted.fetch('/api/tak/status', 'cors'),
+    restarted.fetch('/api/tak/session', 'cors', 'POST'),
+    restarted.fetch('https://x.example/stream', 'no-cors'),
+  ];
+  for (const response of early) {
+    assert.ok(response, 'every cold-start fetch is held');
+    assert.equal((await response).type, 'error');
+  }
+  const navigation = restarted.fetch('/?welcome=0');
+  assert.ok(navigation, 'a cold navigation waits for the stored flag');
+  assert.equal(
+    await (await navigation).text(),
+    '<html>PUBLIC APPLICATION SHELL</html>',
+  );
+  assert.deepEqual(restarted.requests, []);
+  assert.equal((await restarted.message('GEV_SHELL_SAVE')).ok, false);
+  assert.deepEqual(
+    restarted.requests,
+    [],
+    'EMCON also refuses save-message fetches',
+  );
+  // Unapproved senders cannot switch it off.
+  await restarted.message('GEV_EMCON', 'stranger', { active: false });
+  assert.equal(
+    (await restarted.fetch('https://x.example/', 'no-cors')).type,
+    'error',
+  );
+});
+
+test('EMCON off persists nothing, and leaving EMCON removes what entering stored', async () => {
+  const network = async () => new Response('SYNTHETIC ONLINE RESPONSE');
+  const handle = run(network);
+  await handle.ready();
+  // Every page load reports EMCON off; that alone must not create storage.
+  assert.equal(
+    (await handle.message('GEV_EMCON', 'approved', { active: false })).active,
+    false,
+  );
+  assert.deepEqual([...handle.storage.keys()], []);
+  // Entering stores the flag; leaving removes the cache it created.
+  await handle.message('GEV_EMCON', 'approved', { active: true });
+  assert.equal(handle.storage.size, 1);
+  await handle.message('GEV_EMCON', 'approved', { active: false });
+  assert.deepEqual([...handle.storage.keys()], []);
 });

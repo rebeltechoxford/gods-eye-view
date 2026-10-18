@@ -203,7 +203,11 @@ export function authenticateTakPrincipal(principals, id, token) {
   return validToken && matches && principal?.enabled ? principal : null;
 }
 
-export function principalGatewayConfig(principal, accessPolicy) {
+export function principalGatewayConfig(
+  principal,
+  accessPolicy,
+  { deviceStreams = false } = {},
+) {
   return Object.freeze({
     enabled: true,
     token: randomBytes(32).toString('hex'),
@@ -213,6 +217,7 @@ export function principalGatewayConfig(principal, accessPolicy) {
     storageScope: principal.storageScope,
     accessPolicy,
     localBootstrap: false,
+    deviceStreams: deviceStreams === true,
     mesh: null,
     server: principal.server,
     bridge: false,

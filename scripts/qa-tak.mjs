@@ -3,9 +3,10 @@
  * Synthetic TAK browser acceptance against a running GEV server.
  *   node scripts/qa-tak.mjs --url http://localhost:4174
  *   TAK_QA_TOKEN=<synthetic token> node scripts/qa-tak.mjs --url ... --gateway
- * Options: --lab (also verifies synthetic lab replies), --fonts (allow only
- * Google CSS/font requests for visual evidence), --headful,
- * --artifact-dir <path>, --timeout <milliseconds>.
+ * Options: --lab (also verifies synthetic lab replies), --protobuf (with a
+ * `tak:lab -- --protobuf` lab: requires the server uplink to have negotiated
+ * TAK protocol v1), --fonts (allow only Google CSS/font requests for visual
+ * evidence), --headful, --artifact-dir <path>, --timeout <milliseconds>.
  * TAK fixtures and imagery are hermetic. This does not prove real TAK peer
  * interoperability. --gateway exercises only the configured local gateway.
  */
@@ -39,6 +40,8 @@ assert(
   'QA runs only against an explicitly local app',
 );
 const lab = argv.includes('--lab');
+const protobuf = argv.includes('--protobuf');
+assert(!protobuf || lab, '--protobuf requires --lab');
 const gateway = argv.includes('--gateway') || lab;
 const fonts = argv.includes('--fonts');
 const token = process.env.TAK_QA_TOKEN || '';
@@ -51,6 +54,7 @@ assert(
 const expectedLayers = [
   ...LAYER_STATE_REGISTRY.map((entry) => entry.id),
   'local-adsb',
+  'fisb',
 ].sort();
 const tile = await fs.readFile(
   new URL(
@@ -410,7 +414,7 @@ try {
         map: window.__godsEyeView.mapStackController.getActiveId(),
       }));
       assert.deepEqual(state.layers, expectedLayers);
-      assert.equal(state.layers.length, 30);
+      assert.equal(state.layers.length, 31);
       assert.equal(state.map, 'osm');
       assert(
         ['idle', 'closed'].includes(state.network),
@@ -901,6 +905,15 @@ try {
         await page.waitForFunction(
           () => window.__godsEyeView.takClient.client.link().state === 'open',
         );
+        if (protobuf) {
+          // Negotiate before either round trip, so an XML exchange followed
+          // by a late upgrade cannot satisfy the binary-transport gate.
+          await page.waitForFunction(
+            () =>
+              window.__godsEyeView.takClient.client.link().gateway?.server
+                ?.encoding === 'v1',
+          );
+        }
         assert.deepEqual(
           await page.evaluate(() => ({
             tx: window.__godsEyeView.takClient.client.counters().tx,
@@ -1042,6 +1055,23 @@ try {
           await captureEvidence(page, 'desktop-lab-return');
         }
         await section(page, 'network');
+        if (protobuf) {
+          // The negotiated encoding must also remain active after both replies.
+          await page.waitForFunction(
+            () =>
+              window.__godsEyeView.takClient.client.link().gateway?.server
+                ?.encoding === 'v1',
+          );
+          await page.waitForFunction(() =>
+            /TAK protocol v1/.test(
+              document.querySelector('[data-tak-uplinks]')?.textContent || '',
+            ),
+          );
+          await page.$eval('[data-tak-uplinks]', (element) =>
+            element.scrollIntoView({ block: 'center' }),
+          );
+          await captureEvidence(page, 'desktop-tak-protocol-v1');
+        }
         await press(page, '[data-tak-disconnect]');
         await page.waitForFunction(() =>
           ['idle', 'closed'].includes(
@@ -1211,6 +1241,7 @@ try {
         syntheticOnly: true,
         localGateway: gateway,
         localSyntheticPeerRoundtrip: lab,
+        takProtocolV1Uplink: protobuf,
         externalFontsAllowed: fonts,
         visualStates,
         imageryRequests,
@@ -1237,6 +1268,7 @@ try {
         syntheticOnly: true,
         localGateway: gateway,
         localSyntheticPeerRoundtrip: lab,
+        takProtocolV1Uplink: protobuf,
         externalFontsAllowed: fonts,
         visualStates,
         results,
