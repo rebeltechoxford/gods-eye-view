@@ -88,7 +88,8 @@
  *   --source-base <path>  Browser module prefix (default /src)
  *   --url <url>        App URL (default http://localhost:4173)
  *   --headful          Show the browser (debugging)
- *   --offline-imagery  Use bundled texture for known Esri/OSM tile images only
+ *   --offline-imagery  Synthetic public imagery/metadata and terrain fallback;
+ *                      no live public providers (tracking feeds stay synthetic)
  *   --keep-open        Leave the browser open after the run (debugging)
  */
 
@@ -96,6 +97,7 @@ import fs from 'node:fs';
 import puppeteer from 'puppeteer';
 import { classifyAircraft, CLASS_SCALE_3D, CLASS_MODEL_REAL } from '../src/data/aircraftClass.js';
 import { ensureGeoidReady, geoidHeight } from '../src/data/geoid.js';
+import { interceptFixtures } from './qa-fixtureInterception.mjs';
 
 // ---------------------------------------------------------------------------
 // Args
@@ -203,14 +205,19 @@ async function main() {
   console.log(`  App URL : ${APP_URL}`);
   console.log(`  Mode    : ${HEADFUL ? 'headful' : 'headless'}\n`);
 
-  // Tracking does not assert imagery geography. This optional fixture leaves
-  // provider metadata, terrain, models and every tracking assertion untouched.
+  // Tracking does not assert imagery geography. This optional fixture uses
+  // the same public imagery/metadata and terrain fallback as qa-tak. Local
+  // models and every tracking assertion still run through the real app.
   // Read before launching so a missing bundled asset fails explicitly.
   const offlineImageryTile = OFFLINE_IMAGERY
     ? fs.readFileSync(new URL('../node_modules/cesium/Build/Cesium/Assets/Textures/NaturalEarthII/0/0/0.jpg', import.meta.url))
     : null;
   let offlineImageryRequests = 0;
-  if (OFFLINE_IMAGERY) console.log('  Imagery : bundled NaturalEarthII fixture (tile images only)');
+  let offlineMetadataRequests = 0;
+  let offlineTerrainRequests = 0;
+  let offlinePublicRequests = 0;
+  const expectedTerrainFailures = new Set();
+  if (OFFLINE_IMAGERY) console.log('  Imagery : synthetic public fixtures; bundled NaturalEarthII and flat terrain fallback');
 
   // Verify the dev server is up before launching a browser.
   try {
@@ -259,17 +266,18 @@ async function main() {
   const consoleErrors = [];
   const failedResponses = [];
   const sawLog = { detection: false, readout: false };
+  let interception;
 
   try {
     const page = await browser.newPage();
-  await page.evaluateOnNewDocument((base) => { window.__gevQaSourceBase = base; }, SOURCE_BASE);
+    await page.evaluateOnNewDocument((base) => { window.__gevQaSourceBase = base; }, SOURCE_BASE);
     await page.setViewport({ width: 1280, height: 800 });
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
+    // CDP fixtures avoid Puppeteer's cross-target request-ID correlation,
+    // which can leave Cesium module worker imports pending in pinned Chrome.
+    interception = await interceptFixtures(page, { origin: APP_ORIGIN, handle: async (request) => {
       const url = new URL(request.url());
-      // Reuse the one existing interceptor; do not install competing handlers.
-      // Exact HTTPS origins and image paths only: metadata, feature queries,
-      // other providers, terrain and local/model resources continue normally.
+      // Exact HTTPS origins and tile paths only; application/model resources
+      // pass directly through the shared helper.
       const knownImageryTile = request.method() === 'GET' && (
         (url.origin === 'https://services.arcgisonline.com'
           && /^\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/\d+\/\d+\/\d+$/.test(url.pathname))
@@ -278,7 +286,7 @@ async function main() {
       );
       if (OFFLINE_IMAGERY && knownImageryTile) {
         offlineImageryRequests++;
-        request.respond({
+        await request.respond({
           status: 200,
           contentType: 'image/jpeg',
           headers: { 'Access-Control-Allow-Origin': '*' },
@@ -286,16 +294,73 @@ async function main() {
         });
         return;
       }
+      if (OFFLINE_IMAGERY && request.method() === 'GET'
+        && url.origin === 'https://services.arcgisonline.com'
+        && url.pathname === '/ArcGIS/rest/services/World_Imagery/MapServer') {
+        offlineMetadataRequests++;
+        await request.respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: JSON.stringify({
+            currentVersion: 10.81,
+            fullExtent: {
+              xmin: -20037508.342787, ymin: -20037508.342787,
+              xmax: 20037508.342787, ymax: 20037508.342787,
+              spatialReference: { wkid: 102100 },
+            },
+            tileInfo: {
+              rows: 256, cols: 256,
+              origin: { x: -20037508.342787, y: 20037508.342787 },
+              spatialReference: { wkid: 102100 },
+              lods: Array.from({ length: 20 }, (_, level) => ({
+                level,
+                resolution: 156543.033928 / 2 ** level,
+                scale: 591657527.591555 / 2 ** level,
+              })),
+            },
+          }),
+        });
+        return;
+      }
+      if (OFFLINE_IMAGERY && url.origin === 'https://terrain.reearth.land') {
+        // A fake successful {} can be interpreted as legacy heightmap data.
+        // Explicit failure exercises the app's real flat-ellipsoid fallback.
+        offlineTerrainRequests++;
+        expectedTerrainFailures.add(url.href);
+        await request.respond({
+          status: 400,
+          contentType: 'text/plain',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: 'Synthetic terrain unavailable',
+        });
+        return;
+      }
       if (url.origin === APP_ORIGIN && url.pathname === '/api/openai/hud-summary') {
-        request.respond({
+        await request.respond({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({ summary: 'QA globe ready' }),
         });
         return;
       }
-      request.continue();
-    });
+      if (OFFLINE_IMAGERY && ((url.origin === APP_ORIGIN
+        && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/tak/'))
+        || url.origin !== APP_ORIGIN)) {
+        // Tracking's typed fetch shim below owns flights, military, satellites,
+        // vessels and scene lookups. Other public services use qa-tak's empty
+        // fixture policy, never a live proxy/provider in the isolated run.
+        offlinePublicRequests++;
+        await request.respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: '{}',
+        });
+        return;
+      }
+      await request.continue();
+    } });
 
     page.on('console', (msg) => {
       const text = msg.text();
@@ -309,7 +374,12 @@ async function main() {
         // errors (TypeError, unhandled rejection, etc.) are still captured.
         const isBenign404 = /Failed to load resource.*404/i.test(text);
         const sourceUrl = msg.location()?.url || '';
-        if (!isBenign404) consoleErrors.push(sourceUrl ? `${text} [${sourceUrl}]` : text);
+        // Only the exact 400 URLs deliberately fulfilled above are expected.
+        // Keep every JS exception and every other resource error observable.
+        const isFixtureTerrainFailure = OFFLINE_IMAGERY
+          && /^Failed to load resource: the server responded with a status of 400\b/i.test(text)
+          && expectedTerrainFailures.has(sourceUrl);
+        if (!isBenign404 && !isFixtureTerrainFailure) consoleErrors.push(sourceUrl ? `${text} [${sourceUrl}]` : text);
       }
       // Surface a trace for debugging, but keep it quiet.
       if (process.env.GEV_TEST_VERBOSE) console.log(`    [page:${type}] ${text}`);
@@ -4125,8 +4195,9 @@ async function main() {
 
     finishAndExit();
   } finally {
-    if (OFFLINE_IMAGERY) console.log(`  Bundled imagery tiles served: ${offlineImageryRequests}`);
+    if (OFFLINE_IMAGERY) console.log(`  Synthetic fixtures: ${offlineImageryRequests} imagery tiles, ${offlineMetadataRequests} metadata, ${offlineTerrainRequests} terrain fallbacks, ${offlinePublicRequests} other public requests`);
     if (!KEEP_OPEN) {
+      await interception?.dispose();
       await browser.close();
     } else {
       console.log('\n--keep-open set; leaving browser running. Ctrl-C to exit.');
@@ -4134,6 +4205,8 @@ async function main() {
   }
 
   function finishAndExit() {
+    record('no fixture interception failures', !interception?.errors.length,
+      interception?.errors.length ? interception.errors.slice(-3).join(' | ') : 'clean');
     const failed = results.filter((r) => r.ok === false);
     const passed = results.filter((r) => r.ok === true);
     const skipped = results.filter((r) => r.ok === null);

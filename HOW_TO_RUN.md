@@ -21,6 +21,18 @@ source's coverage, edition/lifecycle and attribution notes. A chart rendering
 on the globe does not establish current navigation coverage or operational
 acceptance; see [TAK_MAP_SOURCES.md](docs/TAK_MAP_SOURCES.md).
 
+## Open the owner-private preview
+
+Open the [GEV TAK field preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
+with its owner account. This Sites deployment serves the built frontend. It
+does not run the private Node gateway, TAK Server connection, operator login
+service or server-side map storage. Use synthetic data for previewing the UI.
+
+For the local working lab, follow the next section. For operational TAK use,
+run the private HTTPS Node host described below and open that authorized origin
+in the browser or iPhone wrapper. The preview is not evidence of native-peer,
+physical-phone or full ATAK feature acceptance.
+
 ## Start the local working project
 
 Install Node **24.14.0 or newer in the 24.x line**, or Node **26.x**, then open
@@ -265,6 +277,10 @@ deployment, private LAN listener or device trust-store change was performed
 to produce those local results.
 
 ## Install the iPhone package through AltStore Classic
+
+Download the retained [unsigned arm64 IPA](https://gev-tak-field-preview.jesselsullivan.chatgpt.site/downloads/GEVTAK-unsigned.ipa)
+from the owner-private preview. It requires personal signing before installation;
+it is a wrapper that opens your private HTTPS app, not a bundled Node gateway.
 
 The unsigned device package was built and validated on real macOS/Xcode and
 started in an iPhone simulator. The verified handoff copy is

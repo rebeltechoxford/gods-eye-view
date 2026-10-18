@@ -1094,6 +1094,7 @@
   "src/emcon/ui.js",
   "src/emcon/emcon.css",
   "src/emcon/guard.test.mjs",
+  "src/emcon/boot.test.mjs",
   "src/data/emconLifecycle.test.mjs",
   "scripts/qa-emcon.mjs",
   "src/sources/fisb/decode.test.mjs",

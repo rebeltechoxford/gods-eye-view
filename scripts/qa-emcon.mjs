@@ -645,6 +645,9 @@ try {
     await booted();
     await page.waitForSelector('[data-emcon="banner"]:not([hidden])');
     await sleep(15000);
+    summary.reloadBlockedRequests = await page.evaluate(
+      () => globalThis[Symbol.for('gev.emcon.guard')]?.blocked() || [],
+    );
     const leaks = emissionsSince(reloadAt);
     await page.screenshot({
       path: path.join(artifactDir, 'emcon-after-reload.png'),

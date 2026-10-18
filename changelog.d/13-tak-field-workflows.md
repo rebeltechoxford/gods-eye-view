@@ -68,6 +68,8 @@
 - Preserve authorized MBTiles area/zoom subsets and bounded opt-in device
   presence streams. Reject covered offline-routing failures locally, bound
   derived indexes, fence canceled downloads and expire failed weather snapshots.
+  Saved-app startup waits for cache-only worker acknowledgement before Cesium
+  requests its static assets; a missing acknowledgement keeps requests blocked.
 
 Original feature commits by Claude are preserved in the merge history.
 Validation and release status: see `docs/TAK_RELEASE_REVIEW.md`.

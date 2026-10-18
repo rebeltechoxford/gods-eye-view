@@ -171,6 +171,7 @@ jobs:
               exit 1
             fi
             node scripts/qa-tak.mjs --lab --protobuf --url http://127.0.0.1:4174 || failed=1
+            npm run test:track -- --url http://127.0.0.1:4174 --offline-imagery 2>&1 | tee qa-artifacts/release-review/tracking.log || failed=1
             sha256sum --check qa-artifacts/release-review/dist-sha256.txt > qa-artifacts/release-review/dist-unchanged.txt || failed=1
             exit "$failed"
           '

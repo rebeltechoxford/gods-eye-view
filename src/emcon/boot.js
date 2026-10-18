@@ -56,8 +56,12 @@ export function syncEmconWorker(
   });
 }
 
-// Keep the worker aligned at every start and when another tab changes it.
-void syncEmconWorker(emconState.isActive());
+// On a saved-app cold launch the guard is already active, but static files
+// must wait for the worker's cache-only acknowledgment. Scene construction
+// starts Cesium asset requests immediately, so main awaits this bounded sync
+// before starting the application. A timeout does not open the guard.
+export const emconStartupReady = syncEmconWorker(emconState.isActive());
+// Keep the worker aligned when another tab changes state.
 emconState.subscribe((record) => {
   if (record) emconGuard.stopActive();
   void syncEmconWorker(Boolean(record));

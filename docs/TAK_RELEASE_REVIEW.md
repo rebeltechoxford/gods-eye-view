@@ -4,7 +4,7 @@
 
 Repository: `rebeltechoxford/gods-eye-view`. The user authorized verified
 integration into `dev/tak-web-foundation` and then `main`. Preserve at least
-80% account usage remaining; at most eight agents. Four agents were active.
+69% account usage remaining; at most eight agents. Four agents were active.
 No operational service, physical receiver or native TAK client was connected
 by this review. Private Sites publication is a frontend preview only.
 
@@ -41,9 +41,25 @@ Historical evidence is not acceptance of this combined tree:
   combined candidate must pass that gate before integration.
 - Device-stream focused run: 86 tests previously passed. Official-server rapid
   same-UID replacement evidence remains incomplete; streams stay opt-in.
-- Review edits have syntax/static checks; consolidated runtime acceptance is
-  pending. The restricted review workflow records the exact tested revision,
-  tests, build hashes and browser evidence, and reuses one production build.
+- Combined candidate `c174e8df`: all five ordinary CI jobs passed in
+  [run 39168092428](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39168092428).
+  The restricted run passed setup, adopted formatting, package boundaries,
+  layer-token checks, 7,026 ordinary tests (one existing skip), all 14 allocation
+  checks, production build and six offline-road browser scenarios. Seven EMCON
+  scenarios passed, but two unhandled Cesium request rejections failed its final
+  error assertion. This was a failed run, not release acceptance.
+- Diagnostic candidate `a8608882`, restricted
+  [run 39169076711](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39169076711):
+  all the preceding non-EMCON checks passed again, plus six FIS-B and twelve
+  protobuf synthetic TAK browser scenarios. Both EMCON rejections occur only
+  during saved-app cold reload. Strict page-error assertions remain in place.
+  Ordinary CI's Street Level job failed during Puppeteer's browser installation
+  (unsettled top-level await), before application execution; the previous job
+  passed. Final acceptance must rerun it successfully.
+
+The restricted workflow records the exact tested revision, tests, build hashes
+and browser evidence, and reuses one production build. Tracking regression uses
+the existing synthetic Vite lab and deterministic public-provider fixtures.
 
 The host has WSL1 without usable network namespaces. Runtime review therefore
 uses a disposable GitHub Ubuntu VM with Bubblewrap, private home/tmp, scrubbed
@@ -62,3 +78,17 @@ See `../HOW_TO_RUN.md` and `../TAK_TODO.md` for operator and follow-up guides.
 
 Release decision: pending the combined candidate's checks. Do not represent
 this application as complete ATAK parity or an operational aviation briefing.
+
+## Private preview and native package
+
+The [owner-private Sites preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
+was deployed from the key-free `c174e8df` production artifact after verifying all
+459 production file hashes. It hosts the frontend and download guides, not the
+private Node gateway, raw TCP/TLS uplinks or receiver processes. Browser inspection
+verified the local artifact's globe/TAK UI and the hosted ChatGPT access gate.
+
+The retained arm64 IPA from dev `28eb0c9e` has SHA-256
+`e412622077b8fc56349bb2fb6ad3df60e0e064a0e0a464c0029cf12619e992b5`.
+Native sources and the archive script are unchanged in this candidate; the
+wrapper loads the current private web application. Personal signing and physical
+iPhone acceptance remain required. No redundant native archive was built.

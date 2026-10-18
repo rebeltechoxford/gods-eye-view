@@ -7,8 +7,28 @@ the local app/lab. The detailed preservation inventory and parity ledger are in
 are in [TAK_IMPLEMENTATION_PLAN.md](docs/TAK_IMPLEMENTATION_PLAN.md).
 
 The release candidate targets `main` after verification. Candidate integration
-checks and a new iOS artifact remain separate from the earlier evidence below;
+checks and physical iPhone acceptance remain separate from the earlier evidence below;
 this document does not record a completed main merge.
+
+## Release checkpoint
+
+- The [owner-private Sites preview](https://gev-tak-field-preview.jesselsullivan.chatgpt.site)
+  is available as a frontend preview. The private Node gateway, operator login,
+  TAK transport and server map storage still run on the private host described
+  in the run guide; Sites does not supply those services.
+- The retained [unsigned arm64 IPA](https://gev-tak-field-preview.jesselsullivan.chatgpt.site/downloads/GEVTAK-unsigned.ipa)
+  is available for personal signing. Its verified source remains `28eb0c9e`,
+  predating the release candidate. The native sources and build script are
+  unchanged, so this wrapper is reused; it loads the current private web app.
+  Rebuild when native sources change. Physical iPhone acceptance remains open.
+- Normal CI passed all five jobs for `c174e8df`. Restricted validation passed
+  7,026 + 14 tests, all six offline-road scenarios and all seven EMCON scenarios,
+  but two unhandled Cesium errors still block that browser gate. Passing the
+  scenario assertions does not make the restricted run a pass.
+- [Diagnostic run 39169076711](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39169076711)
+  is in progress at this checkpoint. Resolve the errors, record the complete
+  restricted-gate result, then verify the final candidate before merging to
+  `main`. Full ATAK parity and native-peer/device acceptance remain open.
 
 ## First: real peer acceptance
 
@@ -57,7 +77,8 @@ running.
    Server IN/OUT group provisioning, group-revocation acceptance and physical
    EUD account-switch/offline tests. The real-server lab verified separation for
    the exercised marker and broadcast-chat flows; broader directional ACL and
-   revocation cases remain open. Public hosting remains outside scope.
+   revocation cases remain open. Operational TAK hosting remains private; the
+   owner-private Sites frontend preview does not host its gateway.
 2. **Delivery state and synchronization.** Correlated pending/queued/submitted/
    rejected/expired states are implemented. Submitted confirms a local transport
    write, not a peer receipt. Add compatible peer acknowledgements where available
