@@ -27,6 +27,7 @@ import {
 import { createMeshLink } from './meshLink.js';
 import { createServerLink } from './serverLink.js';
 import { canonicalBrowserGeometry } from './browserGeometry.js';
+import { createDeviceStreamPool } from './deviceStreams.js';
 
 export const TAK_WS_ROUTE = '/api/tak/ws';
 export const TAK_STATUS_ROUTE = '/api/tak/status';
@@ -144,9 +145,25 @@ export function createTakGateway({
 }) {
   if (!config.enabled || !matchesToken(config.token, config.token))
     throw new Error('An enabled TAK gateway requires an operator token');
+  if (
+    config.deviceStreams &&
+    (!config.server ||
+      config.server.protocol !== 'tls' ||
+      config.mesh ||
+      config.bridge)
+  )
+    throw new Error(
+      'Device streams require one fixed verified-TLS upstream without mesh or bridging',
+    );
   const authenticated = (req) =>
     hasAuthenticatedSession(req, authenticateSession, config.principal);
   const replay = new Map();
+  // Public browser-origin replay and transport-owned private replay share the
+  // original principal-wide budget. Neither can grow into the other's reserve.
+  const replayLimit = config.deviceStreams ? REPLAY_LIMIT / 2 : REPLAY_LIMIT;
+  const replayByteLimit = config.deviceStreams
+    ? REPLAY_BYTES_LIMIT / 2
+    : REPLAY_BYTES_LIMIT;
   const browsers = new Map();
   const browserContexts = new WeakMap();
   const ownedMarkers = new Map(); // uid -> { owner: device uid, staleMs }
@@ -158,6 +175,7 @@ export function createTakGateway({
   let closed = false;
   let statusTimer = null;
   const uplinks = [];
+  let devicePool = null;
   const routedSubmission = new WeakMap();
   function submissionState(record) {
     const routes = Array.from(record.routes.values());
@@ -227,6 +245,7 @@ export function createTakGateway({
           accepted =
             link.send(xml, event, {
               owner: record,
+              deviceRef: record.browser,
               onState,
               canWrite: () =>
                 !record.inactive &&
@@ -304,7 +323,7 @@ export function createTakGateway({
       bytes,
     });
     replayBytes += bytes;
-    while (replay.size > REPLAY_LIMIT || replayBytes > REPLAY_BYTES_LIMIT)
+    while (replay.size > replayLimit || replayBytes > replayByteLimit)
       dropReplay(replay.keys().next().value);
   });
   function send(ws, payload) {
@@ -350,12 +369,41 @@ export function createTakGateway({
   }
   let pingTimer = null;
   if (config.server) {
-    const server = createServer({
-      config: config.server,
-      onXml: (xml) => router.receiveXml(xml, 'server'),
-      onStatus: scheduleStatus,
-      now,
-    });
+    const server = config.deviceStreams
+      ? (devicePool = createDeviceStreamPool({
+          config: config.server,
+          createServer,
+          now,
+          setInterval: every,
+          clearInterval: stopEvery,
+          readOnly: config.role === 'observer',
+          replayLimits: {
+            entries: REPLAY_LIMIT / 2,
+            bytes: REPLAY_BYTES_LIMIT / 2,
+          },
+          allowEvent: (event) =>
+            cotKind(event.type) !== 'chat' || isBroadcastChat(event),
+          onReceive(browser, xml, event) {
+            if (
+              !registeredIdentities.has(event.uid) &&
+              !ownedMarkers.has(event.uid)
+            ) {
+              networkUids.add(event.uid);
+              while (networkUids.size > 8192)
+                networkUids.delete(networkUids.values().next().value);
+            }
+            // The pool's transport-owned recipient is retained even if the server
+            // removed marti/dest. Never pass this through principal-wide fanout.
+            send(browser.ws, xml);
+          },
+          onStatus: scheduleStatus,
+        }))
+      : createServer({
+          config: config.server,
+          onXml: (xml) => router.receiveXml(xml, 'server'),
+          onStatus: scheduleStatus,
+          now,
+        });
     addUplink(server);
     const identity = normalizeIdentity({
       uid: `GEV-GATEWAY-${randomUUID()}`,
@@ -391,6 +439,12 @@ export function createTakGateway({
       return 'Unsupported access/routing metadata';
     const kind = cotKind(event.type);
     const parent = event.detail.links.find((link) => link.relation === 'p-p');
+    if (
+      config.deviceStreams &&
+      event.detail.endpoint &&
+      (kind !== 'sa' || event.uid !== identity.uid)
+    )
+      return 'Only explicit self presence may register a device endpoint';
     if (kind === 'drawing') {
       let canonical;
       try {
@@ -644,6 +698,8 @@ export function createTakGateway({
           record.reason = 'No authorized TAK uplink configured';
         submissionState(record);
       }
+      if (result.ok && devicePool)
+        devicePool.rememberPublic(serializeCotEvent(sanitized));
     }
     const link = {
       id,
@@ -660,7 +716,14 @@ export function createTakGateway({
     }, 10_000);
     function replayContacts() {
       prune();
-      const backlog = Array.from(replay.values());
+      const merged = new Map(replay);
+      if (devicePool)
+        for (const item of devicePool.replay(browser)) {
+          const uid = parseCotEvent(item.xml).uid;
+          if (item.timeMs >= (merged.get(uid)?.timeMs ?? -Infinity))
+            merged.set(uid, item);
+        }
+      const backlog = Array.from(merged.values());
       const deadline = Date.now() + 10_000;
       let cursor = 0;
       const drainReplay = () => {
@@ -731,6 +794,20 @@ export function createTakGateway({
             return;
           }
           const firstIdentity = !browser.identity;
+          if (devicePool) {
+            const attached = devicePool.attach(browser, {
+              uid,
+              callsign,
+              authorized: () =>
+                !closed &&
+                ws.readyState === 1 &&
+                (!browser.sessionBased || authenticated(browser.request)),
+            });
+            if (!attached.ok) {
+              control(ws, { op: 'reject', reason: attached.reason });
+              return;
+            }
+          }
           registeredIdentities.add(uid);
           browser.identity = { uid, callsign };
           link.authorized = true;
@@ -738,6 +815,30 @@ export function createTakGateway({
           if (control(ws, { op: 'identity', uid }) && firstIdentity) {
             replayContacts();
           }
+        } else if (
+          devicePool &&
+          message?.op === 'presence' &&
+          message.enabled === false &&
+          (Object.keys(message).length === 2 ||
+            (Object.keys(message).length === 3 &&
+              typeof message.id === 'string' &&
+              SUBMISSION_ID.test(message.id)))
+        ) {
+          if (!browser.identity || !devicePool.stopPresence(browser))
+            control(ws, {
+              op: 'reject',
+              command: 'presence',
+              ...(message.id ? { id: message.id } : {}),
+              reason:
+                'Only the active presence publisher may stop this device route',
+            });
+          else
+            control(ws, {
+              op: 'presence',
+              enabled: false,
+              uid: browser.identity.uid,
+              ...(message.id ? { id: message.id } : {}),
+            });
         } else if (
           message?.op === 'cot' &&
           typeof message.id === 'string' &&
@@ -774,6 +875,7 @@ export function createTakGateway({
       receiveEvent(text);
     });
     ws.on('close', () => {
+      devicePool?.detach(browser);
       for (const record of browser.submissions.values()) cancelRecord(record);
       for (const record of browser.legacySubmissions) cancelRecord(record);
       browser.submissions.clear();
@@ -857,12 +959,25 @@ export function createTakGateway({
     };
   }
   function status(req) {
+    let server = uplinks.find((l) => l.kind === 'server')?.status() || null;
+    if (devicePool && server) {
+      const ownUid = [...browsers.values()].find(
+        (browser) => browser.request === req,
+      )?.identity?.uid;
+      const { presence, ...summary } = server;
+      server = {
+        ...summary,
+        ...(ownUid
+          ? { presence: presence.find((item) => item.uid === ownUid) || null }
+          : {}),
+      };
+    }
     return {
       ...publicStatus(req),
       bridge: config.bridge,
       browsers: browsers.size,
       mesh: uplinks.find((l) => l.kind === 'mesh')?.status() || null,
-      server: uplinks.find((l) => l.kind === 'server')?.status() || null,
+      server,
       router: router.stats(),
       errors: config.errors,
       replayBytes,

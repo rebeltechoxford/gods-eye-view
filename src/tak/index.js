@@ -334,8 +334,12 @@ export function initTakWebClient({
     panel.render();
   }, 15_000);
   const unsubscribePrivacy = subscribeTakPrivacy(viewer, () => panel.render());
-  const unsubscribeMobile = mobile.subscribe(() => panel.render());
+  const unsubscribeMobile = mobile.subscribe(() => {
+    client.refreshPositionAvailability();
+    panel.render();
+  });
   const positionTimer = setInterval(() => {
+    client.refreshPositionAvailability();
     if (client.fix() && !document.hidden) panel.render();
   }, 1000);
 
