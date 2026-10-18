@@ -1,5 +1,12 @@
 # Changelog
 
+- Aircraft feeds: the military (adsb.lol) request now times out after 15 s
+  instead of hanging; neither it nor OpenSky serves a cached snapshot as
+  STALE once it is older than 10 and 15 minutes respectively (the regional
+  fallback or an honest error answers instead); and an OpenSky success
+  without an `X-Rate-Limit-Remaining` header keeps the normal 9 s refresh
+  instead of being read as zero credits and cached for 5 minutes.
+
 - FIS-B Weather: a new layer shows what your own 978 MHz receiver hears from
   FAA ground stations, with no internet: METAR stations colored by flight
   category, TFR/NOTAM, AIRMET, G-AIRMET and SIGMET areas, and NEXRAD

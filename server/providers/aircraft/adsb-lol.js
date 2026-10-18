@@ -32,6 +32,13 @@ export function adsbLolProxy() {
   /** Bounds for an upstream-supplied Retry-After (ms). */
   const COOLDOWN_MIN_MS = 5000;
   const COOLDOWN_MAX_MS = 120000;
+  /** A hung upstream fails the request instead of holding it open (ms). */
+  const UPSTREAM_TIMEOUT_MS = 15000;
+  /** Older positions are not served as stale: aircraft move ~1 nm a second
+   * at most, but ten minutes of drift is no longer a picture of now (ms). */
+  const MAX_STALE_MS = 10 * 60_000;
+  const staleUsable = () =>
+    _cache !== null && Date.now() - _cacheAt <= MAX_STALE_MS;
 
   const clampCooldown = (ms) =>
     Math.min(COOLDOWN_MAX_MS, Math.max(COOLDOWN_MIN_MS, ms));
@@ -82,7 +89,7 @@ export function adsbLolProxy() {
           const retryAfter = String(
             Math.ceil((_cooldownUntil - Date.now()) / 1000),
           );
-          if (_cache) {
+          if (staleUsable()) {
             serve(res, 200, _cache, 'STALE', {
               'X-ADS-B-Upstream-Status': String(_cooldownStatus),
               'X-ADS-B-Retry-After-Seconds': retryAfter,
@@ -100,6 +107,7 @@ export function adsbLolProxy() {
         }
         const upstream = await fetch('https://api.adsb.lol/v2/mil', {
           headers: { 'User-Agent': 'gods-eye-view-adsblol-proxy/1.0' },
+          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
         });
         if (upstream.ok) {
           const body = await upstream.text();
@@ -115,9 +123,9 @@ export function adsbLolProxy() {
           _cooldownUntil = failedAt + cooldownFor(upstream, failedAt);
           _cooldownStatus = upstream.status;
           console.warn(
-            `[adsb.lol Proxy] upstream ${upstream.status}; cooling down ${Math.round((_cooldownUntil - Date.now()) / 1000)} s${_cache ? ', serving stale' : ''}`,
+            `[adsb.lol Proxy] upstream ${upstream.status}; cooling down ${Math.round((_cooldownUntil - Date.now()) / 1000)} s${staleUsable() ? ', serving stale' : ''}`,
           );
-          if (_cache) {
+          if (staleUsable()) {
             // Do not wait for a failing response body before serving usable data.
             upstream.body?.cancel().catch(() => {});
             serve(res, 200, _cache, 'STALE', {
@@ -145,7 +153,7 @@ export function adsbLolProxy() {
         );
       } catch (e) {
         console.error('[adsb.lol Proxy]', e.message);
-        if (_cache) {
+        if (staleUsable()) {
           serve(res, 200, _cache, 'STALE');
           return;
         }

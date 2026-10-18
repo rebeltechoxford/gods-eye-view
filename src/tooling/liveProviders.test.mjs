@@ -435,3 +435,99 @@ test('track backfill proxy returns 502 on an oversized upstream body and caches 
   assert.equal(res2.statusCode, 502);
   assert.equal(callCount, 1);
 });
+
+test('military aircraft fetch is time-limited and stale cache has an age limit', async (t) => {
+  let now = Date.now();
+  let calls = 0;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(console, 'error', () => {});
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    assert.ok(options.signal instanceof AbortSignal, 'upstream has a deadline');
+    if (++calls > 1) throw Error('offline');
+    return Response.json({ ac: [{ hex: 'abc123' }] });
+  });
+  const request = install(providers.adsbLolProxy());
+  const first = await request('/api/military');
+  // Within ten minutes the last-good body is served as STALE...
+  now += 9 * 60_000;
+  const stale = await request('/api/military');
+  assert.equal(stale.headers['x-feed-cache'], 'STALE');
+  assert.equal(stale.body, first.body);
+  // ...after that the outage is reported instead of old positions.
+  now += 2 * 60_000;
+  const old = await request('/api/military');
+  assert.equal(old.statusCode, 502);
+});
+
+test('OpenSky serves a rate-limited STALE snapshot only while it is recent', async (t) => {
+  environment(t, {
+    OPENSKY_CLIENT_ID: undefined,
+    OPENSKY_CLIENT_SECRET: undefined,
+    OPENSKY_AUTH_MODE: 'anon',
+    OPENSKY_USERNAME: undefined,
+    OPENSKY_PASSWORD: undefined,
+  });
+  t.mock.method(console, 'warn', () => {});
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  let limited = false;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url.includes('/states/'))
+      return limited
+        ? new Response('{}', {
+            status: 429,
+            headers: { 'x-rate-limit-retry-after-seconds': '60' },
+          })
+        : Response.json({ time: Math.floor(now / 1000), states: [] });
+    if (url.includes('/lat/'))
+      return Response.json({
+        now: now / 1000,
+        ac: [{ hex: 'abc123', lat: 30, lon: -97, alt_baro: 10000 }],
+      });
+    throw Error(`Unexpected URL: ${url}`);
+  });
+  const load = async () => {
+    const fresh = await import(
+      `../../server/providers/aircraft/opensky.js?stale=${Math.random()}`
+    );
+    return { fresh, request: install(fresh.openSkyProxy()) };
+  };
+  // Recent: the last-good snapshot is served as STALE through the 429.
+  {
+    const { request } = await load();
+    limited = false;
+    await request('/api/flights', '?lat=30&lon=-97');
+    limited = true;
+    now += 60_000;
+    const response = await request('/api/flights', '?lat=30&lon=-97');
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['x-opensky-cache'], 'STALE');
+  }
+  // A success without X-Rate-Limit-Remaining keeps the base TTL.
+  {
+    const { request } = await load();
+    limited = false;
+    await request('/api/flights', '?lat=30&lon=-97');
+    now += 20_000;
+    let fetched = 0;
+    const original = globalThis.fetch;
+    globalThis.fetch = async (...args) => {
+      fetched++;
+      return original(...args);
+    };
+    await request('/api/flights', '?lat=30&lon=-97');
+    globalThis.fetch = original;
+    assert.equal(fetched, 1, 'refreshed after the 9 s base TTL');
+  }
+  // Too old: the regional fallback answers instead.
+  {
+    const { request, fresh } = await load();
+    limited = false;
+    await request('/api/flights', '?lat=30&lon=-97');
+    limited = true;
+    now += fresh.OPENSKY_MAX_STALE_MS + 60_000;
+    const response = await request('/api/flights', '?lat=30&lon=-97');
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['x-flight-source'], 'adsb.lol');
+  }
+});
