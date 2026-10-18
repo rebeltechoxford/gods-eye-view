@@ -829,7 +829,7 @@ try {
       );
       assert.deepEqual(
         e.layers,
-        [...LAYER_STATE_REGISTRY.map((e) => e.id), 'local-adsb'].sort(),
+        [...LAYER_STATE_REGISTRY.map((e) => e.id), 'local-adsb', 'fisb'].sort(),
       );
       const samples = await page.evaluate(async () => {
         const p =

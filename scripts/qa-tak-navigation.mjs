@@ -395,14 +395,18 @@ try {
   await open('navigation');
 
   await step(
-    'all 30 GEV layers remain; navigation starts without GPS or network publication',
+    'all 31 GEV layers remain; navigation starts without GPS or network publication',
     async () => {
       const actual = await page.evaluate(() =>
         [...window.__godsEyeView.dataManager.layers.keys()].sort(),
       );
       assert.deepEqual(
         actual,
-        [...LAYER_STATE_REGISTRY.map((item) => item.id), 'local-adsb'].sort(),
+        [
+          ...LAYER_STATE_REGISTRY.map((item) => item.id),
+          'local-adsb',
+          'fisb',
+        ].sort(),
       );
       assert.equal((await snapshot()).fix, null);
       assert.equal((await snapshot()).tx, 0);

@@ -331,6 +331,7 @@ try {
   const expectedLayers = [
     ...LAYER_STATE_REGISTRY.map((entry) => entry.id),
     'local-adsb',
+    'fisb',
   ].sort();
   assert.deepEqual(measurements.baseline.layers, expectedLayers);
   assert.deepEqual(measurements.layersAfter, expectedLayers);

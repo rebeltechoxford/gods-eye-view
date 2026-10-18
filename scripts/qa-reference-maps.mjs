@@ -415,7 +415,11 @@ try {
       }));
       assert.deepEqual(
         initial.layers,
-        [...LAYER_STATE_REGISTRY.map(({ id }) => id), 'local-adsb'].sort(),
+        [
+          ...LAYER_STATE_REGISTRY.map(({ id }) => id),
+          'local-adsb',
+          'fisb',
+        ].sort(),
       );
       assert.deepEqual(initial.chips, CORE_MAP_IDS);
       assert.equal(initial.options.length, 8);

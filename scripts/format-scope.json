@@ -1086,5 +1086,13 @@
   "src/emcon/emcon.css",
   "src/emcon/guard.test.mjs",
   "src/data/emconLifecycle.test.mjs",
-  "scripts/qa-emcon.mjs"
+  "scripts/qa-emcon.mjs",
+  "src/sources/fisb/decode.test.mjs",
+  "src/sources/fisb/store.test.mjs",
+  "src/sources/fisb/text.test.mjs",
+  "src/data/fisbProxy.test.mjs",
+  "src/layers/fisb/presentation.test.mjs",
+  "scripts/build-us-airports.mjs",
+  "scripts/qa-fisb.mjs",
+  "src/testSupport/fisbUplinks.mjs"
 ]

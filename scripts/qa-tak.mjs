@@ -54,6 +54,7 @@ assert(
 const expectedLayers = [
   ...LAYER_STATE_REGISTRY.map((entry) => entry.id),
   'local-adsb',
+  'fisb',
 ].sort();
 const tile = await fs.readFile(
   new URL(
@@ -413,7 +414,7 @@ try {
         map: window.__godsEyeView.mapStackController.getActiveId(),
       }));
       assert.deepEqual(state.layers, expectedLayers);
-      assert.equal(state.layers.length, 30);
+      assert.equal(state.layers.length, 31);
       assert.equal(state.map, 'osm');
       assert(
         ['idle', 'closed'].includes(state.network),
