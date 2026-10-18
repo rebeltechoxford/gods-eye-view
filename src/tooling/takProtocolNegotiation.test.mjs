@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { readTakGatewayConfig } from '../../server/providers/tak/config.js';
 import {
   TAK_STREAM_DECLARATION,
+  SERVER_LIMITS,
   createServerLink,
 } from '../../server/providers/tak/serverLink.js';
 import { parseCotEvent, serializeCotEvent } from '../tak/protocol/cot.js';
@@ -269,6 +270,92 @@ test('without the opt-in the offer is consumed and the link stays on XML', async
   assert.equal(uplink.status().encoding, 'xml');
   assert.deepEqual(uplink.status().protocolOffered, [1]);
   assert.equal(inbound.length, 0, 'the offer is not a tactical event');
+});
+
+test('XML negotiation controls are limited before parsing even without the opt-in', (t) => {
+  let clock = Date.now();
+  const socket = new EventEmitter();
+  socket.destroy = () => socket.emit('close');
+  socket.write = () => true;
+  const inbound = [];
+  const uplink = createServerLink({
+    config: {
+      host: '127.0.0.1',
+      port: 8087,
+      protocol: 'tcp',
+      protobuf: false,
+    },
+    connect: () => socket,
+    now: () => clock,
+    onXml: (xml) => inbound.push(xml),
+  });
+  t.after(() => uplink.close());
+  socket.emit('connect');
+  const offer = Buffer.from(
+    controlEvent('t-x-takp-v', '<TakProtocolSupport version="1"/>'),
+  );
+  for (let i = 0; i < SERVER_LIMITS.burst + 300; i++)
+    socket.emit('data', offer);
+  // Invalid CoT must not incur XML parsing once the control budget is spent.
+  socket.emit(
+    'data',
+    Buffer.from(offer.toString().replace(`uid="${PROTO_UID}"`, 'uid=""')),
+  );
+  assert.equal(uplink.status().protocolControl, SERVER_LIMITS.burst);
+  assert.equal(uplink.status().protocolLimited, 301);
+  assert.equal(uplink.status().discarded, 0);
+  assert.equal(uplink.status().encoding, 'xml');
+  assert.equal(inbound.length, 0);
+
+  clock += 1000;
+  for (let i = 0; i < SERVER_LIMITS.rate + 1; i++)
+    socket.emit('data', offer);
+  assert.equal(
+    uplink.status().protocolControl,
+    SERVER_LIMITS.burst + SERVER_LIMITS.rate,
+  );
+  assert.equal(uplink.status().protocolLimited, 302);
+  // Ordinary XML still reaches the router, which owns its own admission limit.
+  socket.emit('data', Buffer.from(marker('ordinary-xml')));
+  assert.equal(inbound.length, 1);
+});
+
+test('only the requested transaction can accept or deny the encoding switch', async (t) => {
+  const tak = await startSyntheticServer({ respond: null });
+  const { uplink, inbound } = link(tak.port, { protobuf: true });
+  t.after(async () => {
+    uplink.close();
+    await tak.close();
+  });
+  await until(() => tak.connections[0]?.requests.length === 1, 'request');
+  const connection = tak.connections[0];
+  const unrelated = (status) =>
+    controlEvent('t-x-takp-r', `<TakResponse status="${status}"/>`).replace(
+      `uid="${PROTO_UID}"`,
+      'uid="unrelated-negotiation"',
+    );
+  connection.socket.write(unrelated('false') + unrelated('true'));
+  await until(() => uplink.status().protocolControl === 3, 'unrelated replies');
+  assert.equal(uplink.status().encoding, 'requested');
+  assert.equal(uplink.status().protocolDenied, 0);
+  assert.equal(uplink.status().protocolErrors, 0);
+
+  // The stream remains XML until the matching response, including when that
+  // response and its first binary payload share a single network write.
+  connection.socket.write(
+    Buffer.concat([
+      Buffer.from(marker('while-still-requested')),
+      Buffer.from(controlEvent('t-x-takp-r', '<TakResponse status="true"/>')),
+      Buffer.from(TAK_PROTO_ORACLE.saFull.stream, 'hex'),
+    ]),
+  );
+  await until(() => uplink.status().encoding === 'v1', 'matching acceptance');
+  await until(() => inbound.length === 2, 'XML and binary events');
+  assert.deepEqual(inbound.map((xml) => parseCotEvent(xml).uid), [
+    'while-still-requested',
+    'ANDROID-0000synthetic01',
+  ]);
+  assert.equal(uplink.status().protocolErrors, 0);
 });
 
 test('a denied request resumes XML and releases what was held', async (t) => {

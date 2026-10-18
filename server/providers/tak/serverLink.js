@@ -87,6 +87,7 @@ export function createServerLink({
     reconnects: 0,
     discarded: 0,
     protocolControl: 0,
+    protocolLimited: 0,
     protocolDenied: 0,
     protocolErrors: 0,
     protobufIncomplete: 0,
@@ -108,6 +109,7 @@ export function createServerLink({
   const negotiation = {
     encoding: 'xml',
     offered: [],
+    uid: null,
     timer: null,
     disabled: false,
   };
@@ -143,10 +145,12 @@ export function createServerLink({
   function clearNegotiationTimer() {
     if (negotiation.timer !== null) clearTimer(negotiation.timer);
     negotiation.timer = null;
+    negotiation.uid = null;
   }
   function requestProtobuf(control) {
     const s = socket;
     negotiation.encoding = 'requested';
+    negotiation.uid = control.uid;
     reader.hold();
     try {
       s.write(
@@ -155,6 +159,7 @@ export function createServerLink({
       );
     } catch {
       lastError = 'WRITE_FAILED';
+      negotiation.uid = null;
       s.destroy();
       return;
     }
@@ -163,6 +168,7 @@ export function createServerLink({
       if (socket !== s || negotiation.encoding !== 'requested') return;
       // The negotiation is indeterminate: reconnect and stay on XML.
       negotiation.disabled = true;
+      negotiation.uid = null;
       lastError = 'TAK_PROTOCOL_TIMEOUT';
       s.destroy();
     }, TAK_NEGOTIATION_TIMEOUT_MS);
@@ -186,6 +192,7 @@ export function createServerLink({
     } else if (
       control.kind === 'response' &&
       negotiation.encoding === 'requested' &&
+      control.uid === negotiation.uid &&
       control.status !== null
     ) {
       clearNegotiationTimer();
@@ -201,10 +208,16 @@ export function createServerLink({
       queueMicrotask(flush);
     }
   }
-  const protobufLimiter = createRateLimiter({ ...SERVER_LIMITS, now });
+  // Controls are consumed before the router sees them. Share this lifetime
+  // budget with binary conversion so neither path bypasses pre-parse limits.
+  const decodeLimiter = createRateLimiter({ ...SERVER_LIMITS, now });
   const reader = createTakStreamReader({
     onXml: (xml) => {
       if (mayBeTakProtocolControl(xml)) {
+        if (!decodeLimiter.take()) {
+          counters.protocolLimited++;
+          return;
+        }
         let control = null;
         try {
           control = readTakProtocolControl(xml);
@@ -219,7 +232,7 @@ export function createServerLink({
     },
     onPayload: (payload) => {
       // Same budget as the router, applied before conversion work.
-      if (!protobufLimiter.take()) {
+      if (!decodeLimiter.take()) {
         counters.protobufLimited++;
         return;
       }

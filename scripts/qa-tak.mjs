@@ -905,6 +905,15 @@ try {
         await page.waitForFunction(
           () => window.__godsEyeView.takClient.client.link().state === 'open',
         );
+        if (protobuf) {
+          // Negotiate before either round trip, so an XML exchange followed
+          // by a late upgrade cannot satisfy the binary-transport gate.
+          await page.waitForFunction(
+            () =>
+              window.__godsEyeView.takClient.client.link().gateway?.server
+                ?.encoding === 'v1',
+          );
+        }
         assert.deepEqual(
           await page.evaluate(() => ({
             tx: window.__godsEyeView.takClient.client.counters().tx,
@@ -1047,7 +1056,7 @@ try {
         }
         await section(page, 'network');
         if (protobuf) {
-          // The round trips above crossed the negotiated binary link.
+          // The negotiated encoding must also remain active after both replies.
           await page.waitForFunction(
             () =>
               window.__godsEyeView.takClient.client.link().gateway?.server
