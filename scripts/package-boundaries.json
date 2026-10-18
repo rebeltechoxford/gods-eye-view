@@ -2278,7 +2278,12 @@
       "src/routing/osmRoads.js",
       "src/routing/offlineDirections.js",
       "src/routing/route.worker.js",
-      "src/routing/roadPacksUi.js"
+      "src/routing/roadPacksUi.js",
+      "src/emcon/boot.js",
+      "src/emcon/guard.js",
+      "src/emcon/state.js",
+      "src/emcon/ui.js",
+      "src/emcon/emcon.css"
     ],
     "external": [
       "hls.js",

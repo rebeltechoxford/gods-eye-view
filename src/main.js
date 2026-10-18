@@ -1,3 +1,5 @@
+// EMCON must be installed before any application module can transmit.
+import './emcon/boot.js';
 import { createStandaloneApplication } from './standalone/application.js';
 import {
   ApplicationRedirectError,

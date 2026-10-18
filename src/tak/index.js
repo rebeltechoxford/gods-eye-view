@@ -33,6 +33,8 @@ import {
   takPrivacyState,
   takDisclosurePermissions,
 } from './privacy.js';
+import { emconState, syncEmconWorker } from '../emcon/boot.js';
+import { mountEmconControl } from '../emcon/ui.js';
 
 const browserStorage = Object.freeze({
   get(key) {
@@ -130,6 +132,10 @@ export function initTakWebClient({
     canShare: mayShare,
     canReportPosition: () => !document.hidden && geolocation.isActive(),
   });
+  // EMCON closes the TAK link but keeps the received picture on screen.
+  const stopEmconWatch = emconState.subscribe((record) => {
+    if (record) client.disconnect();
+  });
   const overlay = createCotOverlay(viewer, overlays, {
     onActivate: (uid) => overlay.focus(uid),
     navigate,
@@ -155,6 +161,10 @@ export function initTakWebClient({
     },
     gatewayInfo: () => gatewayInfo,
     async connect(token, signal) {
+      if (emconState.isActive())
+        throw new Error(
+          'EMCON is on: TAK stays disconnected until you leave EMCON',
+        );
       if (!gatewayInfo) await gatewayReady;
       if (signal.aborted || controller.signal.aborted || retired) return false;
       if (!accountCurrent() || !accountContext.online)
@@ -334,6 +344,14 @@ export function initTakWebClient({
   );
   gatewayReady = Promise.resolve(gatewayInfo).then(() => panel.render());
 
+  const emconControl = embedded
+    ? null
+    : mountEmconControl({
+        host: document.querySelector('.tak-web-root'),
+        state: emconState,
+        syncWorker: syncEmconWorker,
+      });
+
   const api = Object.freeze({
     client,
     overlay,
@@ -344,6 +362,8 @@ export function initTakWebClient({
     privacy: () => takPrivacyState(viewer),
     operatorContext: () => ({ ...accountContext, retired }),
     destroy() {
+      stopEmconWatch();
+      emconControl?.destroy();
       controller.abort();
       logoutController?.abort();
       unsubscribeAccount();

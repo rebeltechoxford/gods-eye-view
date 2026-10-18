@@ -50,6 +50,7 @@
     "qa:tak": "node scripts/qa-tak.mjs",
     "qa:tak:private": "node scripts/qa-tak-private.mjs",
     "qa:maps:offline": "node scripts/qa-offline-maps.mjs",
+    "qa:emcon": "node scripts/qa-emcon.mjs",
     "qa:maps:mbtiles": "node scripts/qa-mbtiles.mjs",
     "qa:map-source-tray": "node scripts/qa-map-source-tray.mjs",
     "qa:panel-resize": "node scripts/qa-panel-resize.mjs",
