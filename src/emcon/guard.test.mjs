@@ -26,10 +26,19 @@ function fakeWindow({ origin = ORIGIN, controlled = true } = {}) {
     send() {
       calls.push(['xhr-send']);
     }
+    abort() {
+      calls.push(['xhr-abort']);
+      this.dispatchEvent(new Event('loadend'));
+    }
   }
-  class FakeSocket {
+  class FakeSocket extends EventTarget {
     constructor(url) {
+      super();
       calls.push(['websocket', url]);
+    }
+    close() {
+      calls.push(['stream-close']);
+      this.dispatchEvent(new Event('close'));
     }
   }
   class FakeElement extends EventTarget {
@@ -102,6 +111,8 @@ test('the policy keeps only saved-app files and local resources', () => {
   assert.equal(allows(`${ORIGIN}/assets/index-abc.js`), true);
   assert.equal(allows(`${ORIGIN}/cesium/Workers/x.js`), true);
   assert.equal(allows(`${ORIGIN}/`), true);
+  for (const icon of ['mic', 'pin', 'location', 'visual-presets'])
+    assert.equal(allows(`${ORIGIN}/${icon}.svg`), true);
   assert.equal(allows('data:image/png;base64,AAAA'), true);
   assert.equal(allows('blob:https://tak.internal:8443/1234'), true);
   // Server APIs, other hosts, writes and unknown paths transmit.
@@ -135,7 +146,10 @@ test('the policy keeps only saved-app files and local resources', () => {
 test('with EMCON on, every transmit API is refused like a network outage', async () => {
   const { target, calls, FakeImage, FakeElement } = fakeWindow();
   let active = false;
-  const guard = installEmconGuard(target, { isActive: () => active });
+  const guard = installEmconGuard(target, {
+    isActive: () => active,
+    isWorkerReady: () => true,
+  });
   // Off: everything passes through untouched.
   await target.fetch('https://example.org/x');
   assert.deepEqual(calls.at(-1), ['fetch', 'https://example.org/x', 'GET']);
@@ -216,6 +230,98 @@ test('the guard installs once and keeps its first flag', () => {
   assert.throws(() => new target.WebSocket('wss://x'), EmconError);
 });
 
+test('entry closes existing streams, stops RTC capture and aborts only active XHR', () => {
+  const { target, calls } = fakeWindow();
+  let active = false;
+  const guard = installEmconGuard(target, { isActive: () => active });
+  new target.WebSocket('wss://example.org/live');
+  new target.EventSource('https://example.org/events');
+  const rtc = new target.RTCPeerConnection({});
+  let stoppedTracks = 0;
+  rtc.getSenders = () => [{ track: { stop: () => stoppedTracks++ } }];
+  const finishedSocket = new target.WebSocket('wss://example.org/finished');
+  finishedSocket.close();
+  const finishedXhr = new target.XMLHttpRequest();
+  finishedXhr.open('GET', 'https://example.org/finished');
+  finishedXhr.send();
+  finishedXhr.dispatchEvent(new Event('loadend'));
+  const pendingXhr = new target.XMLHttpRequest();
+  pendingXhr.open('GET', 'https://example.org/stream');
+  pendingXhr.send();
+  calls.length = 0;
+
+  active = true;
+  guard.stopActive();
+  assert.equal(calls.filter(([kind]) => kind === 'stream-close').length, 3);
+  assert.equal(calls.filter(([kind]) => kind === 'xhr-abort').length, 1);
+  assert.equal(stoppedTracks, 1);
+  const after = calls.length;
+  guard.stopActive();
+  assert.equal(calls.length, after, 'retired resources are no longer retained');
+  assert.throws(() => new target.WebSocket('wss://example.org/new'), EmconError);
+});
+
+test('a worker controller alone does not authorize static fetches before its acknowledgement', async () => {
+  const { target, calls } = fakeWindow();
+  let confirmed = false;
+  installEmconGuard(target, {
+    isActive: () => true,
+    isWorkerReady: () => confirmed,
+  });
+  await assert.rejects(target.fetch(`${ORIGIN}/assets/app.js`), EmconError);
+  assert.equal(calls.length, 0);
+  confirmed = true;
+  await target.fetch(`${ORIGIN}/assets/app.js`);
+  assert.equal(calls.length, 1);
+  target.navigator.serviceWorker.controller = null;
+  await assert.rejects(target.fetch(`${ORIGIN}/assets/app.js`), EmconError);
+});
+
+test('entry stops detached remote media and frames while keeping local blob media', () => {
+  const { target } = fakeWindow();
+  let active = false;
+  class Media extends EventTarget {
+    get src() {
+      return this.source || '';
+    }
+    set src(value) {
+      this.source = value;
+    }
+    pause() {
+      this.paused = true;
+    }
+    removeAttribute() {
+      this.source = '';
+    }
+    load() {
+      this.dispatchEvent(new Event('emptied'));
+    }
+  }
+  target.HTMLMediaElement = Media;
+  const frame = {
+    src: 'https://example.org/video',
+    remove() {
+      this.removed = true;
+    },
+  };
+  target.document = {
+    querySelectorAll: (selector) =>
+      selector === 'iframe[src]' ? [frame] : [],
+  };
+  const guard = installEmconGuard(target, { isActive: () => active });
+  const remote = new target.HTMLMediaElement();
+  remote.src = 'https://example.org/live.mp3';
+  const local = new target.HTMLMediaElement();
+  local.src = 'blob:https://tak.internal/recording';
+  active = true;
+  guard.stopActive();
+  assert.equal(remote.paused, true);
+  assert.equal(remote.src, '');
+  assert.equal(frame.removed, true);
+  assert.equal(local.paused, undefined);
+  assert.equal(local.src, 'blob:https://tak.internal/recording');
+});
+
 test('EMCON persists, survives reload and follows other tabs', () => {
   const { target, store } = fakeWindow();
   const tab = createEmconState({ target, now: () => Date.UTC(2026, 9, 18) });
@@ -267,7 +373,10 @@ test('with EMCON on, following an external link or submitting a form is refused'
     document,
   };
   let active = false;
-  const guard = installEmconGuard(target, { isActive: () => active });
+  const guard = installEmconGuard(target, {
+    isActive: () => active,
+    isWorkerReady: () => true,
+  });
   const click = (href, type = 'click') => {
     const event = new Event(type, { cancelable: true });
     Object.defineProperty(event, 'target', {

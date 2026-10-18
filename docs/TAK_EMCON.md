@@ -1,15 +1,10 @@
 # EMCON: emissions control
 
-EMCON is a deliberate "go silent" mode for when the device or the network may
-be compromised. It goes further than Airplane Mode in one direction and less
-far in another:
-
-- **Further:** the app itself stops transmitting, even on a network that still
-  works. No request leaves the page, its workers or its saved-app service
-  worker, including requests to the private host.
-- **Less far:** a web app cannot switch off the device's radios. Turn on
-  Airplane Mode and check Wi-Fi and Bluetooth are off. The confirmation dialog
-  and the banner say so.
+EMCON pauses the application's normal network requests and closes its owned
+connections. It is a convenience for using previously saved data, not a
+security boundary for a compromised page, browser or device, and not a guarantee
+of zero transmissions. **Use Airplane Mode and check Wi-Fi and Bluetooth are
+off when radio silence is required.** A web page cannot enforce that setting.
 
 What stays usable is everything already on the device: received TAK contacts,
 markers, drawings and routes, field notes, saved maps, and offline driving
@@ -18,15 +13,17 @@ directions from an installed road pack.
 ## Use it
 
 - **Enter:** tap **EMCON** above the TAK launcher (or in the TAK panel header
-  while the panel is open) and confirm **Go silent**. The change is live: the
+  while the panel is open) and confirm **Pause app requests**. The change is live: the
   picture on screen stays as it is.
-- **While on:** a red banner reads `EMCON · NO TRANSMISSIONS · since HH:MMZ ·
-feeds frozen · Airplane Mode: turn it on`. It does not block taps.
+- **While on:** the banner reads `EMCON · APP REQUESTS PAUSED` with an Airplane
+  Mode reminder. Saved-app protection is pending until its worker acknowledges
+  cache-only mode; a timeout or absent worker is shown as unconfirmed. Guarded
+  static requests remain blocked until that acknowledgement.
 - **Leave:** tap **EMCON ON** and confirm **Leave EMCON**. The app reloads,
   reconnects to the server and resumes data feeds.
 
 EMCON is remembered on the device (`localStorage` key `gev.emcon.v1`), so a
-reload or relaunch comes back silent, and it follows across tabs of the same
+reload or relaunch restores the app pause, and it follows across tabs of the same
 app. If the browser refuses storage, the banner says EMCON will not survive a
 reload; it never turns itself off because storage failed.
 
@@ -35,16 +32,18 @@ reload; it never turns itself off because storage failed.
 | Area                        | Under EMCON                                                                                                                                                                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Page network APIs           | `fetch`, `XMLHttpRequest`, `sendBeacon`, `WebSocket`, `EventSource`, `RTCPeerConnection`, `window.open`, service-worker registration, element `src`/`href` loads, external link clicks and form submissions are refused with an `EmconError` (a `TypeError`, so existing offline error paths handle it).   |
-| What is still allowed       | `data:` and `blob:` URLs, loopback non-API URLs, and same-origin `GET`/`HEAD` of the app shell (`/`, `/index.html`, `/assets/…`, `/cesium/…`, fonts, models, icons) only when the saved-app worker controls the page, so those are answered from the device cache. |
+| What is still allowed       | `data:` and `blob:` URLs, loopback non-API URLs, and same-origin `GET`/`HEAD` of the app shell only after the current saved-app worker confirms cache-only mode. |
 | Saved-app service worker    | Switches to cache-only and remembers it in Cache Storage. Cached shell files are served; navigations get the cached app; anything else fails locally without touching the network.                                                                                 |
 | TAK link                    | Disconnected on entry; **Connect** is refused until EMCON is left.                                                                                                                                                                                                 |
 | Data layers                 | Periodic refreshes stop. Layers already on keep their last data, marked stale. Turning on a layer that needs the network is refused with "EMCON is on: this layer needs the network". Turning layers off is never refused.                                         |
 | Layers that can still start | Directions (on-device routing) and data bundled with the app: dams, data centers, submarine cables. Local ADS-B cannot: it reads the private host.                                                                                                                 |
-| Voice / AI                  | Starting a voice session fails at the `RTCPeerConnection` guard.                                                                                                                                                                                                   |
+| Existing streams / media    | Tracked page WebSockets, EventSources and peer connections close; active XHRs abort. App voice and radio owners stop their sessions. Remote audio/video sources are removed and active HTTP(S) iframes are detached. Offline route workers remain available. |
+| Voice / AI                  | The voice owner cancels the session, microphone and tool work on entry. New peer connections are refused by the guard. |
 
 The guard is the first module the page loads (`src/emcon/boot.js` is the first
 import of `src/main.js`; the CSP forbids inline scripts, so nothing can run
-earlier). Code: `src/emcon/` (state, guard, boot, UI), the layer freeze in
+earlier in application code). It cannot intercept the HTML/module bootstrap
+before it runs. Code: `src/emcon/` (state, guard, boot, UI), the layer freeze in
 `src/data/lifecycle.js`, the TAK hooks in `src/tak/index.js` and the EMCON
 branch of `public/gev-sw.js`.
 
@@ -56,6 +55,12 @@ EMCON covers them.
 - **Device radios and the operating system.** Phones keep talking to cell
   towers, Wi-Fi, Bluetooth, push services and OS update checks. Only Airplane
   Mode (and hardware switches) stop that.
+- **Other realms and in-flight traffic.** The page wrappers do not cover every
+  browser API, pre-existing worker realm, popup or extension. Bytes already
+  sent cannot be recalled; fetches or browser-managed loads already in flight
+  may complete. Closing a connection can itself send protocol shutdown traffic.
+  The service worker waits for its stored mode before all intercepted cold-start
+  fetches, but requests outside its scope remain outside this protection.
 - **The browser itself.** Chromium checks the service-worker script for
   updates after a navigation (`GET /gev-sw.js`) and runs its own background
   services (Google accounts, component updates, safe browsing, preconnects).
@@ -64,7 +69,7 @@ EMCON covers them.
   laptop keeps its own uplinks (TAK Server, AIS, ADS-B receivers, map
   downloads) running. A host-side EMCON switch is not implemented.
 - **Received TAK picture across a reload.** Contacts and session chat received
-  over TAK live in memory. A reload under EMCON keeps the app silent but
+  over TAK live in memory. A reload under EMCON keeps the app paused but
   starts with an empty TAK picture; field notes stored on the device stay.
 - **Uncached files.** Anything not saved on the device simply fails to load
   under EMCON. Save the offline app (and maps / road packs) before going
@@ -74,7 +79,22 @@ EMCON covers them.
 
 ## Evidence
 
-Recorded on 2026-10-18 UTC with Node `24.14.0` on Linux x64 and Chromium
+The release review identified that the original browser gate cut proxy tunnels
+at entry, masking whether an existing application stream had closed. Those
+historical results below do **not** establish existing-stream shutdown or a
+general zero-transmission guarantee.
+
+The revised gate leaves tunnels open and establishes an independent real
+WebSocket before entry. It verifies traffic first, then requires both browser
+and server to observe closure performed by the app. Guard regressions cover
+existing WebSocket/EventSource/RTC teardown, microphone-track stop, active XHR
+abort, retired-resource cleanup and worker acknowledgement gating. Service-worker
+regressions issue API, POST and third-party fetches immediately after a cold
+restart and refuse new shell downloads while paused. These review additions
+require a fresh consolidated validation run; they are not included in the
+historical counts below.
+
+Historical contributor run on 2026-10-18 UTC with Node `24.14.0` on Linux x64 and Chromium
 `141.0.7390.37`:
 
 - **Unit tests:** `src/emcon/guard.test.mjs` (policy table, every guarded API,

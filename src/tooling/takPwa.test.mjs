@@ -642,6 +642,17 @@ test('EMCON survives a worker restart and is read before the first navigation', 
   await first.message('GEV_EMCON', 'approved', { active: true });
   // A fresh worker over the same Cache Storage, as after the browser stops it.
   const restarted = runWithStorage(network, first.storage);
+  // Non-shell requests can be the first event after a worker restart. They
+  // must wait for the same stored decision as navigation, including writes.
+  const early = [
+    restarted.fetch('/api/tak/status', 'cors'),
+    restarted.fetch('/api/tak/session', 'cors', 'POST'),
+    restarted.fetch('https://x.example/stream', 'no-cors'),
+  ];
+  for (const response of early) {
+    assert.ok(response, 'every cold-start fetch is held');
+    assert.equal((await response).type, 'error');
+  }
   const navigation = restarted.fetch('/?welcome=0');
   assert.ok(navigation, 'a cold navigation waits for the stored flag');
   assert.equal(
@@ -649,6 +660,12 @@ test('EMCON survives a worker restart and is read before the first navigation', 
     '<html>PUBLIC APPLICATION SHELL</html>',
   );
   assert.deepEqual(restarted.requests, []);
+  assert.equal((await restarted.message('GEV_SHELL_SAVE')).ok, false);
+  assert.deepEqual(
+    restarted.requests,
+    [],
+    'EMCON also refuses save-message fetches',
+  );
   // Unapproved senders cannot switch it off.
   await restarted.message('GEV_EMCON', 'stranger', { active: false });
   assert.equal(

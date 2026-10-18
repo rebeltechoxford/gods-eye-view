@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * EMCON acceptance: prove the app transmits nothing while EMCON is on.
+ * EMCON acceptance: observe app request pause and owned stream shutdown.
  *
  *   npm run build
  *   node scripts/qa-emcon.mjs [--pack-dir <road packs>] [--window 30000]
@@ -9,8 +9,8 @@
  * on a phone, and Chromium is forced through a recording proxy for every
  * connection, loopback included. Emissions are counted where they cannot
  * hide: every request and WebSocket upgrade that reaches the app server,
- * and every new proxy tunnel. All tunnels are cut when EMCON engages, so a
- * request on an old keep-alive connection cannot slip past either count.
+ * and every new proxy tunnel. Existing tunnels stay open: a live WebSocket
+ * witness must be closed by the application itself, not by the test proxy.
  *
  * Scenario: sign in, save the offline app, import a synthetic contact,
  * enable network layers (and optionally install a road pack), engage EMCON
@@ -90,6 +90,7 @@ const server = await startTakHttpsServer({
 
 // Everything the app server receives, with a monotonically increasing clock.
 const serverLog = [];
+let streamWitness = null;
 const log = (kind, req) =>
   serverLog.push({
     at: Date.now(),
@@ -98,7 +99,18 @@ const log = (kind, req) =>
     url: String(req.url).split('?')[0].slice(0, 160),
   });
 server.server.prependListener('request', (req) => log('request', req));
-server.server.prependListener('upgrade', (req) => log('upgrade', req));
+server.server.prependListener('upgrade', (req, socket) => {
+  log('upgrade', req);
+  if (!new URL(req.url, origin).searchParams.has('emconWitness')) return;
+  const witness = { bytes: 0, closed: false };
+  socket.on('data', (chunk) => {
+    witness.bytes += chunk.length;
+  });
+  socket.once('close', () => {
+    witness.closed = true;
+  });
+  streamWitness = witness;
+});
 
 // The recording proxy: tunnels only to the app, refuses and records the rest.
 const proxyLog = [];
@@ -402,7 +414,50 @@ try {
         online > 20,
         `the app talks to its server normally (${online})`,
       );
-      return { serverRequestsBeforeEmcon: online };
+      // An extra real stream is independent of the TAK client's disconnect
+      // hook. It keeps sending status requests until the page guard closes it.
+      await page.evaluate(() => {
+        const socket = new WebSocket(
+          `wss://${location.host}/api/tak/ws?emconWitness=1`,
+          ['tak.v1'],
+        );
+        const witness = { socket, replies: 0, closed: false };
+        window.__emconStreamWitness = witness;
+        let interval;
+        socket.addEventListener('message', ({ data }) => {
+          const message = JSON.parse(data);
+          if (message.op === 'hello')
+            socket.send(
+              JSON.stringify({
+                op: 'identity',
+                uid: 'GEV-00000000-0000-4000-8000-000000000001',
+                callsign: 'SYNTHETIC EMCON STREAM',
+              }),
+            );
+          if (message.op === 'identity')
+            interval = setInterval(() => {
+              if (socket.readyState === WebSocket.OPEN)
+                socket.send(JSON.stringify({ op: 'status' }));
+            }, 100);
+          if (message.op === 'status') witness.replies++;
+        });
+        socket.addEventListener('close', () => {
+          clearInterval(interval);
+          witness.closed = true;
+        });
+      });
+      await page.waitForFunction(
+        () => window.__emconStreamWitness?.replies >= 3,
+      );
+      assert.ok(
+        streamWitness?.bytes > 0,
+        'server observed live WebSocket traffic',
+      );
+      assert.equal(streamWitness.closed, false);
+      return {
+        serverRequestsBeforeEmcon: online,
+        liveStreamBytesBeforeEmcon: streamWitness.bytes,
+      };
     },
   );
 
@@ -414,7 +469,6 @@ try {
     await page.click('[data-emcon="toggle"]');
     await confirmDialog(true);
     engagedAt = Date.now();
-    cutTunnels();
     await page.waitForFunction(
       () =>
         document
@@ -424,6 +478,23 @@ try {
     assert.equal(
       await page.evaluate(() => localStorage.getItem('gev.emcon.v1') !== null),
       true,
+    );
+    await page.waitForFunction(
+      () => window.__emconStreamWitness?.closed === true,
+    );
+    const closeDeadline = Date.now() + 5000;
+    while (!streamWitness.closed && Date.now() < closeDeadline)
+      await sleep(20);
+    assert.equal(
+      streamWitness.closed,
+      true,
+      'the app closed its existing stream',
+    );
+    summary.existingStreamClosedByApp = true;
+    await page.waitForFunction(() =>
+      /saved app cache-only/.test(
+        document.querySelector('[data-emcon="banner"]')?.textContent || '',
+      ),
     );
     await page.screenshot({
       path: path.join(artifactDir, 'emcon-engaged.png'),
@@ -438,7 +509,7 @@ try {
 
   const strictStart = Date.now();
   await step(
-    `zero emissions for ${windowMs / 1000} s of use under EMCON`,
+    `no observed app requests for ${windowMs / 1000} s under EMCON`,
     async () => {
       const probes = await page.evaluate(async () => {
         const out = {};

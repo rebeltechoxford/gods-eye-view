@@ -7,8 +7,13 @@ import { createEmconState } from './state.js';
 import { installEmconGuard } from './guard.js';
 
 export const emconState = createEmconState();
+let confirmedWorker = null;
+let syncGeneration = 0;
 export const emconGuard = installEmconGuard(globalThis, {
   isActive: emconState.isActive,
+  isWorkerReady: () =>
+    confirmedWorker !== null &&
+    confirmedWorker === globalThis.navigator?.serviceWorker?.controller,
 });
 
 /**
@@ -20,24 +25,46 @@ export function syncEmconWorker(
   active,
   container = globalThis.navigator?.serviceWorker,
 ) {
+  const generation = ++syncGeneration;
+  confirmedWorker = null;
   const worker = container?.controller;
   if (!worker) return Promise.resolve(false);
   return new Promise((resolve) => {
     const channel = new MessageChannel();
-    const timer = setTimeout(() => resolve(false), 1000);
-    channel.port1.onmessage = () => {
+    const finish = (ok) => {
       clearTimeout(timer);
-      resolve(true);
+      channel.port1.close();
+      channel.port2.close();
+      if (
+        ok &&
+        active &&
+        generation === syncGeneration &&
+        container.controller === worker &&
+        emconState.isActive()
+      )
+        confirmedWorker = worker;
+      resolve(ok);
     };
+    const timer = setTimeout(() => finish(false), 1000);
+    channel.port1.onmessage = ({ data }) =>
+      finish(data?.ok === true && data.active === active);
     try {
       worker.postMessage({ type: 'GEV_EMCON', active }, [channel.port2]);
     } catch {
-      clearTimeout(timer);
-      resolve(false);
+      finish(false);
     }
   });
 }
 
 // Keep the worker aligned at every start and when another tab changes it.
 void syncEmconWorker(emconState.isActive());
-emconState.subscribe((record) => void syncEmconWorker(Boolean(record)));
+emconState.subscribe((record) => {
+  if (record) emconGuard.stopActive();
+  void syncEmconWorker(Boolean(record));
+});
+globalThis.navigator?.serviceWorker?.addEventListener?.(
+  'controllerchange',
+  () => {
+    void syncEmconWorker(emconState.isActive());
+  },
+);

@@ -1,5 +1,5 @@
 // Page-level EMCON guard. Installed once, before any application module
-// runs, it wraps every page API that can transmit: fetch, XMLHttpRequest,
+// runs, it wraps the application's common transmit APIs: fetch, XMLHttpRequest,
 // sendBeacon, WebSocket, EventSource, RTCPeerConnection, window.open, link
 // clicks and form submissions,
 // service-worker registration and the src/href of elements that load
@@ -9,8 +9,9 @@
 // Blocked requests fail at once like a network outage (a TypeError), so the
 // app's existing offline fallbacks run instead of waiting for timeouts.
 // Same-origin static files stay readable only where they cannot reach a
-// radio: from the service worker's saved app (cache-only under EMCON) or
+// network: from a confirmed cache-only saved-app worker or
 // from a loopback host.
+// This is an application pause, not a network firewall or radio control.
 
 export class EmconError extends TypeError {
   constructor(what = 'Network request') {
@@ -28,7 +29,7 @@ export const isEmconError = (error) => error?.code === 'EMCON';
 const GUARD = Symbol.for('gev.emcon.guard');
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const STATIC_PATH =
-  /^\/(?:index\.html|manifest\.webmanifest|favicon\.svg|logo\.svg|(?:assets|cesium|events|fonts|models|pwa)\/[^?#]*)?$/;
+  /^\/(?:index\.html|manifest\.webmanifest|(?:favicon|logo|mic|pin|location|visual-presets)\.svg|(?:assets|cesium|events|fonts|models|pwa)\/[^?#]*)?$/;
 const SERVER_PATH = /^\/(?:api|mcp)(?:\/|$)|^\/(?:login|logout)(?:\/|$)/;
 
 /**
@@ -83,13 +84,17 @@ function queueBlockedElementError(element, kind) {
  * @param {object} target The window (tests pass a stand-in).
  * @param {object} options
  * @param {() => boolean} options.isActive Live EMCON flag.
+ * @param {() => boolean} [options.isWorkerReady] Current worker confirmed cache-only.
  * @param {(event:object) => void} [options.onBlocked] Observability hook.
  */
-export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
+export function installEmconGuard(
+  target,
+  { isActive, isWorkerReady = () => false, onBlocked = () => {} },
+) {
   if (target[GUARD]) return target[GUARD];
   const origin = () => target.location?.origin ?? 'null';
   const workerControlled = () =>
-    Boolean(target.navigator?.serviceWorker?.controller);
+    Boolean(target.navigator?.serviceWorker?.controller) && isWorkerReady();
   const allows = (url, method) =>
     !isActive() ||
     emconAllows({
@@ -99,6 +104,20 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
       workerControlled: workerControlled(),
     });
   const blocked = [];
+  const streams = new Set();
+  const xhrs = new Map();
+  const media = new Map();
+  function trackMedia(element) {
+    if (media.has(element)) return;
+    const done = () => {
+      media.delete(element);
+      element.removeEventListener?.('emptied', done);
+      element.removeEventListener?.('ended', done);
+    };
+    media.set(element, done);
+    element.addEventListener?.('emptied', done);
+    element.addEventListener?.('ended', done);
+  }
   const record = (kind, url) => {
     const event = Object.freeze({ kind, url: String(url).slice(0, 300) });
     blocked.push(event);
@@ -128,7 +147,7 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
 
   const Xhr = target.XMLHttpRequest;
   if (Xhr?.prototype) {
-    const { open, send } = Xhr.prototype;
+    const { open, send, abort } = Xhr.prototype;
     Xhr.prototype.open = function emconOpen(method, url, ...rest) {
       this.__gevEmconRequest = { method, url: String(url) };
       return open.call(this, method, url, ...rest);
@@ -146,8 +165,28 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
         });
         return undefined;
       }
-      return send.call(this, body);
+      const done = () => {
+        xhrs.delete(this);
+        this.removeEventListener?.('loadend', done);
+      };
+      xhrs.get(this)?.();
+      xhrs.set(this, done);
+      this.addEventListener?.('loadend', done);
+      try {
+        return send.call(this, body);
+      } catch (error) {
+        done();
+        throw error;
+      }
     };
+    if (abort)
+      Xhr.prototype.abort = function emconAbort() {
+        try {
+          return abort.call(this);
+        } finally {
+          xhrs.get(this)?.();
+        }
+      };
   }
 
   const nav = target.navigator;
@@ -176,7 +215,38 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
           record(kind, args[0] ?? name);
           throw new EmconError(name);
         }
-        return Reflect.construct(Ctor, args, newTarget);
+        const instance = Reflect.construct(Ctor, args, newTarget);
+        const nativeClose = instance.close;
+        const entry = { instance, kind, close: null, retire: null };
+        const done = () => {
+          streams.delete(entry);
+          instance.removeEventListener?.('close', done);
+          instance.removeEventListener?.('connectionstatechange', changed);
+          instance.removeEventListener?.('error', changed);
+        };
+        const changed = () => {
+          if (
+            instance.connectionState === 'closed' ||
+            (kind === 'eventsource' && instance.readyState === 2)
+          )
+            done();
+        };
+        entry.retire = done;
+        entry.close = (...closeArgs) => {
+          try {
+            return nativeClose.apply(instance, closeArgs);
+          } finally {
+            done();
+          }
+        };
+        instance.close = entry.close;
+        instance.addEventListener?.('close', done);
+        if (kind === 'webrtc')
+          instance.addEventListener?.('connectionstatechange', changed);
+        if (kind === 'eventsource')
+          instance.addEventListener?.('error', changed);
+        streams.add(entry);
+        return instance;
       },
     });
     target[name] = Guarded;
@@ -227,11 +297,25 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
             return url;
           }
         })();
-        if (elementAllows(resolved)) return true;
+        if (elementAllows(resolved)) {
+          if (ctor === 'HTMLMediaElement' && url) trackMedia(element);
+          return true;
+        }
         record(kind, resolved);
         return false;
       },
     );
+  }
+  const mediaPrototype = target.HTMLMediaElement?.prototype;
+  if (typeof mediaPrototype?.play === 'function') {
+    const play = mediaPrototype.play;
+    mediaPrototype.play = function emconPlay(...args) {
+      const source = this.currentSrc || this.src;
+      if (source && !allows(source, 'GET'))
+        return Promise.reject(new EmconError('Media playback'));
+      trackMedia(this);
+      return play.apply(this, args);
+    };
   }
   const Element = target.Element;
   if (Element?.prototype?.setAttribute) {
@@ -312,8 +396,59 @@ export function installEmconGuard(target, { isActive, onBlocked = () => {} }) {
     );
   }
 
+  function stopActive() {
+    for (const [xhr, done] of [...xhrs]) {
+      try {
+        xhr.abort();
+      } catch {
+        /* Continue closing the remaining resources. */
+      } finally {
+        done();
+      }
+    }
+    for (const entry of [...streams]) {
+      try {
+        if (entry.kind === 'webrtc')
+          for (const sender of entry.instance.getSenders?.() || []) {
+            try {
+              sender.track?.stop();
+            } catch {
+              /* Closing the transport must still happen. */
+            }
+          }
+        entry.close();
+      } catch {
+        /* A closing stream must not prevent the others from stopping. */
+      } finally {
+        entry.retire();
+      }
+    }
+    for (const element of doc?.querySelectorAll?.('audio, video') || [])
+      trackMedia(element);
+    for (const [element, done] of [...media]) {
+      const source = element.currentSrc || element.src || '';
+      if (!element.srcObject && !/^https?:/i.test(source)) continue;
+      try {
+        element.pause();
+        for (const track of element.srcObject?.getTracks?.() || []) track.stop();
+        element.srcObject = null;
+        element.removeAttribute('src');
+        for (const child of element.querySelectorAll?.('source') || [])
+          child.removeAttribute('src');
+        element.load();
+      } catch {
+        /* Media may already have been detached by its owner. */
+      } finally {
+        done();
+      }
+    }
+    for (const frame of doc?.querySelectorAll?.('iframe[src]') || []) {
+      if (/^https?:/i.test(frame.src)) frame.remove();
+    }
+  }
   const installation = Object.freeze({
     isActive,
+    stopActive,
     blocked: () => blocked.slice(),
   });
   Object.defineProperty(target, GUARD, { value: installation });

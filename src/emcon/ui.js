@@ -6,7 +6,7 @@
 import './emcon.css';
 
 const ENTER_TEXT =
-  'All transmissions from this app stop: the TAK link closes, data feeds freeze with their last data, and maps stay on saved copies. Received contacts, markers, drawings, saved maps and offline driving routes stay available.';
+  'Pause app network requests: close active app connections and media, freeze data feeds, and use saved maps. Received contacts, markers, drawings and installed offline routes stay available. Requests already in flight, other browser contexts and the server may still transmit.';
 const RADIO_TEXT =
   'This app cannot switch off your device radios. Turn on Airplane Mode, then check Wi-Fi and Bluetooth are off.';
 const LEAVE_TEXT =
@@ -107,13 +107,13 @@ export function mountEmconControl({
       element.setAttribute('aria-pressed', String(active));
       element.title = active
         ? 'Leave emissions control'
-        : 'Emissions control: stop all transmissions';
+        : 'Emissions control: pause app network requests';
     }
     doc.documentElement.toggleAttribute('data-emcon', active);
     banner.hidden = !active;
     banner.textContent = active
       ? [
-          'EMCON · NO TRANSMISSIONS',
+          'EMCON · APP REQUESTS PAUSED',
           record.since ? `since ${clock(record.since)}` : '',
           'feeds frozen',
           'Airplane Mode: turn it on',
@@ -126,9 +126,21 @@ export function mountEmconControl({
 
   async function enter() {
     const { persisted } = state.set(true);
-    note = persisted ? '' : 'will not survive a reload on this device';
+    const persistence = persisted
+      ? ''
+      : 'will not survive a reload on this device';
+    note = [persistence, 'saved-app protection pending']
+      .filter(Boolean)
+      .join(' · ');
     render();
-    await syncWorker(true).catch(() => {});
+    const confirmed = await syncWorker(true).catch(() => false);
+    note = [
+      persistence,
+      confirmed ? 'saved app cache-only' : 'saved-app protection unconfirmed',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    render();
   }
   async function leave() {
     state.set(false);
@@ -149,7 +161,7 @@ export function mountEmconControl({
       confirm({
         title: 'Enter EMCON?',
         lines: [ENTER_TEXT, RADIO_TEXT],
-        accept: 'Go silent',
+        accept: 'Pause app requests',
         onAccept: () => void enter(),
       });
   };

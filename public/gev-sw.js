@@ -31,6 +31,7 @@ function loadEmcon() {
 async function storeEmcon(active) {
   emcon = active;
   if (active) {
+    saving?.abort.abort();
     await (
       await caches.open(STATE)
     ).put(
@@ -86,6 +87,10 @@ function allowedPath(value) {
       '/manifest.webmanifest',
       '/favicon.svg',
       '/logo.svg',
+      '/mic.svg',
+      '/pin.svg',
+      '/location.svg',
+      '/visual-presets.svg',
     ].includes(value)
   )
     return true;
@@ -335,6 +340,8 @@ self.addEventListener('message', (event) => {
           (typeof scope !== 'string' || !/^[a-f0-9]{64}$/.test(scope))
         )
           throw new Error('Invalid offline application account scope');
+        if (event.data.type === 'GEV_SHELL_SAVE' && (await loadEmcon()))
+          throw new Error('Leave EMCON before downloading the application');
         if (event.data.type === 'GEV_SHELL_SAVE')
           result = await saveShell(port, scope);
         else if (event.data.type === 'GEV_SHELL_DELETE') {
@@ -345,6 +352,8 @@ self.addEventListener('message', (event) => {
             for (const name of await caches.keys())
               if (name === STATE || name.startsWith(PREFIX))
                 await caches.delete(name);
+            // Removing saved files must not remove the independent pause flag.
+            if (emcon === true) await storeEmcon(true);
           } finally {
             deleting = false;
           }
@@ -413,19 +422,14 @@ self.addEventListener('fetch', (event) => {
   }
   const route = shellRoute(request);
   if (emcon === null) {
-    // Cold start: the stored flag is still loading. Navigations and saved-app
-    // files wait for it; other requests keep their normal path, where the
-    // page guard refuses them under EMCON.
-    const sameOriginNavigation =
-      request.mode === 'navigate' &&
-      new URL(request.url).origin === self.location.origin;
-    if (route || sameOriginNavigation)
-      event.respondWith(
-        loadEmcon().then((active) => {
-          if (active) return emconResponse(request);
-          return route ? shellResponse(request, route) : fetch(request);
-        }),
-      );
+    // Every fetch waits: a worker or an existing page may issue non-shell
+    // traffic before this service worker has read its persisted mode.
+    event.respondWith(
+      loadEmcon().then((active) => {
+        if (active) return emconResponse(request);
+        return route ? shellResponse(request, route) : fetch(request);
+      }),
+    );
     return;
   }
   if (route) event.respondWith(shellResponse(request, route));

@@ -7,6 +7,7 @@ import { initDrawTool } from '../annotations/drawTool.js';
 import { initImageryBoxTool } from '../ui/imageryBoxTool.js';
 import { createRecentImageryPanel } from '../ui/recentImagery.js';
 import { initGevVoiceCommands } from '../voice/gevRealtime.js';
+import { emconState } from '../emcon/boot.js';
 import { installViews, isEmbeddedInline } from './embed.js';
 import { installScopeMask, destroyScopeMask } from '../scopeMask.js';
 import {
@@ -202,6 +203,22 @@ export function createApplicationTools({
       delete window.__gevVoiceCommands;
   });
   debug.voiceCommands = voiceCommands;
+  defer(
+    emconState.subscribe((record) => {
+      if (!record) return;
+      for (const stop of [
+        () => voiceCommands.stop(),
+        () => dataManager.layers.get('radio')?.module.stopRadioPlayback?.(),
+        () => styleManager.hud?._summaryRequest?.abort(),
+      ]) {
+        try {
+          stop();
+        } catch {
+          // Independent owners must all get a chance to release their resources.
+        }
+      }
+    }),
+  );
   defer(
     installViews({
       shell: styleManager,
