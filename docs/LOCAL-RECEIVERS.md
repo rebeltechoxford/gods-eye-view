@@ -12,6 +12,10 @@ Aircraft from both inputs are merged by ICAO address. The newest position
 wins, and the click card names every band and source that heard the aircraft
 in the last 60 s. Aircraft heard only on 978 MHz UAT draw with a thin ring.
 
+The same 978 MHz receiver also hears FIS-B weather and NOTAMs from FAA
+ground stations; the FIS-B Weather layer reads them from dump978-fa's raw port
+([FIS-B Weather](FISB.md)).
+
 Local aircraft usually lead their public twins. The public Flights layer
 renders positions about one poll interval (~30 s) behind so it can interpolate
 smoothly between fixes, while local receiver aircraft are shown as heard. An

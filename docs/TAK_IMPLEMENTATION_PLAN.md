@@ -635,6 +635,29 @@ Device radios, browser update checks and the private host's uplinks are out of
 reach of a web page; a physical iPhone in Airplane Mode and a host-side EMCON
 switch remain open in [TAK_TODO.md](../TAK_TODO.md).
 
+## FIS-B weather run
+
+The FIS-B Weather layer is described, with its limits, in [FISB.md](FISB.md).
+Recorded on 2026-10-18 UTC with Node `24.14.0` on Linux x64 and Chromium
+`141.0.7390.37`:
+
+- The independently written decoder matches fisb-decode's level-0 output
+  frame for frame on FIS-B test groups 28, 29 and a 64-uplink cover of group
+  30 (every product type, two segmented files), and reproduces the GDL 90 ICD
+  examples. The store decoded all 6,232 frames of the full group 30 capture
+  with zero errors. Seven deliberate decoder mutations each fail a test.
+- 32 new unit tests; full unit suite **6,917 passed**, one existing skip, zero
+  failures. Formatting, import/package boundaries, setup doctor and the
+  production build passed.
+- `npm run qa:fisb` passed 6 scenarios against the production HTTPS host fed
+  by a synthetic dump978-fa receiver: closed before sign-in, stations by flight
+  category, TFR and AIRMET outlines, NEXRAD image, a station card, clean
+  removal.
+- The catalog is now 31 layers (FIS-B is local-only, like Local ADS-B).
+  `qa-tak.mjs --lab --protobuf` passed 12 scenarios with the new catalog.
+
+A real ground station has not been heard yet; that needs the owner's receiver.
+
 ## Current external prerequisites
 
 The official-source local server lab used fresh synthetic credentials; no

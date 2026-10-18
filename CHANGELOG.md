@@ -1,5 +1,15 @@
 # Changelog
 
+- FIS-B Weather: a new layer shows what your own 978 MHz receiver hears from
+  FAA ground stations, with no internet: METAR stations colored by flight
+  category, TFR/NOTAM, AIRMET, G-AIRMET and SIGMET areas, and NEXRAD
+  precipitation; click for the text. The host reads dump978-fa's raw port or
+  Stratux-style GDL 90 over UDP (`FISB_FEEDS`). The decoder matches
+  fisb-decode's reference output frame for frame on FIS-B test groups 28–30
+  and the GDL 90 ICD examples; a Chromium gate drives a synthetic receiver
+  through the production HTTPS host. A real ground station is still to be
+  heard; see `docs/FISB.md`.
+
 - EMCON (emissions control): an **EMCON** button above the TAK launcher and in
   the TAK panel header stops every transmission from the app after a
   confirmation. The TAK link closes, data feeds freeze with their last data,

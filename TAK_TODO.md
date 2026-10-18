@@ -104,7 +104,9 @@ running.
    needed, turn restrictions and multi-region packs. EMCON silences the browser
    app ([scope and evidence](docs/TAK_EMCON.md)); verify it on a physical iPhone
    in Airplane Mode, add a host-side EMCON switch for field laptops and keep
-   the received TAK picture across an EMCON reload. Add unsent tactical queue reconciliation with an explicit
+   the received TAK picture across an EMCON reload. FIS-B Weather decodes a 978 MHz
+   receiver's weather and NOTAMs ([scope and evidence](docs/FISB.md)); hear a
+   real ground station, then draw lightning, icing, turbulence and cloud tops. Add unsent tactical queue reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs
