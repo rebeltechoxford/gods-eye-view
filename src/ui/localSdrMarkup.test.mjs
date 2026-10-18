@@ -79,7 +79,7 @@ test('the AIR mode sits between FM and ADS-B with airband help and a squelch sli
   );
   assert.match(
     html,
-    /id="sdr-air-help"[^>]*hidden>121\.500 guard\/emergency · 122\.750 air-to-air · 123\.025 helicopter air-to-air\. Your local tower, CTAF and ATIS frequencies are on the airport's chart\. No receiver\? <a href="https:\/\/www\.liveatc\.net\/" target="_blank" rel="noopener noreferrer">Listen online at LiveATC<\/a> \(opens liveatc\.net; not available under EMCON\)\.</,
+    /id="sdr-air-help"[^>]*hidden>Enter the actual carrier frequency in MHz\. 8\.33 kHz channel labels are not converted \(channel 118\.005 uses a 118\.000 MHz carrier\)\. 121\.500 guard\/emergency · 122\.750 air-to-air · 123\.025 helicopter air-to-air\. No receiver\? <a href="https:\/\/www\.liveatc\.net\/" target="_blank" rel="noopener noreferrer">Listen online at LiveATC<\/a> \(opens liveatc\.net; not available under EMCON\)\.</,
   );
   assert.match(
     html,
