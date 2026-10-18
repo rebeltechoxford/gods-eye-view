@@ -645,6 +645,9 @@ export async function createOfflinePackStore({
                 format: provenance.format,
                 importedAt: provenance.importedAt,
                 edition: provenance.edition,
+                ...(provenance.selection
+                  ? { selection: provenance.selection }
+                  : {}),
               },
             }
           : summary;

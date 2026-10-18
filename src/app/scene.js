@@ -202,6 +202,9 @@ export async function createApplicationScene({
     tileset,
     mapStackController,
     operations,
-    savedMapBounds: savedMap?.manifest.bounds || null,
+    savedMapBounds:
+      savedMap?.manifest.provenance?.selection?.bounds ||
+      savedMap?.manifest.bounds ||
+      null,
   };
 }

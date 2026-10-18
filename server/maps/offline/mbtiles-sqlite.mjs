@@ -5,6 +5,9 @@ import {
   OFFLINE_IMPORT_LIMITS,
   MERCATOR_LATITUDE,
   tileKey,
+  validateMbtilesSelection,
+  mbtilesSelectionRanges,
+  importedTileBounds,
 } from '../../../src/maps/offline/schema.js';
 import { validateImportedRaster } from './raster-validation.js';
 
@@ -31,6 +34,10 @@ process.on('message', async (message) => {
   if (message?.op !== 'start') return;
   let db;
   try {
+    const selection =
+      message.selection === undefined
+        ? null
+        : validateMbtilesSelection(message.selection);
     const handle = await open(message.file, 'r');
     try {
       const header = Buffer.alloc(100);
@@ -88,7 +95,13 @@ process.on('message', async (message) => {
       )
         error(`MBTiles ${table} table or view has an unsupported schema`);
     }
-    const checked = db.prepare('PRAGMA quick_check(1)').get();
+    // Indexed AOI reads must not trust a corrupt index that silently omits rows.
+    // The stronger check remains inside the same heap/whole-process deadline.
+    const checked = db
+      .prepare(
+        selection ? 'PRAGMA integrity_check(1)' : 'PRAGMA quick_check(1)',
+      )
+      .get();
     if (!checked || Object.values(checked)[0] !== 'ok')
       error('MBTiles SQLite integrity check failed');
     const functions = new Set([
@@ -198,6 +211,12 @@ process.on('message', async (message) => {
       )
         error(`MBTiles ${name} metadata is invalid`);
     if (
+      meta.has('minzoom') &&
+      meta.has('maxzoom') &&
+      Number(meta.get('minzoom')) > Number(meta.get('maxzoom'))
+    )
+      error('MBTiles declared zoom range is reversed');
+    if (
       meta.has('type') &&
       !['overlay', 'baselayer'].includes(meta.get('type'))
     )
@@ -250,11 +269,27 @@ process.on('message', async (message) => {
     };
     const coordinates =
       'zoom_level AS z, tile_column AS x, tile_row AS r, typeof(zoom_level) AS zt, typeof(tile_column) AS xt, typeof(tile_row) AS yt, typeof(tile_data) AS dt';
-    for (const row of db
-      .prepare(
-        `SELECT ${coordinates}, length(tile_data) AS size FROM tiles LIMIT 5001`,
-      )
-      .iterate()) {
+    const ranges = selection && mbtilesSelectionRanges(selection);
+    function* rows(payload) {
+      const columns = payload
+        ? 'tile_data AS bytes'
+        : 'length(tile_data) AS size';
+      const statement = db.prepare(
+        `SELECT ${coordinates}, ${columns} FROM tiles${ranges ? ' WHERE zoom_level=? AND tile_column BETWEEN ? AND ? AND tile_row BETWEEN ? AND ? LIMIT ?' : ' LIMIT 5001'}`,
+      );
+      if (!ranges) {
+        yield* statement.iterate();
+        return;
+      }
+      let remaining = OFFLINE_LIMITS.maxTiles + 1;
+      for (const { z, x0, x1, r0, r1 } of ranges) {
+        for (const row of statement.iterate(z, x0, x1, r0, r1, remaining)) {
+          yield row;
+          if (--remaining === 0) return;
+        }
+      }
+    }
+    for (const row of rows(false)) {
       const { z, x, y } = location(row),
         key = tileKey(z, x, y);
       if (inventory.size >= OFFLINE_LIMITS.maxTiles || inventory.has(key))
@@ -279,35 +314,47 @@ process.on('message', async (message) => {
       south = Math.min(south, latitude(y + 1));
       north = Math.max(north, latitude(y));
     }
-    if (!inventory.size) error('MBTiles contains no supported raster tiles');
+    if (!inventory.size)
+      error(
+        selection
+          ? 'MBTiles selection contains no supported raster tiles'
+          : 'MBTiles contains no supported raster tiles',
+      );
     if (
-      (meta.has('minzoom') && Number(meta.get('minzoom')) !== minZoom) ||
-      (meta.has('maxzoom') && Number(meta.get('maxzoom')) !== maxZoom)
+      !selection &&
+      ((meta.has('minzoom') && Number(meta.get('minzoom')) !== minZoom) ||
+        (meta.has('maxzoom') && Number(meta.get('maxzoom')) !== maxZoom))
     )
       error('MBTiles declared zoom range differs from its tile inventory');
+    if (
+      selection &&
+      ((meta.has('minzoom') && minZoom < Number(meta.get('minzoom'))) ||
+        (meta.has('maxzoom') && maxZoom > Number(meta.get('maxzoom'))))
+    )
+      error(
+        'MBTiles selected tile contradicts the original declared zoom range',
+      );
     await send({
       op: 'header',
       value: {
         plannedKeys: [...inventory.keys()].sort(),
         minZoom,
         maxZoom,
-        bounds: {
-          west,
-          south: Math.max(-MERCATOR_LATITUDE, south),
-          east,
-          north: Math.min(MERCATOR_LATITUDE, north),
-        },
+        bounds: selection
+          ? importedTileBounds([...inventory.keys()])
+          : {
+              west,
+              south: Math.max(-MERCATOR_LATITUDE, south),
+              east,
+              north: Math.min(MERCATOR_LATITUDE, north),
+            },
         metadata,
         contentType,
         tileBytes: total,
       },
     });
     const seen = new Set();
-    for (const row of db
-      .prepare(
-        `SELECT ${coordinates}, tile_data AS bytes FROM tiles LIMIT 5001`,
-      )
-      .iterate()) {
+    for (const row of rows(true)) {
       const { z, x, y } = location(row),
         key = tileKey(z, x, y);
       if (

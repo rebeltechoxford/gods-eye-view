@@ -506,9 +506,9 @@ PR #6 iOS job `38999554419` passed archive/payload/policy and iPhone 17 simulato
 checks; test-merge `34edc257` has the same file tree as dev. The downloaded IPA
 hash is recorded in the run guide. Fresh repository CI `38999554396` passed
 Node 24, Node 26 and Windows, but the named-account browser gate failed with
-unmatched `Fetch.fulfillRequest: Invalid InterceptionId` errors. That failure
-is retained and under investigation; the earlier 28 local browser passes do
-not erase it.
+unmatched `Fetch.fulfillRequest: Invalid InterceptionId` errors. That historical
+failure is retained. The causal navigation/commit correction below subsequently
+passed the full final-head CI run; earlier local passes alone did not resolve it.
 
 ## Local MBTiles integration, 2026-10-17 UTC
 
@@ -541,15 +541,28 @@ interception and a matching successful document commit before retiring its old
 request. Twenty-seven focused regressions include mismatched/late/unrelated
 navigation failures; unmatched protocol errors still fail. The earlier candidate
 passed all five jobs in [CI run 39000173643](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39000173643).
-That run predates the complete UI and final causal correction; a fresh final-head
-run is required before merging [PR #11](https://github.com/rebeltechoxford/gods-eye-view/pull/11).
+That run predates the complete UI and final causal correction. Final-head
+[CI run 39001491533](https://github.com/rebeltechoxford/gods-eye-view/actions/runs/39001491533)
+then passed all five jobs at `9d6e3c38`, including the whole-file phone gate.
+Its Linux Node 24 run passed 6,792 ordinary tests, one platform skip and all
+14 allocation checks. [PR #11](https://github.com/rebeltechoxford/gods-eye-view/pull/11)
+merged into development as `28eb0c9e`; main remained unchanged.
 
-A complete real NOAA MBTiles bundle exceeded the unchanged 5,000-tile cap. A
-small read-only experiment extracted one valid tile under the same resource
-limits, but production area/zoom selection is a separate increment described in
-[the subset plan](TAK_MBTILES_SUBSET_PLAN.md). Neither test establishes source
-currency, operational chart coverage, 3D terrain or a license to retain arbitrary
-commercial map data.
+A complete real NOAA MBTiles bundle exceeded the unchanged 5,000-tile cap.
+The subsequent area/zoom increment adds explicit selection in the phone form,
+bounded indexed SQLite reads with index-integrity verification, immutable original
+provenance, device/backup retention and selected-area camera framing. Whole-file
+behavior remains the unchecked default, and full source bytes still count against
+quota. CI exercises both modes independently.
+
+Six synthetic subset phone scenarios passed. The same single retained NOAA file
+also passed actual full-file HTTPS upload, one selected tile on server/device,
+Cesium rendering and a real stopped-listener fresh-page reopen. The observed
+`SG_AREA` content was a service-area overlay with 2024 source dates, not verified
+current navigation coverage. [The subset evidence](TAK_MBTILES_SUBSET_PLAN.md)
+records the exact file, tile, limits and the initial unsuccessful scratch pixel
+measurement. Physical EUD storage, broader chart packages, 3D terrain and source
+download rights remain separate acceptance work.
 
 ## TAK protocol v1 lab run
 

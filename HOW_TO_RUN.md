@@ -270,8 +270,10 @@ started in an iPhone simulator. The verified handoff copy is
 while GitHub retains it. Its SHA-256 is
 `71ab99f7e74c1e9efb3321410f5e10b6a18b14da823441506620f1e8dbea5867`.
 Its PR test-merge `34edc257` has the same file tree as development `8c96791c`.
-The iOS job passed; a separate fresh browser CI run exposed an intermittent
-fixture-interception failure still under investigation. The archive was built
+The iOS job passed. A separate browser CI run exposed a navigation-related
+fixture-interception failure; its causal correction and the full MBTiles workflow
+subsequently passed all five jobs in CI run `39001491533`, merged into development
+as `28eb0c9e`. The archive was built
 with Xcode 26.6 and started on an iPhone 17 / iOS 26.5 simulator; this does not
 establish a physical-phone or configured-private-endpoint result.
 
@@ -320,6 +322,15 @@ MBTiles**. The default creates server and device copies and saves the offline
 app. **Source / license / edition** shows the retained notices and original
 file SHA-256. These notices survive `.gevmap` backups.
 
+To retain part of a larger file, set the area and minimum/maximum zoom in the
+controls above, then enable **Limit import to area and zooms entered above**.
+The unchecked default imports the whole file. A subset retains only existing
+tiles intersecting those limits; boundary tiles remain whole and sparse gaps
+remain blank. The panel shows the maximum cell count before upload. The entire
+original file still uploads and counts against quota, and its hash, original
+metadata and notices remain separate from the recorded selection. Showing or
+reopening a saved subset frames the requested area.
+
 Named accounts default to 128 MiB per pack and 256 MiB per account. During
 import the original SQLite file and normalized output both need reserved space.
 
@@ -332,7 +343,9 @@ there is no byte-upload resume. A completed server copy remains usable if a
 later device copy fails: use **Save to this device** or **Verify / refresh device
 copy**. Incomplete imported packs require the original file again; the USGS
 resume action does not repair them. Whole NOAA chart bundles can exceed the
-5,000-tile limit and are not automatically cropped or accepted. Read the
+5,000-tile limit; explicitly select a smaller area/detail to import a subset.
+The exercised retained NOAA file was an `SG_AREA` service-area overlay with
+observed May 2024 dates, not a verified current navigational chart. Read the
 [MBTiles format, permissions and limits](docs/TAK_MBTILES_IMPORT.md).
 
 Limits are 5,000 tiles and 512 MiB per pack, 32 packs and 2 GiB per store, with

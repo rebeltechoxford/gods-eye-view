@@ -94,19 +94,22 @@ running.
    storage/restart/eviction acceptance before broad field claims. Local authorized
    MBTiles import now has a phone file form, source/license notices, bounded raw
    upload, cancel/reselect, server/device copies and saved-app integration; see
-   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Broader chart
-   acceptance remains: a real NOAA bundle exceeded the unchanged 5,000-tile cap,
-   and FAA GeoTIFF conversion/import is unsupported. Add 3D elevation packs
-   separately from rendered topographic maps. Offline car routing from OSM
-   road packs is implemented and passes a synthetic production outage gate
-   ([scope and evidence](docs/TAK_OFFLINE_ROADS.md)); test it on a physical
-   iPhone, then add live guidance (position tracking, rerouting) and, if
-   needed, turn restrictions and multi-region packs. EMCON silences the browser
-   app ([scope and evidence](docs/TAK_EMCON.md)); verify it on a physical iPhone
-   in Airplane Mode, add a host-side EMCON switch for field laptops and keep
-   the received TAK picture across an EMCON reload. FIS-B Weather decodes a 978 MHz
-   receiver's weather and NOTAMs ([scope and evidence](docs/FISB.md)); hear a
-   real ground station, then draw lightning, icing, turbulence and cloud tops. Add unsent tactical queue reconciliation with an explicit
+   [its supported raster contract](docs/TAK_MBTILES_IMPORT.md). Explicit area/zoom
+   selection imports bounded subsets from larger files; six synthetic phone
+   scenarios and a retained NOAA `SG_AREA` file passed import, rendering and
+   stopped-server reopening. That overlay had observed 2024 dates; current chart
+   coverage remains unverified. Whole-file, selected-cell and account limits
+   remain unchanged. FAA GeoTIFF conversion/import is unsupported. Add 3D
+   elevation packs separately from rendered topographic maps. Offline car routing
+   from OSM road packs is implemented ([scope](docs/TAK_OFFLINE_ROADS.md)); verify
+   physical iPhone capacity, then add live guidance, turn restrictions and
+   multi-region packs. EMCON pauses app requests ([limits](docs/TAK_EMCON.md));
+   it does not establish complete device radio or network isolation. Verify
+   physical iPhone Airplane Mode behavior, add host-side controls and retain the
+   received TAK picture across reload. FIS-B weather decodes receiver weather
+   and NOTAMs ([scope](docs/FISB.md)); verify a real ground station, then draw
+   lightning, icing, turbulence and cloud tops. Add unsent tactical queue
+   reconciliation with an explicit
    retention policy. Reliable background location or external GNSS may need a
    native companion. Map center is operator input, not GPS.
 8. **Video/sensors/radios/plugins.** Support named authorized transports, codecs

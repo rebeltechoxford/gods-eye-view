@@ -53,9 +53,56 @@ test('permission, file signature, size and metadata are rejected before creating
       },
     },
     { file: file(), metadata: { ...metadata, license: 'x'.repeat(8193) } },
+    {
+      file: file(),
+      metadata: {
+        ...metadata,
+        selection: {
+          bounds: { west: -180, south: -80, east: 180, north: 80 },
+          minZoom: 15,
+          maxZoom: 15,
+        },
+      },
+    },
   ])
     await assert.rejects(uploadMbtiles({ ...input, request }));
   assert.equal(requests, 0);
+});
+
+test('optional selected extent is validated and snapshotted before asynchronous file reads', async () => {
+  const selection = {
+    bounds: { west: -1, south: -1, east: 1, north: 1 },
+    minZoom: 1,
+    maxZoom: 1,
+  };
+  let captured;
+  const task = uploadMbtiles({
+    file: file(),
+    metadata: { ...metadata, selection },
+    wait: async () => {},
+    request: async (_url, options = {}) => {
+      if (options.method === 'POST') {
+        captured = options.body.selection;
+        return progress();
+      }
+      if (options.method === 'PUT')
+        return progress('validating', { receivedBytes: 100 });
+      return progress('ready', {
+        receivedBytes: 100,
+        completedTiles: 1,
+        plannedTiles: 1,
+        packId,
+      });
+    },
+  });
+  selection.bounds.west = -50;
+  selection.minZoom = 0;
+  await task;
+  assert.deepEqual(captured, {
+    bounds: { west: -1, south: -1, east: 1, north: 1 },
+    minZoom: 1,
+    maxZoom: 1,
+  });
 });
 
 test('the selected Blob is sent unchanged and observed through bounded upload/conversion status', async () => {

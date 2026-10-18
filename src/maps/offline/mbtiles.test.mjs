@@ -7,6 +7,10 @@ import {
   validateOfflineManifest,
   planOfflineTiles,
   hashTile,
+  validateMbtilesImportRequest,
+  validateMbtilesSelection,
+  mbtilesSelectionRanges,
+  importedTileBounds,
 } from './schema.js';
 import { exportOfflinePack, readOfflinePack } from './file.js';
 
@@ -249,4 +253,105 @@ test('imported map credits escape private text and distinguish import time from 
   assert.equal(provider.credit.html.includes('<b>'), false);
   provider.destroy();
   assert.equal(provider.isDestroyed(), true);
+});
+
+test('optional MBTiles selection is closed, cloned and bounded without changing whole-file requests', () => {
+  const input = {
+    name: 'Approved',
+    fileBytes: 16384,
+    sourceTitle: 'Own',
+    license: 'Own',
+    authorized: true,
+  };
+  assert.equal(validateMbtilesImportRequest(input).selection, undefined);
+  const selection = {
+    bounds: { west: 170, south: -10, east: -170, north: 10 },
+    minZoom: 0,
+    maxZoom: 2,
+  };
+  const result = validateMbtilesImportRequest({ ...input, selection });
+  assert.deepEqual(result.selection, selection);
+  selection.bounds.west = 160;
+  assert.equal(result.selection.bounds.west, 170);
+  assert.deepEqual(mbtilesSelectionRanges(result.selection), [
+    { z: 0, x0: 0, x1: 0, r0: 0, r1: 0 },
+    { z: 1, x0: 0, x1: 1, r0: 0, r1: 1 },
+    { z: 2, x0: 0, x1: 0, r0: 1, r1: 2 },
+    { z: 2, x0: 3, x1: 3, r0: 1, r1: 2 },
+  ]);
+  for (const value of [
+    null,
+    {},
+    { ...selection, sql: '1=1' },
+    { ...selection, minZoom: '0' },
+    { ...selection, minZoom: 3, maxZoom: 2 },
+    { ...selection, maxZoom: 24 },
+    {
+      bounds: { west: -180, south: -80, east: 180, north: 80 },
+      minZoom: 13,
+      maxZoom: 13,
+    },
+  ])
+    assert.throws(() => validateMbtilesSelection(value), TypeError);
+});
+
+test('subset provenance, actual dateline envelope and exact sparse keys survive backup; escaping keys are rejected', async () => {
+  const selection = {
+    bounds: { west: 170, south: -10, east: -170, north: 10 },
+    minZoom: 2,
+    maxZoom: 2,
+  };
+  const plannedKeys = ['2/0/1', '2/3/2'];
+  assert.deepEqual(importedTileBounds(plannedKeys), {
+    west: 90,
+    south: -66.51326044311186,
+    east: -90,
+    north: 66.51326044311186,
+  });
+  const world = importedTileBounds(['0/0/0']);
+  assert.equal(world.west, -180);
+  assert.equal(world.east, 180);
+  assert.ok(Math.abs(world.south + 85.0511287798066) < 1e-10);
+  assert.ok(Math.abs(world.north - 85.0511287798066) < 1e-10);
+  const pack = ready(
+    create({
+      plannedKeys,
+      bounds: importedTileBounds(plannedKeys),
+      provenance: { ...provenance, selection },
+    }),
+  );
+  const blob = await exportOfflinePack(pack, async () => ({
+    bytes: image,
+    contentType: 'image/jpeg',
+  }));
+  assert.doesNotThrow(() =>
+    validateOfflineManifest({
+      ...pack,
+      bounds: {
+        ...pack.bounds,
+        north: pack.bounds.north - Number.EPSILON * 64,
+      },
+    }),
+  );
+  assert.deepEqual((await readOfflinePack(blob)).manifest, pack);
+  selection.bounds.west = 150;
+  assert.equal(pack.provenance.selection.bounds.west, 170);
+  assert.throws(
+    () =>
+      create({
+        plannedKeys: ['2/1/1'],
+        bounds: importedTileBounds(['2/1/1']),
+        provenance: pack.provenance,
+      }),
+    /outside selection/,
+  );
+  assert.throws(
+    () =>
+      create({
+        plannedKeys,
+        bounds: { west: -180, south: -80, east: 180, north: 80 },
+        provenance: pack.provenance,
+      }),
+    /tile envelope/,
+  );
 });
