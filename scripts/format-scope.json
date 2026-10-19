@@ -1106,5 +1106,13 @@
   "scripts/qa-fisb.mjs",
   "src/testSupport/fisbUplinks.mjs",
   "src/routing/packStore.test.mjs",
-  "scripts/qa-road-pack-fixture.mjs"
+  "scripts/qa-road-pack-fixture.mjs",
+  "src/location/deviceLocation.js",
+  "src/location/deviceLocation.test.mjs",
+  "src/ui/myLocation.js",
+  "src/ui/myLocation.test.mjs",
+  "scripts/qa-my-location.mjs",
+  "docs/MY-LOCATION.md",
+  "changelog.d/my-location.md",
+  "changelog.d/tak-gateway-identity-release.md"
 ]

@@ -1953,6 +1953,7 @@ body.cockpit-mode
     #share-btn,
     #tilt-map-view,
     #north-up-view,
+    #my-location-view,
     #reset-globe-view
   ) {
   display: none !important;

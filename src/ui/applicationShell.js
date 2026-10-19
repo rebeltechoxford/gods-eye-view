@@ -21,6 +21,9 @@ import { LocalSdrControls } from './localSdrControls.js';
 import { LocationNavigation } from './locationNavigation.js';
 import { bindClearLayersControl } from './layers.js';
 import { bindCameraOrientationControls } from './cameraOrientationControls.js';
+import { createMyLocation } from './myLocation.js';
+import { deviceLocation } from '../location/deviceLocation.js';
+import { markTakDataPrivate } from '../tak/privacy.js';
 import { createMapSourceControls } from './mapSource.js';
 import { STYLES } from './effects.js';
 import { isHudLayout } from '../hudLayouts.js';
@@ -576,6 +579,7 @@ export class StyleManager extends ShellFacade {
     this._initLocationBar();
     this._initShareButton();
     this._initCameraOrientationControls();
+    this._initMyLocation();
     this._initClearSelectedLayersButton();
     this._initHUDToggle();
     this._initModels3dToggle();
@@ -1468,6 +1472,25 @@ export class StyleManager extends ShellFacade {
     });
   }
 
+  /** Wire the map's own device-location dot and FOLLOW button. */
+  _initMyLocation() {
+    this._myLocation?.destroy();
+    this._myLocation = null;
+    if (!this._myLocationBtn) return;
+    this._myLocation = createMyLocation({
+      viewer: this.viewer,
+      button: this._myLocationBtn,
+      location: deviceLocation().consumer(),
+      navigation: {
+        run: (noun, move) => this._runExplicitNavigation(noun, move),
+        subscribeHandoff: (listener) =>
+          this._navigation.subscribeCameraHandoff(listener),
+      },
+      onPrivate: () => markTakDataPrivate(this.viewer),
+      showToast: (message) => this._showToast(message),
+    });
+  }
+
   // ── Share Button ─────────────────────────────
 
   /**
@@ -1583,6 +1606,7 @@ export class StyleManager extends ShellFacade {
     this._displayBindings.destroy();
     this._mapSourceControls?.destroy();
     this._cameraOrientationControls?.destroy();
+    this._myLocation?.destroy();
     this._clearLayersControl?.destroy();
     this._cctvControls?.destroy();
     this.services?.streetLevelLayer?.attachNavigation?.(null);
