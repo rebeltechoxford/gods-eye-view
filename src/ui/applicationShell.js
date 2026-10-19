@@ -22,6 +22,7 @@ import { LocationNavigation } from './locationNavigation.js';
 import { bindClearLayersControl } from './layers.js';
 import { bindCameraOrientationControls } from './cameraOrientationControls.js';
 import { createMyLocation } from './myLocation.js';
+import { bindStartViewControls } from './startView.js';
 import { deviceLocation } from '../location/deviceLocation.js';
 import { markTakDataPrivate } from '../tak/privacy.js';
 import { createMapSourceControls } from './mapSource.js';
@@ -580,6 +581,7 @@ export class StyleManager extends ShellFacade {
     this._initShareButton();
     this._initCameraOrientationControls();
     this._initMyLocation();
+    this._initStartView();
     this._initClearSelectedLayersButton();
     this._initHUDToggle();
     this._initModels3dToggle();
@@ -1491,6 +1493,20 @@ export class StyleManager extends ShellFacade {
     });
   }
 
+  /** Wire the Location tray's start-view row (saved on this device). */
+  _initStartView() {
+    this._startViewControls?.destroy();
+    this._startViewControls = bindStartViewControls({
+      viewer: this.viewer,
+      elements: {
+        status: this._startViewStatus,
+        set: this._startViewSetBtn,
+        clear: this._startViewClearBtn,
+      },
+      showToast: (message) => this._showToast(message),
+    });
+  }
+
   // ── Share Button ─────────────────────────────
 
   /**
@@ -1607,6 +1623,7 @@ export class StyleManager extends ShellFacade {
     this._mapSourceControls?.destroy();
     this._cameraOrientationControls?.destroy();
     this._myLocation?.destroy();
+    this._startViewControls?.destroy();
     this._clearLayersControl?.destroy();
     this._cctvControls?.destroy();
     this.services?.streetLevelLayer?.attachNavigation?.(null);

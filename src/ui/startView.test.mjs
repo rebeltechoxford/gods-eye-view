@@ -1,0 +1,232 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as Cesium from 'cesium';
+import { flyToAustin } from '../camera.js';
+import {
+  DEFAULT_START_VIEW,
+  START_VIEW_STORAGE_KEY,
+  bindStartViewControls,
+  captureStartView,
+  flyToStartView,
+  formatStartViewPlace,
+  parseStartView,
+  readStartView,
+} from './startView.js';
+
+function memoryStorage(initial = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    data,
+    getItem: (key) => (data.has(key) ? data.get(key) : null),
+    setItem: (key, value) => data.set(key, String(value)),
+    removeItem: (key) => data.delete(key),
+  };
+}
+
+function recordingViewer() {
+  const calls = [];
+  return {
+    calls,
+    isDestroyed: () => false,
+    camera: {
+      setView: (options) => calls.push(['setView', options]),
+      flyTo: (options) => calls.push(['flyTo', options]),
+      cancelFlight: () => calls.push(['cancel']),
+    },
+  };
+}
+
+const OXFORD = {
+  label: '',
+  lat: 34.3665,
+  lon: -89.5192,
+  height: 1800,
+  heading: 20,
+  pitch: -40,
+};
+
+test('stored views are validated; anything malformed falls back to the default', () => {
+  assert.deepEqual(parseStartView(JSON.stringify(OXFORD)), OXFORD);
+  for (const bad of [
+    null,
+    '',
+    'not json',
+    '[]',
+    JSON.stringify({ ...OXFORD, lat: 91 }),
+    JSON.stringify({ ...OXFORD, lon: -181 }),
+    JSON.stringify({ ...OXFORD, height: 0 }),
+    JSON.stringify({ ...OXFORD, height: 1e9 }),
+    JSON.stringify({ ...OXFORD, pitch: 10 }),
+    JSON.stringify({ ...OXFORD, heading: 'north' }),
+    JSON.stringify({ lat: 1, lon: 2 }),
+  ])
+    assert.equal(parseStartView(bad), null, String(bad));
+  const odd = parseStartView(
+    JSON.stringify({
+      ...OXFORD,
+      heading: -30,
+      label: 'Home\u0000\n' + 'x'.repeat(99),
+    }),
+  );
+  assert.equal(odd.heading, 330);
+  assert.equal(odd.label.length, 60);
+  assert.ok(!/[\u0000-\u001f]/.test(odd.label));
+  // Blocked storage reads as "no saved view".
+  assert.equal(
+    readStartView({
+      getItem() {
+        throw new Error('SecurityError');
+      },
+    }),
+    null,
+  );
+});
+
+test('the default start view flies in exactly as the original Austin start did', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = recordingViewer();
+  flyToAustin(before);
+  t.mock.timers.tick(600);
+  const after = recordingViewer();
+  flyToStartView(after, DEFAULT_START_VIEW);
+  t.mock.timers.tick(600);
+  const shape = (calls) =>
+    calls.map(([kind, options]) => [
+      kind,
+      Cesium.Cartographic.fromCartesian(options.destination),
+      options.orientation,
+      options.duration,
+    ]);
+  const round = (value) =>
+    JSON.parse(JSON.stringify(value), (_k, v) =>
+      typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v,
+    );
+  assert.deepEqual(round(shape(after.calls)), round(shape(before.calls)));
+});
+
+test('a saved view flies in from above; a high view is set directly; teardown cancels', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const viewer = recordingViewer();
+  flyToStartView(viewer, OXFORD);
+  assert.equal(viewer.calls[0][0], 'setView');
+  t.mock.timers.tick(600);
+  const [kind, flight] = viewer.calls[1];
+  assert.equal(kind, 'flyTo');
+  const end = Cesium.Cartographic.fromCartesian(flight.destination);
+  assert.ok(Math.abs(Cesium.Math.toDegrees(end.latitude) - OXFORD.lat) < 1e-9);
+  assert.ok(Math.abs(end.height - OXFORD.height) < 1e-3);
+  assert.ok(
+    Math.abs(Cesium.Math.toDegrees(flight.orientation.pitch) + 40) < 1e-9,
+  );
+
+  const high = recordingViewer();
+  flyToStartView(high, { ...OXFORD, height: 9_000_000 });
+  t.mock.timers.tick(600);
+  assert.deepEqual(
+    high.calls.map(([k]) => k),
+    ['setView'],
+  );
+
+  const cancelled = recordingViewer();
+  const stop = flyToStartView(cancelled, OXFORD);
+  stop();
+  t.mock.timers.tick(600);
+  assert.deepEqual(
+    cancelled.calls.map(([k]) => k),
+    ['setView', 'cancel'],
+  );
+});
+
+function fakeElement() {
+  const listeners = {};
+  return {
+    textContent: '',
+    title: '',
+    hidden: false,
+    addEventListener: (type, fn) => (listeners[type] = fn),
+    removeEventListener: (type) => delete listeners[type],
+    click: () => listeners.click?.(),
+  };
+}
+
+function cameraAt({ lat, lon, height, heading, pitch }) {
+  return {
+    camera: {
+      positionCartographic: Cesium.Cartographic.fromDegrees(lon, lat, height),
+      heading: Cesium.Math.toRadians(heading),
+      pitch: Cesium.Math.toRadians(pitch),
+    },
+  };
+}
+
+test('Start here saves the current camera view; Reset returns to the default', () => {
+  const storage = memoryStorage();
+  const elements = {
+    status: fakeElement(),
+    set: fakeElement(),
+    clear: fakeElement(),
+  };
+  const toasts = [];
+  const viewer = cameraAt(OXFORD);
+  const controls = bindStartViewControls({
+    viewer,
+    elements,
+    storage,
+    showToast: (m) => toasts.push(m),
+  });
+  assert.equal(elements.status.textContent, 'Start view: Austin (default)');
+  assert.equal(elements.clear.hidden, true);
+
+  elements.set.click();
+  const saved = readStartView(storage);
+  assert.ok(Math.abs(saved.lat - OXFORD.lat) < 1e-9);
+  assert.ok(Math.abs(saved.lon - OXFORD.lon) < 1e-9);
+  assert.ok(Math.abs(saved.height - OXFORD.height) < 1e-3);
+  assert.ok(Math.abs(saved.heading - OXFORD.heading) < 1e-9);
+  assert.ok(Math.abs(saved.pitch - OXFORD.pitch) < 1e-9);
+  assert.equal(
+    elements.status.textContent,
+    `Start view: ${formatStartViewPlace(OXFORD)}`,
+  );
+  assert.equal(formatStartViewPlace(OXFORD), '34.37°N 89.52°W');
+  assert.equal(elements.clear.hidden, false);
+  assert.match(toasts.at(-1), /open here: 34\.37°N 89\.52°W/);
+
+  elements.clear.click();
+  assert.equal(storage.data.has(START_VIEW_STORAGE_KEY), false);
+  assert.equal(elements.status.textContent, 'Start view: Austin (default)');
+  assert.equal(elements.clear.hidden, true);
+
+  controls.destroy();
+  elements.set.click();
+  assert.equal(readStartView(storage), null, 'destroyed controls do nothing');
+});
+
+test('blocked storage is reported instead of pretending the view was saved', () => {
+  const elements = {
+    status: fakeElement(),
+    set: fakeElement(),
+    clear: fakeElement(),
+  };
+  const toasts = [];
+  bindStartViewControls({
+    viewer: cameraAt(OXFORD),
+    elements,
+    storage: {
+      getItem: () => null,
+      setItem() {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem() {},
+    },
+    showToast: (m) => toasts.push(m),
+  });
+  elements.set.click();
+  assert.match(toasts[0], /storage is blocked/);
+  assert.equal(elements.status.textContent, 'Start view: Austin (default)');
+});
+
+test('a camera looking above the horizon is saved level, not rejected', () => {
+  const view = captureStartView(cameraAt({ ...OXFORD, pitch: 12 }));
+  assert.equal(view.pitch, 0);
+});

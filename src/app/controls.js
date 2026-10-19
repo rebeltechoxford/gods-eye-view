@@ -1,6 +1,11 @@
 import { catalogControlServices } from './catalog.js';
 import { StyleManager } from '../ui/composition.js';
-import { flyToAustin } from '../camera.js';
+import {
+  DEFAULT_START_VIEW,
+  flyToStartView,
+  formatStartViewPlace,
+  readStartView,
+} from '../ui/startView.js';
 import { initCockpitCloudEffects } from '../cockpitCloudEffects.js';
 import * as Cesium from 'cesium';
 
@@ -43,7 +48,8 @@ export function createApplicationControls({
   });
   defer(() => cockpitCloudEffects?.destroy());
 
-  // If no share link state, do default fly-to Austin
+  // Without a share link or saved map area, open on this device's start view
+  // (Location tray, "Start here"), else the built-in default.
   if (!styleManager.hasShareState) {
     if (savedMapBounds) {
       loaderStatus.textContent = 'Opening saved map area...';
@@ -52,8 +58,9 @@ export function createApplicationControls({
         destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
       });
     } else {
-      loaderStatus.textContent = 'Flying to Austin, TX...';
-      defer(flyToAustin(viewer));
+      const startView = readStartView();
+      loaderStatus.textContent = `Flying to ${startView ? startView.label || formatStartViewPlace(startView) : 'Austin, TX'}...`;
+      defer(flyToStartView(viewer, startView || DEFAULT_START_VIEW));
     }
   } else {
     loaderStatus.textContent = 'Restoring shared view...';

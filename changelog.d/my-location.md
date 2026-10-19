@@ -13,3 +13,7 @@
   or slow fix (geolocation errors 2 and 3, as in a tunnel or building) used
   to stop the watch and report "permission denied"; the watch now continues
   and the next fix arrives on its own. Only a refused permission stops it.
+
+- Start view: the Location tray has **Start here**, which makes the current
+  view the one the app opens on in this browser, and **Reset** back to the
+  Austin default. Share links and saved map areas still take priority.

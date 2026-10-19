@@ -30,6 +30,23 @@ needs no TAK setup, no account and no internet once the app is loaded.
 The page needs HTTPS (or `localhost`) for the browser to offer location; on
 plain HTTP the button explains this instead.
 
+## Start view
+
+The app opens on downtown Austin by default (inherited from the original
+project). To open somewhere else, go there (search, a city pill, or follow
+yourself with the location button), open **Location** in the bottom bar and
+tap **Start here**. The tray then reads `Start view: 34.37°N 89.52°W`, and
+the app opens there on this device from then on, with the same short fly-in
+from above. **Reset** goes back to Austin.
+
+- Saved in this browser only (`localStorage`, key `gev.startView.v1`): the
+  latitude, longitude, height, heading and pitch, labelled by coordinates.
+  It is not sent anywhere and is not part of share links, and each browser
+  or phone keeps its own.
+- A share link or a saved map area you open still takes priority.
+- If browser storage is blocked (some private windows), **Start here** says
+  so instead of pretending to save.
+
 ## One GPS for the map and TAK
 
 The dot and TAK's **Use device GPS** share one device watch: turning both on
@@ -66,18 +83,22 @@ off.
 Recorded 2026-10-19 UTC, Chromium 141.0.7390.37 (Puppeteer geolocation
 emulation), Node 22 in a cloud container:
 
-- `node --test src/location/deviceLocation.test.mjs src/ui/myLocation.test.mjs src/tak/geolocation.test.mjs`:
-  18 pass. Covers the shared watch (one device watch for two consumers,
+- `node --test src/location/deviceLocation.test.mjs src/ui/myLocation.test.mjs src/tak/geolocation.test.mjs src/ui/startView.test.mjs`:
+  24 pass. The start-view tests check the stored view is validated (bad
+  values fall back to the default) and that the default flies in exactly as
+  the original Austin start did. Covers the shared watch (one device watch for two consumers,
   released with the last), FOLLOW (claimed once, moves with each fix at the
   current zoom, ends on a drag or another camera owner, survives a pinch),
   refusal in cockpit view, stale fixes, HTTPS, denied permission, teardown,
   and the private marking.
-- `npm run build && npm run qa:my-location`: 9 of 9 against the production
+- `npm run build && npm run qa:my-location`: 11 of 11 against the production
   build on the private HTTPS host. Dot and ring at the emulated fix, the
   camera follows a moved fix, a mouse drag ends FOLLOW while the dot keeps
   moving, tap follows again and tap turns it off, **no request after the
   first fix carried the device coordinates**, a denied permission is
-  explained, the six top-bar buttons fit a 390 px phone without overlap,
+  explained, **Start here** saves the view and a reload opens there (not
+  Austin) and **Reset** returns a reload to Austin, the six top-bar buttons
+  fit a 390 px phone without overlap,
   and no uncaught browser errors. With the private marking removed, the
   coordinate check fails (nearby-places carried the position), so the check
   is real.

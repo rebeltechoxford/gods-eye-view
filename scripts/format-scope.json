@@ -1114,5 +1114,7 @@
   "scripts/qa-my-location.mjs",
   "docs/MY-LOCATION.md",
   "changelog.d/my-location.md",
-  "changelog.d/tak-gateway-identity-release.md"
+  "changelog.d/tak-gateway-identity-release.md",
+  "src/ui/startView.js",
+  "src/ui/startView.test.mjs"
 ]

@@ -8,8 +8,10 @@
  * Chromium's geolocation emulation stands in for the phone's GPS: fixes
  * around Oxford, MS. The gate turns the map's location button on, checks the
  * dot, the accuracy ring and FOLLOW, drags the map to end FOLLOW, follows
- * again, turns it off, checks a denied permission is explained, and checks
- * the button fits a phone-width top bar. Nothing here needs a live provider.
+ * again, turns it off, saves the view as the start view (Location tray) and
+ * checks a reload opens there and Reset returns to the default, checks a
+ * denied permission is explained, and checks the button fits a phone-width
+ * top bar. Nothing here needs a live provider.
  */
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, X509Certificate } from 'node:crypto';
@@ -300,6 +302,93 @@ try {
       requestsWhileOn: requests.filter((r) => r.at >= onAt).length,
       where,
     };
+  });
+
+  const camera = () =>
+    page.evaluate(() => {
+      const c = window.__godsEyeView.viewer.camera.positionCartographic;
+      return {
+        lat: (c.latitude * 180) / Math.PI,
+        lon: (c.longitude * 180) / Math.PI,
+        height: c.height,
+      };
+    });
+  async function openStartRow() {
+    const shown = () =>
+      page.evaluate(() => {
+        const row = document.getElementById('start-view-set');
+        const r = row?.getBoundingClientRect();
+        return Boolean(r && r.width > 0 && r.height > 0);
+      });
+    if (!(await shown())) await page.click('#location-bar-toggle');
+    await page.waitForFunction(() => {
+      const r = document
+        .getElementById('start-view-set')
+        ?.getBoundingClientRect();
+      return r && r.width > 0 && r.height > 0;
+    });
+  }
+  async function reloadFresh() {
+    // No hash: a share-link camera would take priority over the start view.
+    await page.goto(`${origin}/?welcome=0`, { waitUntil: 'domcontentloaded' });
+    await booted();
+    // The start flight lands about 4.5 s after boot.
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+  }
+  const nearCamera = (a, b, tolerance) =>
+    Math.abs(a.lat - b.lat) < tolerance && Math.abs(a.lon - b.lon) < tolerance;
+
+  let savedCamera = null;
+  await step(
+    'Start here saves the current view and a reload opens there',
+    async () => {
+      await openStartRow();
+      const before = await page.$eval(
+        '#start-view-status',
+        (e) => e.textContent,
+      );
+      assert.equal(before, 'Start view: Austin (default)');
+      savedCamera = await camera();
+      await page.click('#start-view-set');
+      const after = await page.$eval(
+        '#start-view-status',
+        (e) => e.textContent,
+      );
+      assert.match(after, /^Start view: \d+\.\d\d°N \d+\.\d\d°W$/);
+      await reloadFresh();
+      const opened = await camera();
+      assert.ok(
+        nearCamera(opened, savedCamera, 1e-4) &&
+          Math.abs(opened.height - savedCamera.height) < 5,
+        `opened at ${JSON.stringify(opened)}, saved ${JSON.stringify(savedCamera)}`,
+      );
+      await openStartRow();
+      assert.equal(
+        await page.$eval('#start-view-status', (e) => e.textContent),
+        after,
+        'the saved start view is shown after the reload',
+      );
+      await page.screenshot({
+        path: path.join(artifactDir, 'start-view-saved.png'),
+      });
+      return { status: after, opened };
+    },
+  );
+
+  await step('Reset returns the start view to the default', async () => {
+    await openStartRow();
+    await page.click('#start-view-clear');
+    assert.equal(
+      await page.$eval('#start-view-status', (e) => e.textContent),
+      'Start view: Austin (default)',
+    );
+    await reloadFresh();
+    const opened = await camera();
+    assert.ok(
+      nearCamera(opened, { lat: 30.2672, lon: -97.7431 }, 0.05),
+      `opened at ${JSON.stringify(opened)}`,
+    );
+    return { opened };
   });
 
   await step('a denied permission is explained and leaves it off', async () => {
