@@ -432,8 +432,35 @@ try {
           Math.abs(lat - 56) < 0.00002 && Math.abs(lon - 12) < 0.00002,
           JSON.stringify(readout),
         );
-        assert.equal(readout.length, 4);
+        assert.equal(readout.length, 5);
         return { input: text, readout };
+      },
+    );
+  for (const [hemisphere, expectedLatitude] of [
+    ['N', 85],
+    ['S', -85],
+  ])
+    await step(
+      `UPS ${hemisphere} input resolves a polar waypoint without GPS or transmission`,
+      async () => {
+        const northing =
+          hemisphere === 'N' ? '1444542.6086173223' : '2555457.3913826775';
+        await validate('UPS', `${hemisphere} 2000000 ${northing}`);
+        const readout = await page.$$eval(
+          '[data-tak-nav-readout] dd',
+          (items) => items.map((node) => node.textContent),
+        );
+        const [lat, lon] = readout[0].split(',').map(Number);
+        assert(
+          Math.abs(lat - expectedLatitude) < 1e-6 && Math.abs(lon) < 1e-6,
+          JSON.stringify(readout),
+        );
+        assert.match(readout[2], /Unavailable/);
+        assert.match(readout[3], /Unavailable/);
+        assert.match(readout[4], new RegExp(`^${hemisphere} `));
+        assert.equal((await snapshot()).fix, null);
+        assert.equal((await snapshot()).tx, 0);
+        return { readout };
       },
     );
   await step(

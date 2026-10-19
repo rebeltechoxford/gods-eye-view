@@ -14,6 +14,7 @@ const EXAMPLES = Object.freeze({
   DMS: '38°53\'21.37"N 77°03\'00.72"W',
   MGRS: '18S UJ 22185 06486',
   UTM: '18 N 322185.1 4306486.7',
+  UPS: 'N 2000000 1444542.6',
 });
 
 /** An additive operator panel; no geocoding, persistence, GPS or network send. */
@@ -37,7 +38,7 @@ export function createNavigationPanel({
     <p class="tak-web-hint">WGS84 datum. Range is ellipsoidal surface distance; bearing is initial TRUE north, not magnetic/grid north. No elevation or route guidance.</p>
     <form data-tak-nav-form autocomplete="off">
       <label class="tak-web-label" for="tak-nav-format">Input format</label>
-      <select id="tak-nav-format" data-tak-nav-format aria-label="Coordinate format"><option>DD</option><option>DMS</option><option>MGRS</option><option>UTM</option></select>
+      <select id="tak-nav-format" data-tak-nav-format aria-label="Coordinate format"><option>DD</option><option>DMS</option><option>MGRS</option><option>UTM</option><option>UPS</option></select>
       <label class="tak-web-label" for="tak-nav-input">Waypoint coordinate</label>
       <textarea id="tak-nav-input" data-tak-nav-input maxlength="160" rows="2" required spellcheck="false" autocapitalize="off" aria-describedby="tak-nav-example"></textarea>
       <p id="tak-nav-example" class="tak-web-hint" data-tak-nav-example></p>
@@ -55,7 +56,7 @@ export function createNavigationPanel({
     <input id="tak-nav-label" data-tak-nav-label maxlength="120" autocomplete="off" placeholder="Waypoint label"/>
     <button type="button" data-tak-nav-marker disabled>Add local waypoint marker</button>
     <button type="button" data-tak-nav-clear>Clear waypoint</button>
-    <p class="tak-web-hint">Coordinates stay in this page. Local markers are unshared; this does not set or broadcast your position. MGRS/UTM covers 80°S…84°N only.</p>
+    <p class="tak-web-hint">Coordinates stay in this page. Local markers are unshared; this does not set or broadcast your position. MGRS/UTM covers 80°S…84°N; UPS covers the polar regions. UPS coordinates at either pole resolve longitude to 0° by convention.</p>
     <p class="tak-web-status" data-tak-nav-status role="status" aria-live="polite">Enter a waypoint or use the map center.</p>`;
   container.querySelector('[data-tak-section="marker"]')?.after(section);
   if (!section.isConnected) container.append(section);
@@ -107,7 +108,9 @@ export function createNavigationPanel({
           value.textContent = formatCoordinate(target, name);
         } catch {
           value.textContent =
-            'Unavailable outside 80°S…84°N (UPS unsupported).';
+            name === 'UPS'
+              ? 'Available at 84°N…90°N or 80°S…90°S.'
+              : 'Unavailable outside 80°S…84°N; use UPS.';
         }
         readout.append(term, value);
       }
