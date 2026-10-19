@@ -2299,7 +2299,11 @@
       "src/emcon/guard.js",
       "src/emcon/state.js",
       "src/emcon/ui.js",
-      "src/emcon/emcon.css"
+      "src/emcon/emcon.css",
+      "src/tak/picture.js",
+      "src/tak/pictureStorage.js",
+      "src/tak/pictureWorkflow.js",
+      "src/tak/pictureUi.js"
     ],
     "external": [
       "hls.js",
