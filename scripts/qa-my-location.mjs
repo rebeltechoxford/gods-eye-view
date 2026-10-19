@@ -346,7 +346,7 @@ try {
         height: c.height,
       };
     });
-  async function openStartRow(selector = '#start-view-set') {
+  async function pressStartControl(selector = '#start-view-set') {
     // The sliding tray retains layout dimensions while collapsed. Check its
     // actual state, then wait until the requested control can receive a real click.
     if (
@@ -376,6 +376,27 @@ try {
       {},
       selector,
     );
+    // Click the verified point directly: ElementHandle.click scrolls the
+    // animated tray again and can race its pointer-leave auto-close.
+    const point = await page.$eval(selector, (button) => {
+      const r = button.getBoundingClientRect();
+      button.dataset.qaClickDelivered = 'false';
+      button.addEventListener(
+        'click',
+        () => {
+          button.dataset.qaClickDelivered = 'true';
+        },
+        { once: true },
+      );
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.click(point.x, point.y);
+    await page.waitForFunction(
+      (target) =>
+        document.querySelector(target)?.dataset.qaClickDelivered === 'true',
+      { timeout: 10000 },
+      selector,
+    );
   }
   async function reloadFresh() {
     // No hash: a share-link camera would take priority over the start view.
@@ -392,14 +413,13 @@ try {
   await step(
     'Start here saves the current view and a reload opens there',
     async () => {
-      await openStartRow();
       const before = await page.$eval(
         '#start-view-status',
         (e) => e.textContent,
       );
       assert.equal(before, `Start view: ${DEFAULT_START.label} (default)`);
       savedCamera = await camera();
-      await page.click('#start-view-set');
+      await pressStartControl();
       const after = await page.$eval(
         '#start-view-status',
         (e) => e.textContent,
@@ -413,7 +433,6 @@ try {
           Math.abs(opened.height - savedCamera.height) < 5,
         `opened at ${JSON.stringify(opened)}, saved ${JSON.stringify(savedCamera)}`,
       );
-      await openStartRow();
       assert.equal(
         await page.$eval('#start-view-status', (e) => e.textContent),
         after,
@@ -481,8 +500,7 @@ try {
   );
 
   await step('Reset returns the start view to the default', async () => {
-    await openStartRow('#start-view-clear');
-    await page.click('#start-view-clear');
+    await pressStartControl('#start-view-clear');
     assert.equal(
       await page.$eval('#start-view-status', (e) => e.textContent),
       `Start view: ${DEFAULT_START.label} (default)`,
