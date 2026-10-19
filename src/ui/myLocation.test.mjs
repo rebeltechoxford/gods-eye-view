@@ -215,6 +215,38 @@ test('later fixes cannot preserve an underground or non-finite camera height', (
   assert.ok(uphill.height >= 2_300 - 0.001, 'new terrain also owns clearance');
 });
 
+test('coarse terrain below the ellipsoid cannot bury first framing or later FOLLOW', () => {
+  // Globe.getHeight samples loaded triangles, not the ideal ellipsoid. These
+  // initial mesh depths produce the negative destinations seen in browser QA
+  // even though the mesh subsequently refines toward zero metres.
+  for (const meshHeight of [-11_189, -2_511.7, -12.7, -0.006]) {
+    const t = setup();
+    t.viewer.scene.globe.getHeight = () => meshHeight;
+    t.button.click();
+    t.fix(34.3665, -89.5192);
+    const flight = t.viewer.camera.flights[0];
+    assert.equal(
+      Math.round(Cesium.Cartographic.fromCartesian(flight.destination).height),
+      MY_LOCATION_FRAME_HEIGHT_M,
+      `first destination stays above the reference surface for mesh ${meshHeight}`,
+    );
+    flight.complete();
+    assert.equal(
+      Math.round(t.viewer.camera.positionCartographic.height),
+      MY_LOCATION_FRAME_HEIGHT_M,
+    );
+    // Neither an invalid incoming pose nor the next stale coarse-mesh sample
+    // may reduce the follow floor below 300 m above the reference ellipsoid.
+    t.viewer.camera.positionCartographic.height = -8_689;
+    t.fix(34.3666, -89.5193);
+    assert.equal(Math.round(t.viewer.camera.positionCartographic.height), 300);
+    t.viewer.scene.globe.getHeight = () => 0;
+    t.fix(34.3667, -89.5194);
+    assert.equal(Math.round(t.viewer.camera.positionCartographic.height), 300);
+    t.control.destroy();
+  }
+});
+
 test('navigation or a drag before the first fix prevents a delayed camera takeover', () => {
   for (const gesture of ['handoff', 'drag']) {
     const t = setup();
