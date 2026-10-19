@@ -145,6 +145,14 @@ export function cotTrailPositions(contact) {
 
 function detailLines(contact, stale) {
   const lines = [];
+  if (contact.historical) {
+    lines.push(
+      `HISTORICAL · saved ${new Date(contact.historical.savedAtMs).toISOString()}`,
+    );
+    lines.push(
+      `Source: ${contact.historical.source} · observed ${new Date(contact.event.timeMs).toISOString()}`,
+    );
+  }
   const geometry = contact.geometryResult;
   if (geometry?.status === 'ok') {
     lines.push(
@@ -185,26 +193,38 @@ function detailLines(contact, stale) {
 export function createCotOverlay(
   viewer,
   overlays,
-  { onActivate = () => {}, navigate = (fly) => fly() } = {},
+  {
+    onActivate = () => {},
+    navigate = (fly) => fly(),
+    namespace = 'tak',
+    sourceName = 'TAK contacts',
+  } = {},
 ) {
-  const dataSource = new Cesium.CustomDataSource('TAK contacts');
+  if (!/^[a-z][a-z0-9-]{0,31}$/.test(namespace))
+    throw new Error('Invalid TAK layer namespace');
+  const prefix = `${namespace}:`;
+  const trailPrefix = `${namespace}-trail:`;
+  const draftPrefix = `${namespace}-draft:`;
+  const sourceId =
+    namespace === 'tak' ? TAK_OVERLAY_SOURCE_ID : `${namespace}-contacts`;
+  const dataSource = new Cesium.CustomDataSource(sourceName);
   const symbols = new Map();
   const entities = new Map(); // uid -> {entity, trail, key}
   let disposed = false;
   let visible = true;
   let draftEntity = null;
   registerPickOwner(
-    'tak',
+    namespace,
     (id) =>
-      id.startsWith('tak:') ||
-      id.startsWith('tak-trail:') ||
-      id.startsWith('tak-draft:'),
+      id.startsWith(prefix) ||
+      id.startsWith(trailPrefix) ||
+      id.startsWith(draftPrefix),
   );
   const clicks = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
   bindTrackingClickGesture(clicks, (click, gesture) => {
     if (disposed || !visible || !isTrackingSelectionGesture(gesture)) return;
     const id = resolvePickId(viewer.scene.pick(click.position));
-    if (id?.startsWith('tak:')) onActivate(id.slice(4));
+    if (id?.startsWith(prefix)) onActivate(id.slice(prefix.length));
   });
   void viewer.dataSources
     .add(dataSource)
@@ -244,7 +264,7 @@ export function createCotOverlay(
     let record = entities.get(contact.uid);
     if (!record) {
       const entity = dataSource.entities.add({
-        id: `tak:${contact.uid}`,
+        id: `${prefix}${contact.uid}`,
         name: contact.callsign,
         position,
         billboard: {
@@ -290,7 +310,7 @@ export function createCotOverlay(
       const positions = cotTrailPositions(contact);
       if (!record.trail) {
         record.trail = dataSource.entities.add({
-          id: `tak-trail:${contact.uid}`,
+          id: `${trailPrefix}${contact.uid}`,
           polyline: {
             positions,
             width: 2,
@@ -316,6 +336,8 @@ export function createCotOverlay(
   function remove(uid) {
     const record = entities.get(uid);
     if (!record) return;
+    if (viewer.selectedEntity === record.entity)
+      viewer.selectedEntity = undefined;
     dataSource.entities.remove(record.entity);
     if (record.trail) dataSource.entities.remove(record.trail);
     entities.delete(uid);
@@ -343,7 +365,7 @@ export function createCotOverlay(
             cards.push(prior.card);
             continue;
           }
-          upsert(contact, stale);
+          upsert(contact, stale || Boolean(contact.historical));
           const { lat, lon, hae } = contact.point;
           const height = absoluteHeight(contact) ? hae : 0;
           const card = {
@@ -385,13 +407,13 @@ export function createCotOverlay(
       } finally {
         dataSource.entities.resumeEvents();
       }
-      overlays.setEntries(TAK_OVERLAY_SOURCE_ID, cards, { visible });
+      overlays.setEntries(sourceId, cards, { visible });
       viewer.scene.requestRender();
     },
     setVisible(next) {
       visible = next !== false;
       dataSource.show = visible;
-      overlays.setVisible(TAK_OVERLAY_SOURCE_ID, visible);
+      overlays.setVisible(sourceId, visible);
       viewer.scene.requestRender();
     },
     isVisible: () => visible,
@@ -401,7 +423,7 @@ export function createCotOverlay(
       if (draftEntity) dataSource.entities.remove(draftEntity);
       draftEntity = geometry
         ? dataSource.entities.add({
-            id: 'tak-draft:editor',
+            id: `${draftPrefix}editor`,
             ...geometryGraphics(geometry, { draft: true }),
           })
         : null;
@@ -443,8 +465,8 @@ export function createCotOverlay(
       if (disposed) return;
       disposed = true;
       clicks.destroy();
-      unregisterPickOwner('tak');
-      overlays.clearSource(TAK_OVERLAY_SOURCE_ID);
+      unregisterPickOwner(namespace);
+      overlays.clearSource(sourceId);
       viewer.dataSources.remove(dataSource, true);
       entities.clear();
       symbols.clear();

@@ -9,6 +9,8 @@ import {
 import { createTakStore } from './store.js';
 import { buildSelfSa } from './protocol/builders.js';
 import { IDENTITY } from './protocol/fixtures.mjs';
+import { findPickOwner } from '../data/pickRegistry.js';
+import { captureTakPicture, readTakPicture } from './picture.js';
 
 test('aircraft history uses each CoT ellipsoid height and omits unknown altitude fixes', () => {
   const aircraft = {
@@ -38,6 +40,85 @@ test('aircraft history uses each CoT ellipsoid height and omits unknown altitude
       (point) =>
         Math.abs(Cesium.Cartographic.fromCartesian(point).height) < 0.001,
     ),
+  );
+});
+
+test('historical namespace can display the same UID alongside live TAK without taking its picks or source', async (t) => {
+  const previous = globalThis.document;
+  const canvas = () => ({
+    disableRootEvents: true,
+    onwheel: null,
+    addEventListener() {},
+    removeEventListener() {},
+    getContext: () => new Proxy({}, { get: () => () => {} }),
+  });
+  globalThis.document = {
+    createElement: canvas,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  });
+  const viewer = {
+    dataSources: new Cesium.DataSourceCollection(),
+    scene: { canvas: canvas(), requestRender() {} },
+    camera: { heading: 0 },
+  };
+  const sources = new Map();
+  const overlays = {
+    setEntries: (id, cards) => sources.set(id, cards),
+    clearSource: (id) => sources.delete(id),
+    setVisible() {},
+  };
+  const live = createCotOverlay(viewer, overlays);
+  const history = createCotOverlay(viewer, overlays, {
+    namespace: 'tak-history',
+    sourceName: 'TAK historical picture',
+  });
+  t.after(() => {
+    history.destroy();
+    live.destroy();
+  });
+  await Promise.resolve();
+  const store = createTakStore();
+  store.apply(
+    buildSelfSa(IDENTITY, { lat: 34, lon: -89 }, { nowMs: Date.now() }),
+    'network',
+  );
+  const picture = readTakPicture(captureTakPicture(store.list()));
+  live.render(store.list(), () => false);
+  history.render(picture.contacts, () => true);
+  assert.equal(findPickOwner(`tak:${IDENTITY.uid}`), 'tak');
+  assert.equal(findPickOwner(`tak-history:${IDENTITY.uid}`), 'tak-history');
+  assert.equal(
+    findPickOwner(`tak-history-trail:${IDENTITY.uid}`),
+    'tak-history',
+  );
+  assert.equal(sources.size, 2);
+  const historicalCard = sources.get('tak-history-contacts')[0];
+  assert.match(historicalCard.title, /^HISTORY · /);
+  assert.ok(
+    historicalCard.details.some((line) =>
+      line.startsWith('HISTORICAL · saved'),
+    ),
+  );
+  assert.ok(historicalCard.details.includes('STALE'));
+  const source = viewer.dataSources.getByName('TAK historical picture')[0];
+  viewer.selectedEntity = source.entities.getById(
+    `tak-history:${IDENTITY.uid}`,
+  );
+  assert.ok(viewer.selectedEntity);
+  history.render([], () => false);
+  assert.equal(viewer.selectedEntity, undefined);
+  history.destroy();
+  assert.equal(findPickOwner(`tak:${IDENTITY.uid}`), 'tak');
+  assert.equal(findPickOwner(`tak-history:${IDENTITY.uid}`), null);
+  assert.equal(sources.get('tak-contacts').length, 1);
+  assert.equal(
+    viewer.dataSources.getByName('TAK contacts')[0].entities.values.length,
+    1,
   );
 });
 
