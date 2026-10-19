@@ -11,6 +11,7 @@ import puppeteer from 'puppeteer';
 import { startTakHttpsServer } from '../server/standalone/tak-https.mjs';
 import { createTakTlsFixtures } from '../src/tooling/takTlsFixtures.mjs';
 import { createCotStreamFramer } from '../src/tak/protocol/stream.js';
+import { parseCotEvent } from '../src/tak/protocol/cot.js';
 import { interceptFixtures } from './qa-fixtureInterception.mjs';
 import {
   hookRenderErrors,
@@ -379,7 +380,19 @@ try {
       assert(socket.authorized);
       peerConnections++;
       const framer = createCotStreamFramer({
-        onEvent: (xml) => peerEvents.push(xml),
+        onEvent: (xml) => {
+          const event = parseCotEvent(xml);
+          if (event.type === 't-x-c-t') {
+            // The connected gateway keeps its transport alive independently
+            // of historical restoration. Validate and answer that heartbeat;
+            // every non-heartbeat event remains a forbidden transmission.
+            assert.match(event.uid, /^GEV-GATEWAY-[a-f0-9-]+-ping$/);
+            assert.equal(event.point.lat, 0);
+            assert.equal(event.point.lon, 0);
+            assert.match(xml, /<detail\s*\/>/);
+            socket.write(xml.replace('type="t-x-c-t"', 'type="t-x-c-t-r"'));
+          } else peerEvents.push(xml);
+        },
       });
       socket.on('data', (bytes) => framer.push(bytes.toString()));
     },
