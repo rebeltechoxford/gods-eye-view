@@ -138,7 +138,8 @@
 }
 
 #command-dock #control-panel.collapsed .button-grid,
-#command-dock #location-bar.collapsed .location-city-row {
+#command-dock #location-bar.collapsed .location-city-row,
+#command-dock #location-bar.collapsed .location-start-row {
   display: flex !important;
 }
 

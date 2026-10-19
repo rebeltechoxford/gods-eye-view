@@ -298,3 +298,53 @@
 #location-search.searching {
   opacity: 0.5;
 }
+
+/* Start view: what the app opens on, saved on this device. */
+.location-start-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.start-view-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start-view-btn {
+  flex: none;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.start-view-btn:hover,
+.start-view-btn:focus-visible {
+  border-color: var(--glass-border-hover);
+  color: var(--text-primary);
+}
+
+.start-view-btn:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: -3px;
+}
+
+.start-view-btn[hidden] {
+  display: none;
+}

@@ -59,6 +59,35 @@
   box-shadow: 0 0 14px rgba(0, 212, 255, 0.18);
 }
 
+#my-location-view:not([data-state='off']) {
+  color: #4f9bff;
+}
+
+#my-location-view[data-state='following'] {
+  border-color: #4f9bff;
+  box-shadow: 0 0 14px rgba(26, 115, 232, 0.35);
+}
+
+#my-location-view[data-state='locating'] .material-symbols-outlined {
+  animation: my-location-pulse 1.2s ease-in-out infinite;
+}
+
+#my-location-view[data-stale='true'] {
+  color: var(--text-secondary);
+}
+
+@keyframes my-location-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #my-location-view[data-state='locating'] .material-symbols-outlined {
+    animation: none;
+  }
+}
+
 #north-up-view {
   --camera-heading: 0deg;
   position: relative;

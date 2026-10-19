@@ -38,11 +38,16 @@ export function createGeolocation(
       },
       (error) => {
         if (epoch !== generation || !requested) return;
+        // Lost signal (2) and slow fixes (3) are passing: the browser keeps
+        // watching and the next fix arrives on its own, while the last one
+        // ages out for its consumers. Only a refusal (1, or an unknown error)
+        // ends the watch.
+        if (error?.code === 2 || error?.code === 3) return;
         pendingError = true;
         const { onError } = requested;
         stop();
         onError(
-          `Device GPS unavailable: ${error.message || 'permission denied'}`,
+          `Device GPS unavailable: ${error?.message || (error?.code === 1 ? 'permission denied' : 'unknown error')}`,
         );
       },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 },

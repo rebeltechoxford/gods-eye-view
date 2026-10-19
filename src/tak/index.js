@@ -5,7 +5,7 @@ import { createCotOverlay } from './cotOverlay.js';
 import { createGatewayTransport, fetchGatewaySession } from './transport.js';
 import { createTakPanel } from './ui.js';
 import { createMissionPackagePanel } from './packagesUi.js';
-import { createGeolocation } from './geolocation.js';
+import { deviceLocation } from '../location/deviceLocation.js';
 import { createMobileSession } from './mobile.js';
 import { signOutOperator } from './session.js';
 import { createSavedMaps, shellMessage } from '../maps/offline/ui.js';
@@ -118,7 +118,8 @@ export function initTakWebClient({
   let packages = null;
   let drawings = null;
   const mobile = createMobileSession();
-  const geolocation = createGeolocation();
+  // One device watch is shared with the map's own location dot.
+  const geolocation = deviceLocation().consumer();
 
   const client = createTakClient({
     createTransport: (handlers) => createGatewayTransport(handlers),

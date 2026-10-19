@@ -149,6 +149,7 @@ jobs:
             node scripts/qa-offline-roads.mjs --https --pack-dir /tmp/qa-road-packs --dist dist || failed=1
             node scripts/qa-emcon.mjs --pack-dir /tmp/qa-road-packs --dist dist || failed=1
             node scripts/qa-fisb.mjs --dist dist || failed=1
+            node scripts/qa-my-location.mjs --dist dist || failed=1
             # The protobuf exchange uses the synthetic Vite lab in this same
             # namespace; it does not produce or replace the production build.
             node scripts/tak-lab.mjs --protobuf > qa-artifacts/release-review/tak-lab.log 2>&1 &
