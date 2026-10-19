@@ -1,4 +1,5 @@
 import * as Cesium from 'cesium';
+import { markTakDataPrivate, takPrivacyState } from '../tak/privacy.js';
 
 // The view the app opens on when no share link or saved map area says
 // otherwise. Saved on this device only, by "Start here" in the Location tray.
@@ -101,17 +102,20 @@ function safeStorage(storage) {
     },
     set(key, value) {
       try {
-        storage?.setItem(key, value);
-        return true;
+        if (!key || !storage?.setItem || !storage?.getItem) return false;
+        storage.setItem(key, value);
+        return storage.getItem(key) === value;
       } catch {
         return false;
       }
     },
     remove(key) {
       try {
-        storage?.removeItem(key);
+        if (!key || !storage?.removeItem || !storage?.getItem) return false;
+        storage.removeItem(key);
+        return storage.getItem(key) === null;
       } catch {
-        /* Nothing stored, or storage is blocked: the default applies. */
+        return false;
       }
     },
   };
@@ -126,8 +130,33 @@ const defaultStorage = () => {
 };
 
 /** The saved start view, or null for the built-in default. */
-export function readStartView(storage = defaultStorage()) {
-  return parseStartView(safeStorage(storage).get(START_VIEW_STORAGE_KEY));
+export function readStartView(
+  storage = defaultStorage(),
+  storageKey = START_VIEW_STORAGE_KEY,
+) {
+  if (!storageKey) return null;
+  const raw = safeStorage(storage).get(storageKey);
+  const view = parseStartView(raw);
+  if (!view) return null;
+  const record = JSON.parse(raw);
+  // Version-one records did not preserve privacy. Treat them as private, even
+  // if an unversioned record contains a stray public flag. Permissions never persist.
+  return { ...view, private: record.version !== 2 || record.private !== false };
+}
+
+/** Restore protection before constructing any HUD/share/voice consumers. */
+export function restoreStartViewPrivacy(
+  viewer,
+  {
+    storage = defaultStorage(),
+    storageKey = START_VIEW_STORAGE_KEY,
+    embedded = false,
+  } = {},
+) {
+  if (embedded) return null;
+  const view = readStartView(storage, storageKey);
+  if (view?.private) markTakDataPrivate(viewer);
+  return view;
 }
 
 /** The camera's current view, in the stored shape. */
@@ -217,13 +246,15 @@ export function bindStartViewControls({
   elements,
   showToast = () => {},
   storage = defaultStorage(),
+  storageKey = START_VIEW_STORAGE_KEY,
+  canUseStorage = () => true,
 }) {
   const store = safeStorage(storage);
   const { status, set, clear } = elements || {};
   if (!status || !set || !clear) return { destroy() {} };
 
   function render() {
-    const saved = readStartView(storage);
+    const saved = canUseStorage() ? readStartView(storage, storageKey) : null;
     const name = saved
       ? saved.label || formatStartViewPlace(saved)
       : `${DEFAULT_START_VIEW.label} (default)`;
@@ -242,8 +273,15 @@ export function bindStartViewControls({
       showToast('This view cannot be used as the start view');
       return;
     }
-    if (!store.set(START_VIEW_STORAGE_KEY, JSON.stringify(view))) {
-      showToast('Browser storage is blocked; the start view was not saved');
+    const record = {
+      ...view,
+      version: 2,
+      private: takPrivacyState(viewer).private,
+    };
+    if (!canUseStorage() || !store.set(storageKey, JSON.stringify(record))) {
+      showToast(
+        'Browser or operator storage is blocked; the start view was not saved',
+      );
       return;
     }
     render();
@@ -253,7 +291,13 @@ export function bindStartViewControls({
   }
 
   function onClear() {
-    store.remove(START_VIEW_STORAGE_KEY);
+    if (!canUseStorage() || !store.remove(storageKey)) {
+      render();
+      showToast(
+        'Browser or operator storage is blocked; the start view was not reset',
+      );
+      return;
+    }
     render();
     showToast(`The app will open on ${DEFAULT_START_VIEW.label} again`);
   }

@@ -22,7 +22,7 @@ import { LocationNavigation } from './locationNavigation.js';
 import { bindClearLayersControl } from './layers.js';
 import { bindCameraOrientationControls } from './cameraOrientationControls.js';
 import { createMyLocation } from './myLocation.js';
-import { bindStartViewControls } from './startView.js';
+import { bindStartViewControls, START_VIEW_STORAGE_KEY } from './startView.js';
 import { deviceLocation } from '../location/deviceLocation.js';
 import { markTakDataPrivate } from '../tak/privacy.js';
 import { createMapSourceControls } from './mapSource.js';
@@ -68,7 +68,14 @@ export class StyleManager extends ShellFacade {
    */
   constructor(
     viewer,
-    { mapStackController = null, placeSearch, services, requestServices } = {},
+    {
+      mapStackController = null,
+      placeSearch,
+      services,
+      requestServices,
+      startViewStorageKey = START_VIEW_STORAGE_KEY,
+      canUseStartViewStorage = () => true,
+    } = {},
   ) {
     super();
     const {
@@ -91,6 +98,8 @@ export class StyleManager extends ShellFacade {
       localAdsbLayer,
     } = services;
     this.services = services;
+    this._startViewStorageKey = startViewStorageKey;
+    this._canUseStartViewStorage = canUseStartViewStorage;
     this._lifetime = new UiLifetime();
     this._recording = new RecordingControls({
       syncShareState: () => this._syncShareState(),
@@ -1498,6 +1507,8 @@ export class StyleManager extends ShellFacade {
     this._startViewControls?.destroy();
     this._startViewControls = bindStartViewControls({
       viewer: this.viewer,
+      storageKey: this._startViewStorageKey,
+      canUseStorage: this._canUseStartViewStorage,
       elements: {
         status: this._startViewStatus,
         set: this._startViewSetBtn,

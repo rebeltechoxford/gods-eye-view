@@ -1,5 +1,23 @@
 # God's Eye View Current State
 
+## Location and identity review — October 19, 2026 candidate
+
+PR #14 adds a shared foreground GPS watch, a map location dot/FOLLOW control,
+per-device start views and a build-time Oxford/Austin/custom default. TAK and
+map GPS share one device watch; temporary signal errors keep the watch alive.
+The review restores saved-view privacy before HUD construction, scopes saved
+views to the operator, refuses personal restore in embedded views, and makes
+blocked storage/reset failures explicit. FOLLOW respects later navigation and
+keeps the camera above the target terrain. Disconnected gateway identity slots
+expire with bounded echo ownership retention. See [MY-LOCATION.md](MY-LOCATION.md).
+
+Original candidate `d614d039` passed CI, but review found coverage gaps in private
+view reload, camera height and delayed-fix ownership, and identity expiry. The
+corrected candidate requires new isolated acceptance; original green checks do
+not establish those corrected behaviors. Physical-phone/GNSS and native-peer
+acceptance remain open.
+
+
 ## Additive TAK foundation — October 18, 2026 verified integration
 
 Candidate `9d1e23ce` passed normal and restricted CI and merged through PR #13

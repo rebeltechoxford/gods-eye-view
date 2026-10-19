@@ -55,6 +55,7 @@ export function createMyLocation({
   let fix = null;
   let followOnFix = false;
   let flying = false;
+  let flightGeneration = 0;
   let destroyed = false;
   let staleTimer = null;
   const pointers = new Map();
@@ -150,6 +151,20 @@ export function createMyLocation({
     return Number.isFinite(height) ? height : Infinity;
   }
 
+  function safeFollowHeight(next, height) {
+    const ground = groundHeight(next.lon, next.lat);
+    return Number.isFinite(height)
+      ? Math.max(height, ground + MIN_FRAME_HEIGHT_M)
+      : ground + MY_LOCATION_FRAME_HEIGHT_M;
+  }
+
+  function cancelOwnedFlight() {
+    const owned = flying;
+    flightGeneration++;
+    flying = false;
+    if (owned) viewer.camera.cancelFlight?.();
+  }
+
   /** Claim the camera and fly to the fix; FOLLOW when the claim is granted. */
   function centerAndFollow() {
     if (!fix) return false;
@@ -160,6 +175,7 @@ export function createMyLocation({
         Math.max(cameraHeight(), ground + MIN_FRAME_HEIGHT_M),
         ground + MY_LOCATION_FRAME_HEIGHT_M,
       );
+      const generation = ++flightGeneration;
       flying = true;
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(
@@ -174,10 +190,14 @@ export function createMyLocation({
         },
         duration: 1.0,
         complete: () => {
+          if (destroyed || generation !== flightGeneration) return;
           flying = false;
-          if (state === 'following') followTo(fix);
+          // Finish at the planned framing height. A completion callback must
+          // not turn an intermediate camera altitude into the follow altitude.
+          if (state === 'following') followTo(fix, height);
         },
         cancel: () => {
+          if (generation !== flightGeneration) return;
           flying = false;
         },
       });
@@ -191,13 +211,13 @@ export function createMyLocation({
   }
 
   /** Keep the camera over the fix at the user's current zoom. */
-  function followTo(next) {
+  function followTo(next, height = cameraHeight()) {
     if (state !== 'following' || flying || !next) return;
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(
         next.lon,
         next.lat,
-        cameraHeight(),
+        safeFollowHeight(next, height),
       ),
       orientation: {
         heading: viewer.camera.heading,
@@ -217,7 +237,10 @@ export function createMyLocation({
     if (followOnFix) {
       followOnFix = false;
       centerAndFollow();
-    } else followTo(fix);
+    } else {
+      if (state === 'locating') setState('shown');
+      followTo(fix);
+    }
   }
 
   function onError(message) {
@@ -248,9 +271,11 @@ export function createMyLocation({
   }
 
   function turnOff() {
+    cancelOwnedFlight();
     location.stop();
     followOnFix = false;
     fix = null;
+    pointers.clear();
     if (staleTimer !== null) clearIntervalFn(staleTimer);
     staleTimer = null;
     if (button) delete button.dataset.stale;
@@ -267,6 +292,11 @@ export function createMyLocation({
 
   /** The user took the camera: keep the dot, stop moving the map. */
   function release() {
+    // New navigation also supersedes a location request that has not produced
+    // its first fix yet. Receiving that fix may draw the dot, not steal back
+    // the camera from a search, tracked contact or a physical map gesture.
+    followOnFix = false;
+    cancelOwnedFlight();
     if (state === 'following') setState('shown');
   }
 

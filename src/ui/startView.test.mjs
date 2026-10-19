@@ -11,7 +11,14 @@ import {
   formatStartViewPlace,
   parseStartView,
   readStartView,
+  restoreStartViewPrivacy,
 } from './startView.js';
+import {
+  authorizeTakDisclosure,
+  isTakPrivacyBlocked,
+  markTakDataPrivate,
+  takPrivacyState,
+} from '../tak/privacy.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -224,6 +231,153 @@ test('blocked storage is reported instead of pretending the view was saved', () 
   elements.set.click();
   assert.match(toasts[0], /storage is blocked/);
   assert.equal(elements.status.textContent, 'Start view: Austin (default)');
+});
+
+function startControls(viewer, storage, options = {}) {
+  const elements = {
+    status: fakeElement(),
+    set: fakeElement(),
+    clear: fakeElement(),
+  };
+  const toasts = [];
+  const controls = bindStartViewControls({
+    viewer,
+    elements,
+    storage,
+    showToast: (message) => toasts.push(message),
+    ...options,
+  });
+  return { elements, toasts, controls };
+}
+
+test('saved private cameras restore protection but never disclosure permissions', () => {
+  const viewer = cameraAt(OXFORD);
+  markTakDataPrivate(viewer);
+  authorizeTakDisclosure(viewer, true);
+  const storage = memoryStorage();
+  const fixture = startControls(viewer, storage);
+  fixture.elements.set.click();
+  const record = JSON.parse(storage.data.get(START_VIEW_STORAGE_KEY));
+  assert.equal(record.private, true);
+  assert.equal(record.version, 2);
+  assert.equal(Object.hasOwn(record, 'permissions'), false);
+  const reloaded = recordingViewer();
+  const view = restoreStartViewPrivacy(reloaded, { storage });
+  assert.ok(Math.abs(view.lat - OXFORD.lat) < 1e-9);
+  for (const scope of ['ai', 'sharing', 'recording'])
+    assert.equal(isTakPrivacyBlocked(reloaded, scope), true, scope);
+  assert.deepEqual(
+    reloaded.calls,
+    [],
+    'privacy is restored before any camera move',
+  );
+  fixture.controls.destroy();
+});
+
+test('legacy views fail closed; an explicitly public version-two view stays public', () => {
+  for (const record of [OXFORD, { ...OXFORD, private: false }]) {
+    const viewer = {};
+    const storage = memoryStorage({
+      [START_VIEW_STORAGE_KEY]: JSON.stringify(record),
+    });
+    assert.equal(restoreStartViewPrivacy(viewer, { storage }).private, true);
+    assert.equal(isTakPrivacyBlocked(viewer, 'sharing'), true);
+  }
+  const viewer = {};
+  const storage = memoryStorage({
+    [START_VIEW_STORAGE_KEY]: JSON.stringify({
+      ...OXFORD,
+      version: 2,
+      private: false,
+    }),
+  });
+  assert.equal(restoreStartViewPrivacy(viewer, { storage }).private, false);
+  assert.equal(isTakPrivacyBlocked(viewer, 'ai'), false);
+});
+
+test('embedded and unavailable-account startup never read a personal saved view', () => {
+  let reads = 0;
+  const storage = {
+    getItem() {
+      reads++;
+      return JSON.stringify(OXFORD);
+    },
+  };
+  const viewer = {};
+  assert.equal(
+    restoreStartViewPrivacy(viewer, { storage, embedded: true }),
+    null,
+  );
+  assert.equal(
+    restoreStartViewPrivacy(viewer, { storage, storageKey: null }),
+    null,
+  );
+  assert.equal(reads, 0, 'personal storage must not be read');
+  assert.equal(takPrivacyState(viewer).private, false);
+});
+
+test('named storage keys do not inherit another operator or a legacy private camera', () => {
+  const firstKey = `${START_VIEW_STORAGE_KEY}.${'a'.repeat(64)}`;
+  const secondKey = `${START_VIEW_STORAGE_KEY}.${'b'.repeat(64)}`;
+  const storage = memoryStorage({
+    [START_VIEW_STORAGE_KEY]: JSON.stringify(OXFORD),
+  });
+  let current = true;
+  const fixture = startControls(cameraAt(OXFORD), storage, {
+    storageKey: firstKey,
+    canUseStorage: () => current,
+  });
+  assert.equal(readStartView(storage, firstKey), null);
+  fixture.elements.set.click();
+  assert.ok(readStartView(storage, firstKey));
+  assert.equal(readStartView(storage, secondKey), null);
+  current = false;
+  fixture.elements.clear.click();
+  assert.ok(
+    readStartView(storage, firstKey),
+    'retired account cannot erase its saved view',
+  );
+  fixture.elements.set.click();
+  assert.match(fixture.toasts.at(-1), /not saved/);
+  assert.equal(readStartView(storage, secondKey), null);
+  fixture.controls.destroy();
+});
+
+test('missing or silently blocked storage cannot report a successful save', () => {
+  for (const storage of [null, {}, { getItem: () => null, setItem() {} }]) {
+    const fixture = startControls(cameraAt(OXFORD), storage);
+    fixture.elements.set.click();
+    assert.match(fixture.toasts.at(-1), /not saved/);
+    assert.equal(
+      fixture.elements.status.textContent,
+      'Start view: Austin (default)',
+    );
+    fixture.controls.destroy();
+  }
+});
+
+test('failed Reset retains the saved view and reports failure instead of success', () => {
+  for (const removeItem of [
+    () => {},
+    () => {
+      throw new Error('SecurityError');
+    },
+  ]) {
+    const storage = memoryStorage({
+      [START_VIEW_STORAGE_KEY]: JSON.stringify(OXFORD),
+    });
+    storage.removeItem = removeItem;
+    const fixture = startControls(cameraAt(OXFORD), storage);
+    fixture.elements.clear.click();
+    assert.match(fixture.toasts.at(-1), /not reset/);
+    assert.equal(fixture.elements.clear.hidden, false);
+    assert.equal(readStartView(storage).lat, OXFORD.lat);
+    assert.equal(
+      fixture.elements.status.textContent,
+      `Start view: ${formatStartViewPlace(OXFORD)}`,
+    );
+    fixture.controls.destroy();
+  }
 });
 
 test('a camera looking above the horizon is saved level, not rejected', () => {

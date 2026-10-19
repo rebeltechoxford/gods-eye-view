@@ -29,9 +29,14 @@ function fakeViewer({ height = 20_000_000 } = {}) {
     heading: 0.3,
     flights: [],
     views: [],
+    cancelledFlights: 0,
     positionCartographic: { height },
     flyTo(options) {
       this.flights.push(options);
+    },
+    cancelFlight() {
+      this.cancelledFlights++;
+      this.flights.at(-1)?.cancel?.();
     },
     setView(options) {
       this.views.push(options);
@@ -172,6 +177,116 @@ test('following moves the camera with each fix at the current zoom, without new 
   const carto = Cesium.Cartographic.fromCartesian(view.destination);
   assert.ok(Math.abs(Cesium.Math.toDegrees(carto.latitude) - 34.001) < 1e-9);
   assert.equal(Math.round(carto.height), 900, 'a closer zoom is kept');
+});
+
+test('flight completion uses the safe destination height, not an intermediate underground pose', () => {
+  const t = setup({ height: 900 });
+  t.button.click();
+  t.fix(34, -89);
+  t.viewer.camera.positionCartographic.height = -52_893;
+  t.viewer.camera.flights[0].complete();
+  const target = Cesium.Cartographic.fromCartesian(
+    t.viewer.camera.views.at(-1).destination,
+  );
+  assert.equal(Math.round(target.height), 900);
+  assert.equal(t.control.state(), 'following');
+});
+
+test('later fixes cannot preserve an underground or non-finite camera height', () => {
+  const t = setup({ height: 900 });
+  t.button.click();
+  t.fix(34, -89);
+  t.viewer.camera.flights[0].complete();
+  for (const height of [-52_893, 0, NaN, Infinity]) {
+    t.viewer.camera.positionCartographic.height = height;
+    t.fix(34.001, -89.001);
+    const target = Cesium.Cartographic.fromCartesian(
+      t.viewer.camera.views.at(-1).destination,
+    );
+    assert.ok(Number.isFinite(target.height));
+    assert.ok(target.height >= 150 + 300 - 0.001, String(height));
+  }
+  t.viewer.scene.globe.getHeight = () => 2_000;
+  t.viewer.camera.positionCartographic.height = 900;
+  t.fix(34.002, -89.002);
+  const uphill = Cesium.Cartographic.fromCartesian(
+    t.viewer.camera.views.at(-1).destination,
+  );
+  assert.ok(uphill.height >= 2_300 - 0.001, 'new terrain also owns clearance');
+});
+
+test('navigation or a drag before the first fix prevents a delayed camera takeover', () => {
+  for (const gesture of ['handoff', 'drag']) {
+    const t = setup();
+    t.button.click();
+    if (gesture === 'handoff') t.handoff();
+    else {
+      for (const [type, x] of [
+        ['pointerdown', 0],
+        ['pointermove', 20],
+      ]) {
+        const event = new Event(type);
+        Object.assign(event, { pointerId: 1, clientX: x, clientY: 0 });
+        t.viewer.canvas.dispatchEvent(event);
+      }
+    }
+    t.fix(34, -89);
+    assert.equal(t.control.state(), 'shown', gesture);
+    assert.equal(t.entity('my-location').show, true, gesture);
+    assert.equal(t.viewer.camera.flights.length, 0, gesture);
+    assert.equal(t.viewer.camera.views.length, 0, gesture);
+    t.button.click();
+    assert.equal(
+      t.control.state(),
+      'following',
+      'a new explicit tap can follow',
+    );
+    assert.equal(t.viewer.camera.flights.length, 1);
+    t.control.destroy();
+  }
+});
+
+test('off, handoff and teardown cancel only the owned flight and fence old callbacks', () => {
+  for (const action of ['off', 'handoff', 'destroy']) {
+    const t = setup();
+    t.button.click();
+    t.fix(34, -89);
+    const oldFlight = t.viewer.camera.flights[0];
+    if (action === 'off') t.button.click();
+    else if (action === 'handoff') t.handoff();
+    else t.control.destroy();
+    assert.equal(t.viewer.camera.cancelledFlights, 1, action);
+    oldFlight.complete();
+    assert.equal(
+      t.viewer.camera.views.length,
+      0,
+      'retired completion does not move',
+    );
+    if (action !== 'destroy') {
+      if (action === 'off') {
+        t.button.click();
+        t.fix(35, -90);
+      } else t.button.click();
+      const newFlight = t.viewer.camera.flights.at(-1);
+      oldFlight.cancel();
+      oldFlight.complete();
+      t.fix(35.01, -90.01);
+      assert.equal(
+        t.viewer.camera.views.length,
+        0,
+        'old callbacks cannot finish the new flight',
+      );
+      newFlight.complete();
+      assert.equal(t.viewer.camera.views.length, 1);
+      t.handoff();
+      assert.equal(
+        t.viewer.camera.cancelledFlights,
+        1,
+        'completed flights are not owned',
+      );
+      t.control.destroy();
+    }
+  }
 });
 
 test('a drag or another camera owner ends FOLLOW but keeps the dot; tap follows again', () => {

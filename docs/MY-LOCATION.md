@@ -52,13 +52,23 @@ with the location button), open **Location** in the bottom bar and tap
 app opens there on this device, with the same short fly-in from above.
 **Reset** goes back to the deployment default.
 
-- Saved in this browser only (`localStorage`, key `gev.startView.v1`): the
-  latitude, longitude, height, heading and pitch, labelled by coordinates.
-  It is not sent anywhere and is not part of share links, and each browser
-  or phone keeps its own.
+- Saved in this browser only (`localStorage`, base key `gev.startView.v1`):
+  latitude, longitude, height, heading, pitch and a privacy classification,
+  labelled by coordinates. Named operators use separate account-scoped keys;
+  they never inherit an unscoped or another operator's saved camera. Embedded
+  views do not read or save personal start views. Each browser or phone keeps
+  its own. Saving a view over your GPS position deliberately retains that camera.
 - A share link or a saved map area you open still takes priority.
-- If browser storage is blocked (some private windows), **Start here** says
-  so instead of pretending to save.
+- A private saved camera restores privacy protection before the HUD and sharing
+  controls start. Legacy saved views are treated as private. Disclosure consent
+  never persists; grant each use again for the new page session. This protection
+  stays active even if a share link takes priority over that saved camera.
+- If browser storage is unavailable or blocked, **Start here** and **Reset**
+  report failure. A failed reset leaves the retained view in place.
+- Saved views also require the app's resolved operator context. A frontend-only
+  Sites preview without the private Node host cannot save or restore them and
+  uses its deployment default; the local app/lab and private host supply this
+  context. This restriction does not disable the foreground location dot.
 
 ## One GPS for the map and TAK
 
@@ -69,15 +79,17 @@ alone shares nothing.
 
 ## Privacy
 
-- The position is drawn on this device only. It is not stored (not in
-  browser storage, the saved app or share links) and not sent anywhere by
-  this feature.
+- The position is drawn on this device only. GPS fixes are not automatically
+  stored or shared. **Start here** is a separate, explicit action that stores
+  the current camera, which can reveal that position; its protection is
+  described above.
 - Following puts the camera over you, and some features read the camera
   (the AI HUD summary and its nearby-places lookup, share links,
   recording). So the first fix marks the page session private, the same
   protection TAK applies when your TAK position is on screen: those uses
-  stay blocked until you allow them in the TAK panel. Nothing about this
-  persists across a reload.
+  stay blocked until you allow them in the TAK panel. Permissions do not survive
+  a reload. A saved private start view restores protection without restoring
+  permission.
 - The browser gets the position from the device. On a phone that is the
   GPS receiver, often helped by Wi-Fi and cell data the operating system
   manages; a desktop browser may ask a network location service. This app

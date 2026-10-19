@@ -1435,6 +1435,86 @@ test('an echo of a just-released identity does not lock that device out', async 
   await again.next(isOp('identity'));
 });
 
+test('stale and future upstream echoes cannot reserve a released identity', async (t) => {
+  let now = Date.now();
+  const g = await startGateway({}, { now: () => now });
+  t.after(g.close);
+  const device = createIdentity();
+  const original = connect(g.port, { identity: device });
+  await original.next(isOp('identity'));
+  const oldPosition = buildSelfSa(device, { lat: 1, lon: 2 }, { nowMs: now });
+  original.close();
+  await once(original, 'close');
+  now += IDENTITY_RELEASE_GRACE_MS + 1;
+  g.mesh.onXml(serializeCotEvent(oldPosition));
+  g.server.onXml(
+    serializeCotEvent(
+      buildSelfSa(device, { lat: 1, lon: 2 }, { nowMs: now + 120_000 }),
+    ),
+  );
+  const again = connect(g.port, { identity: device });
+  t.after(() => again.terminate());
+  await again.next(isOp('identity'));
+});
+
+test('released self-SA ownership lasts only while the authorized position is fresh', async (t) => {
+  let now = Date.now();
+  const g = await startGateway({}, { now: () => now });
+  t.after(g.close);
+  const device = createIdentity();
+  const original = connect(g.port, { identity: device });
+  await original.next(isOp('identity'));
+  const position = buildSelfSa(
+    device,
+    { lat: 1, lon: 2 },
+    { nowMs: now, staleMs: 3600_000 },
+  );
+  original.send(
+    JSON.stringify({
+      op: 'cot',
+      id: 'long-lived-self',
+      xml: serializeCotEvent(position),
+    }),
+  );
+  await original.next(submission('long-lived-self', 'queued'));
+  original.close();
+  await once(original, 'close');
+  now += IDENTITY_RELEASE_GRACE_MS + 1;
+  g.server.onXml(serializeCotEvent(position));
+  const again = connect(g.port, { identity: device });
+  await again.next(isOp('identity'));
+  again.close();
+  await once(again, 'close');
+
+  // Reclaiming the slot must carry the old SA expiry across another release.
+  now += IDENTITY_RELEASE_GRACE_MS + 1;
+  g.mesh.onXml(
+    serializeCotEvent({
+      ...position,
+      point: { ...position.point, ce: 15 },
+    }),
+  );
+  const back = connect(g.port, { identity: device });
+  await back.next(isOp('identity'));
+  back.close();
+  await once(back, 'close');
+
+  // Once its own data has expired, a new fresh upstream claim is foreign.
+  now = position.staleMs + 1;
+  const foreign = buildSelfSa(
+    { ...device, callsign: 'FOREIGN CLAIM' },
+    { lat: 3, lon: 4 },
+    { nowMs: now },
+  );
+  g.mesh.onXml(serializeCotEvent(foreign));
+  const rejected = connect(g.port, { identity: device });
+  t.after(() => rejected.terminate());
+  assert.match(
+    JSON.parse(await rejected.next(isOp('reject'))).reason,
+    /Identity/,
+  );
+});
+
 test('directed chat is denied, chat is not replayed, and browser routing extensions are stripped or rejected', async (t) => {
   const g = await startGateway();
   t.after(g.close);

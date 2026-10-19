@@ -152,6 +152,12 @@ const readState = () =>
     };
     const now = viewer.clock.currentTime;
     const camera = viewer.camera.positionCartographic;
+    const groundHeight = viewer.scene.globe.getHeight(camera);
+    const canvas = viewer.scene.canvas;
+    const centerGround = viewer.camera.pickEllipsoid(
+      { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
+      viewer.scene.globe.ellipsoid,
+    );
     return {
       state: button.dataset.state,
       pressed: button.getAttribute('aria-pressed'),
@@ -165,6 +171,8 @@ const readState = () =>
         lon: (camera.longitude * 180) / Math.PI,
         height: camera.height,
       },
+      groundHeight: Number.isFinite(groundHeight) ? groundHeight : 0,
+      centerGround: degrees(centerGround),
       watches: window.__gevWatchCount,
       toast: document.getElementById('toast')?.textContent || '',
     };
@@ -173,6 +181,14 @@ const readState = () =>
 const near = (a, b, tolerance = 1e-4) =>
   Math.abs(a.lat - b.latitude) < tolerance &&
   Math.abs(a.lon - b.longitude) < tolerance;
+
+const safelyFramed = (state, position) =>
+  Number.isFinite(state.camera.height) &&
+  state.camera.height >= state.groundHeight + 299 &&
+  state.camera.height < 10_000 &&
+  state.centerGround !== null &&
+  near(state.camera, position, 1e-3) &&
+  near(state.centerGround, position, 1e-3);
 
 async function waitFor(predicate, label, ms = 30_000) {
   const deadline = Date.now() + ms;
@@ -218,15 +234,18 @@ try {
       assert.equal(Math.round(state.ringRadius), OXFORD.accuracy);
       assert.equal(state.pressed, 'true');
       const framed = await waitFor(
-        (s) => near(s.camera, OXFORD, 1e-3) && s.camera.height < 10_000,
-        'camera over the dot',
+        (s) => safelyFramed(s, OXFORD),
+        'camera safely above the dot with the surface in the center of view',
       );
+      assert.ok(safelyFramed(framed, OXFORD));
       await page.screenshot({
         path: path.join(artifactDir, 'my-location-following.png'),
       });
       return {
         dot: state.dot,
         cameraHeightM: Math.round(framed.camera.height),
+        terrainHeightM: framed.groundHeight,
+        centerGround: framed.centerGround,
       };
     },
   );
@@ -234,12 +253,16 @@ try {
   await step('FOLLOW keeps the camera over each new fix', async () => {
     await page.setGeolocation(MOVED);
     const state = await waitFor(
-      (s) => near(s.dot, MOVED) && near(s.camera, MOVED, 1e-3),
-      'camera follows the moved fix',
+      (s) => near(s.dot, MOVED) && safelyFramed(s, MOVED),
+      'camera follows the moved fix above the surface',
     );
     assert.equal(state.state, 'following');
     assert.equal(Math.round(state.ringRadius), MOVED.accuracy);
-    return { camera: state.camera };
+    return {
+      camera: state.camera,
+      terrainHeightM: state.groundHeight,
+      centerGround: state.centerGround,
+    };
   });
 
   await step(
@@ -274,7 +297,7 @@ try {
     async () => {
       await page.click('#my-location-view');
       await waitFor(
-        (s) => s.state === 'following' && near(s.camera, PANNED, 1e-3),
+        (s) => s.state === 'following' && safelyFramed(s, PANNED),
         'FOLLOW again',
       );
       await page.click('#my-location-view');
@@ -342,6 +365,7 @@ try {
     Math.abs(a.lat - b.lat) < tolerance && Math.abs(a.lon - b.lon) < tolerance;
 
   let savedCamera = null;
+  let privateReloadRequestIndex = 0;
   await step(
     'Start here saves the current view and a reload opens there',
     async () => {
@@ -358,6 +382,7 @@ try {
         (e) => e.textContent,
       );
       assert.match(after, /^Start view: \d+\.\d\d°N \d+\.\d\d°W$/);
+      privateReloadRequestIndex = requests.length;
       await reloadFresh();
       const opened = await camera();
       assert.ok(
@@ -375,6 +400,50 @@ try {
         path: path.join(artifactDir, 'start-view-saved.png'),
       });
       return { status: after, opened };
+    },
+  );
+
+  await step(
+    'restored private view keeps disclosure blocked after reload',
+    async () => {
+      await page.waitForFunction(() => window.__godsEyeView?.takClient);
+      assert.deepEqual(
+        await page.evaluate(() => window.__godsEyeView.takClient.privacy()),
+        { private: true, authorized: false },
+      );
+      assert.equal(
+        await page.evaluate(() =>
+          [...document.querySelectorAll('[data-tak-disclosure]')].some(
+            (input) => input.checked,
+          ),
+        ),
+        false,
+        'disclosure permissions are never restored',
+      );
+      await page.click('#share-btn');
+      assert.match(
+        await page.$eval('#toast', (element) => element.textContent),
+        /privacy protection/i,
+        'sharing the restored private camera requires fresh consent',
+      );
+      const leaks = requests
+        .slice(privateReloadRequestIndex)
+        .filter((request) => {
+          const numbers =
+            `${decodeURIComponent(request.url)} ${request.body}`.match(
+              /-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi,
+            ) || [];
+          return numbers.some((number) =>
+            [savedCamera.lat, savedCamera.lon].some(
+              (coordinate) => Math.abs(Number(number) - coordinate) < 1e-3,
+            ),
+          );
+        });
+      assert.deepEqual(
+        leaks.map((request) => new URL(request.url).pathname),
+        [],
+        'no startup request carried the restored private coordinates',
+      );
     },
   );
 

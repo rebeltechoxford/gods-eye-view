@@ -46,6 +46,7 @@ export const GATEWAY_SUBMISSION_LIMIT = 256;
 // position echoed back on the mesh cannot be mistaken for another source.
 export const GATEWAY_IDENTITY_LIMIT = 32;
 export const IDENTITY_RELEASE_GRACE_MS = 10 * 60_000;
+const KNOWN_UID_LIMIT = 8192;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEVICE_UID =
@@ -175,6 +176,10 @@ export function createTakGateway({
   const browserGeometryEvents = new WeakMap();
   // uid -> { live: open browsers holding it, releasedAt: when the last closed }
   const registeredIdentities = new Map();
+  // Slot release must not turn a still-fresh published self position into a
+  // foreign UID claim when the upstream echoes it. These bounded tombstones
+  // last only until that authorized position expires (at most 24 hours).
+  const retiredSelfUids = new Map();
   function releaseIdentity(uid) {
     const entry = registeredIdentities.get(uid);
     if (entry && --entry.live === 0) entry.releasedAt = now();
@@ -294,21 +299,41 @@ export function createTakGateway({
     for (const [uid, item] of ownedMarkers)
       if (item.staleMs <= t) ownedMarkers.delete(uid);
     for (const [uid, entry] of registeredIdentities)
-      if (!entry.live && entry.releasedAt + IDENTITY_RELEASE_GRACE_MS <= t)
+      if (!entry.live && entry.releasedAt + IDENTITY_RELEASE_GRACE_MS <= t) {
         registeredIdentities.delete(uid);
+        if (entry.selfStaleMs > t) {
+          retiredSelfUids.delete(uid);
+          retiredSelfUids.set(uid, entry.selfStaleMs);
+          while (retiredSelfUids.size > KNOWN_UID_LIMIT)
+            retiredSelfUids.delete(retiredSelfUids.keys().next().value);
+        }
+      }
+    for (const [uid, staleMs] of retiredSelfUids)
+      if (staleMs <= t) retiredSelfUids.delete(uid);
+  }
+  function rememberNetworkUid(event) {
+    // Router subscribers also see events refused by the forwarding policy.
+    // A stale/future packet must not permanently reserve a browser UID.
+    if (
+      event.staleMs <= now() ||
+      event.timeMs > now() + 60_000 ||
+      registeredIdentities.has(event.uid) ||
+      (retiredSelfUids.get(event.uid) || 0) > now() ||
+      ownedMarkers.has(event.uid)
+    )
+      return;
+    networkUids.add(event.uid);
+    while (networkUids.size > KNOWN_UID_LIMIT)
+      networkUids.delete(networkUids.values().next().value);
   }
   router.subscribe((event, { xml, from }) => {
     prune();
-    if (
-      (from?.kind === 'mesh' || from?.kind === 'server') &&
-      !registeredIdentities.has(event.uid) &&
-      !ownedMarkers.has(event.uid)
-    ) {
-      networkUids.add(event.uid);
-      while (networkUids.size > 8192)
-        networkUids.delete(networkUids.values().next().value);
-    }
     const kind = cotKind(event.type);
+    const identity = registeredIdentities.get(event.uid);
+    if (from?.kind === 'browser' && kind === 'sa' && identity)
+      identity.selfStaleMs = Math.max(identity.selfStaleMs || 0, event.staleMs);
+    if (from?.kind === 'mesh' || from?.kind === 'server')
+      rememberNetworkUid(event);
     if (kind === 'delete') {
       const target = event.detail.links[0]?.uid;
       const prior = replay.get(target);
@@ -397,14 +422,8 @@ export function createTakGateway({
           allowEvent: (event) =>
             cotKind(event.type) !== 'chat' || isBroadcastChat(event),
           onReceive(browser, xml, event) {
-            if (
-              !registeredIdentities.has(event.uid) &&
-              !ownedMarkers.has(event.uid)
-            ) {
-              networkUids.add(event.uid);
-              while (networkUids.size > 8192)
-                networkUids.delete(networkUids.values().next().value);
-            }
+            prune();
+            rememberNetworkUid(event);
             // The pool's transport-owned recipient is retained even if the server
             // removed marti/dest. Never pass this through principal-wide fanout.
             send(browser.ws, xml);
@@ -826,7 +845,14 @@ export function createTakGateway({
           if (firstIdentity) {
             const entry = registeredIdentities.get(uid);
             if (entry) entry.live++;
-            else registeredIdentities.set(uid, { live: 1, releasedAt: 0 });
+            else {
+              registeredIdentities.set(uid, {
+                live: 1,
+                releasedAt: 0,
+                selfStaleMs: retiredSelfUids.get(uid) || 0,
+              });
+              retiredSelfUids.delete(uid);
+            }
           }
           browser.identity = { uid, callsign };
           link.authorized = true;
@@ -1082,6 +1108,7 @@ export function createTakGateway({
       ownedMarkers.clear();
       networkUids.clear();
       registeredIdentities.clear();
+      retiredSelfUids.clear();
     },
   });
 }
