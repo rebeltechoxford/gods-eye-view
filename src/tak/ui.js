@@ -221,6 +221,7 @@ export function createTakPanel({
   connect,
   mobile,
   logout,
+  clearRetainedPicture = () => {},
 }) {
   const root = document.createElement('section');
   root.className = 'tak-web-root';
@@ -272,6 +273,7 @@ export function createTakPanel({
   }
 
   function clearPrivateInputs() {
+    clearRetainedPicture();
     for (const input of root.querySelectorAll(
       'input:not([type="checkbox"]), textarea',
     ))
@@ -811,6 +813,7 @@ export function createTakPanel({
     )
       return;
     client.store.clear();
+    clearRetainedPicture();
     report('Local TAK state cleared.');
   });
 

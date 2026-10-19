@@ -581,6 +581,10 @@
       "src/ui/locationNavigation.js",
       "src/ui/cockpitCoordinator.js",
       "src/ui/cameraOrientationControls.js",
+      "src/ui/myLocation.js",
+      "src/ui/startView.js",
+      "src/location/deviceLocation.js",
+      "src/tak/geolocation.js",
       "src/ui/applicationShortcuts.js",
       "src/ui/cctv.js",
       "src/ui/cctvBindings.js",
@@ -1936,6 +1940,9 @@
       "src/ui/locationNavigation.js",
       "src/ui/cockpitCoordinator.js",
       "src/ui/cameraOrientationControls.js",
+      "src/ui/myLocation.js",
+      "src/ui/startView.js",
+      "src/location/deviceLocation.js",
       "src/ui/applicationShortcuts.js",
       "src/ui/cctv.js",
       "src/ui/cctvBindings.js",
@@ -2292,7 +2299,11 @@
       "src/emcon/guard.js",
       "src/emcon/state.js",
       "src/emcon/ui.js",
-      "src/emcon/emcon.css"
+      "src/emcon/emcon.css",
+      "src/tak/picture.js",
+      "src/tak/pictureStorage.js",
+      "src/tak/pictureWorkflow.js",
+      "src/tak/pictureUi.js"
     ],
     "external": [
       "hls.js",

@@ -52,6 +52,7 @@
     "qa:maps:offline": "node scripts/qa-offline-maps.mjs",
     "qa:emcon": "node scripts/qa-emcon.mjs",
     "qa:fisb": "node scripts/qa-fisb.mjs",
+    "qa:my-location": "node scripts/qa-my-location.mjs",
     "qa:maps:mbtiles": "node scripts/qa-mbtiles.mjs",
     "qa:map-source-tray": "node scripts/qa-map-source-tray.mjs",
     "qa:panel-resize": "node scripts/qa-panel-resize.mjs",
@@ -59,7 +60,8 @@
     "qa:street-level:fixtures": "node scripts/qa-street-level.mjs --fixtures",
     "check:boundaries": "node scripts/check-import-directions.mjs && node scripts/check-package-boundaries.mjs",
     "qa:transit": "node scripts/qa-transit.mjs",
-    "mcp": "node server/mcp/stdio.js"
+    "mcp": "node server/mcp/stdio.js",
+    "qa:tak:picture": "node scripts/qa-tak-picture.mjs"
   },
   "dependencies": {
     "@jtarrio/signals": "^0.10.0",

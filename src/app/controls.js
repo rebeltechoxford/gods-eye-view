@@ -1,6 +1,14 @@
 import { catalogControlServices } from './catalog.js';
 import { StyleManager } from '../ui/composition.js';
-import { flyToAustin } from '../camera.js';
+import {
+  DEFAULT_START_VIEW,
+  flyToStartView,
+  formatStartViewPlace,
+  restoreStartViewPrivacy,
+  START_VIEW_STORAGE_KEY,
+} from '../ui/startView.js';
+import { identityStorageKey } from '../tak/operatorContext.js';
+import { isEmbedded } from './embed.js';
 import { initCockpitCloudEffects } from '../cockpitCloudEffects.js';
 import * as Cesium from 'cesium';
 
@@ -14,8 +22,25 @@ export function createApplicationControls({
   placeSearch,
   defer,
 }) {
+  // Bind persistence to the already-resolved operator. Never expose another
+  // account's view (or a personal view in an embed), and restore sticky privacy
+  // before constructing HUD/share consumers, even when a link overrides the view.
+  const embedded = isEmbedded();
+  const startViewStorageKey = embedded
+    ? null
+    : identityStorageKey(START_VIEW_STORAGE_KEY);
+  const canUseStartViewStorage = () =>
+    !embedded &&
+    startViewStorageKey !== null &&
+    identityStorageKey(START_VIEW_STORAGE_KEY) === startViewStorageKey;
+  const startView = restoreStartViewPrivacy(viewer, {
+    storageKey: startViewStorageKey,
+    embedded,
+  });
   // Initialize the style manager (post-processing, HUD, locations, share links)
   const styleManager = new Controls(viewer, {
+    startViewStorageKey,
+    canUseStartViewStorage,
     services: {
       ...services,
       ...operations.surface.controlServices,
@@ -43,7 +68,8 @@ export function createApplicationControls({
   });
   defer(() => cockpitCloudEffects?.destroy());
 
-  // If no share link state, do default fly-to Austin
+  // Without a share link or saved map area, open on this device's start view
+  // (Location tray, "Start here"), else the built-in default.
   if (!styleManager.hasShareState) {
     if (savedMapBounds) {
       loaderStatus.textContent = 'Opening saved map area...';
@@ -52,8 +78,9 @@ export function createApplicationControls({
         destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
       });
     } else {
-      loaderStatus.textContent = 'Flying to Austin, TX...';
-      defer(flyToAustin(viewer));
+      const view = startView || DEFAULT_START_VIEW;
+      loaderStatus.textContent = `Flying to ${view.label || formatStartViewPlace(view)}...`;
+      defer(flyToStartView(viewer, view));
     }
   } else {
     loaderStatus.textContent = 'Restoring shared view...';

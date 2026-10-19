@@ -1,6 +1,6 @@
 # God's Eye View × TAK remaining work
 
-Updated: 2026-10-18 UTC. This is the remaining-work handoff for the additive TAK
+Updated: 2026-10-19 UTC. This is the remaining-work handoff for the additive TAK
 foundation integrated on `dev/tak-web-foundation`, with `main` as the release
 branch. Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to run
 the local app/lab. The detailed preservation inventory and parity ledger are in
@@ -112,10 +112,10 @@ running.
    real-client acceptance. Unsupported archive/attachment forms remain refused;
    supported `u-d-f` / `b-m-r` geometry renders its actual vertices; unsupported
    geometry is labeled instead of substituted with a marker.
-6. **Coordinate/navigation tools.** DD/DMS/MGRS/UTM entry, validation, shared
+6. **Coordinate/navigation tools.** DD/DMS/MGRS/UTM/UPS entry, validation, shared
    camera focus, local markers and WGS84 horizontal range/true bearing are
    implemented, alongside entered-route editing and leg measurements. Add turn
-   guidance, UPS polar grids, altitude datum
+   guidance, altitude datum
    conversion, magnetic bearings and appropriate uncertainty/sensor support.
    Preserve the distinction between operator position, fresh GPS and map center.
 7. **GPS/offline field behavior.** The first retained-map slice adds bounded
@@ -137,8 +137,11 @@ running.
    physical iPhone capacity, then add live guidance, turn restrictions and
    multi-region packs. EMCON pauses app requests ([limits](docs/TAK_EMCON.md));
    it does not establish complete device radio or network isolation. Verify
-   physical iPhone Airplane Mode behavior, add host-side controls and retain the
-   received TAK picture across reload. FIS-B weather decodes receiver weather
+   physical iPhone Airplane Mode behavior and add host-side controls. Explicit
+   device snapshots now retain a bounded historical TAK picture across reload,
+   separately from live contacts; physical WebKit persistence, expiry and account
+   switching still need device acceptance ([scope](docs/TAK_OFFLINE_PICTURE.md)).
+   FIS-B weather decodes receiver weather
    and NOTAMs ([scope](docs/FISB.md)); verify a real ground station, then draw
    lightning, icing, turbulence and cloud tops. Add unsent tactical queue
    reconciliation with an explicit

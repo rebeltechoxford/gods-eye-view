@@ -42,6 +42,38 @@ test('GPS errors stop the watch; retry and teardown reject late fixes', () => {
   assert.equal(fixes.length, 1);
 });
 
+test('a lost or slow fix keeps the watch; a refusal ends it', () => {
+  const watches = [],
+    cleared = [],
+    fixes = [],
+    errors = [];
+  const gps = createGeolocation({
+    watchPosition: (fix, error) => {
+      watches.push({ fix, error });
+      return watches.length;
+    },
+    clearWatch: (id) => cleared.push(id),
+  });
+  gps.start(
+    (fix) => fixes.push(fix),
+    (error) => errors.push(error),
+  );
+  watches[0].fix({ coords: { latitude: 1, longitude: 2 } });
+  // Chromium reports POSITION_UNAVAILABLE with an empty message when the
+  // signal drops (a tunnel, a building), then delivers the next fix itself.
+  watches[0].error({ code: 2, message: '' });
+  watches[0].error({ code: 3, message: 'Timeout expired' });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(cleared, []);
+  assert.equal(gps.isActive(), true);
+  watches[0].fix({ coords: { latitude: 3, longitude: 4 } });
+  assert.equal(fixes.length, 2);
+  watches[0].error({ code: 1, message: '' });
+  assert.deepEqual(cleared, [1]);
+  assert.deepEqual(errors, ['Device GPS unavailable: permission denied']);
+  assert.equal(gps.isActive(), false);
+});
+
 test('GPS handles unavailable devices and synchronous permission failure', () => {
   assert.equal(
     createGeolocation(null).start(

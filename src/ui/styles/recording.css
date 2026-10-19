@@ -34,6 +34,7 @@ body.scene-playback-mode
     #clear-selected-layers,
     #tilt-map-view,
     #north-up-view,
+    #my-location-view,
     #reset-globe-view
   ) {
   display: none !important;

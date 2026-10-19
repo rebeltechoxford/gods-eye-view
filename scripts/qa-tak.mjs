@@ -293,12 +293,49 @@ async function fill(page, selector, value) {
   );
 }
 async function press(page, selector) {
-  const point = await page.$eval(selector, (el) => {
-    el.scrollIntoView({ block: 'center' });
-    const rect = el.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  });
-  await page.mouse.click(point.x, point.y);
+  const target = await page.waitForSelector(selector, { visible: true });
+  const marker = `QA TAK click ${Date.now()} ${Math.random()}`;
+  let listener;
+  let timer;
+  try {
+    await target.evaluate(async (el) => {
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      );
+    });
+    const point = await target.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return {
+        x,
+        y,
+        usable: !el.disabled && !!hit && (hit === el || el.contains(hit)),
+      };
+    });
+    assert(point.usable, `TAK control is obscured or disabled: ${selector}`);
+    const delivered = new Promise((resolve, reject) => {
+      listener = (message) => {
+        if (message.text() === marker) resolve();
+      };
+      page.on('console', listener);
+      timer = setTimeout(
+        () => reject(new Error(`TAK click was not delivered: ${selector}`)),
+        10000,
+      );
+    });
+    void delivered.catch(() => {});
+    await target.evaluate((el, value) => {
+      el.addEventListener('click', () => console.debug(value), { once: true });
+    }, marker);
+    await Promise.all([page.mouse.click(point.x, point.y), delivered]);
+  } finally {
+    clearTimeout(timer);
+    if (listener) page.off('console', listener);
+    await target.dispose();
+  }
 }
 async function importXml(page, xml) {
   await section(page, 'import');

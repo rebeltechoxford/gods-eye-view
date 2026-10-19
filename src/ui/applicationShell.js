@@ -21,6 +21,14 @@ import { LocalSdrControls } from './localSdrControls.js';
 import { LocationNavigation } from './locationNavigation.js';
 import { bindClearLayersControl } from './layers.js';
 import { bindCameraOrientationControls } from './cameraOrientationControls.js';
+import { createMyLocation } from './myLocation.js';
+import { bindStartViewControls, START_VIEW_STORAGE_KEY } from './startView.js';
+import { deviceLocation } from '../location/deviceLocation.js';
+import {
+  markTakDataPrivate,
+  isTakPrivacyBlocked,
+  TAK_PRIVACY_MESSAGE,
+} from '../tak/privacy.js';
 import { createMapSourceControls } from './mapSource.js';
 import { STYLES } from './effects.js';
 import { isHudLayout } from '../hudLayouts.js';
@@ -64,7 +72,14 @@ export class StyleManager extends ShellFacade {
    */
   constructor(
     viewer,
-    { mapStackController = null, placeSearch, services, requestServices } = {},
+    {
+      mapStackController = null,
+      placeSearch,
+      services,
+      requestServices,
+      startViewStorageKey = START_VIEW_STORAGE_KEY,
+      canUseStartViewStorage = () => true,
+    } = {},
   ) {
     super();
     const {
@@ -87,6 +102,8 @@ export class StyleManager extends ShellFacade {
       localAdsbLayer,
     } = services;
     this.services = services;
+    this._startViewStorageKey = startViewStorageKey;
+    this._canUseStartViewStorage = canUseStartViewStorage;
     this._lifetime = new UiLifetime();
     this._recording = new RecordingControls({
       syncShareState: () => this._syncShareState(),
@@ -576,6 +593,8 @@ export class StyleManager extends ShellFacade {
     this._initLocationBar();
     this._initShareButton();
     this._initCameraOrientationControls();
+    this._initMyLocation();
+    this._initStartView();
     this._initClearSelectedLayersButton();
     this._initHUDToggle();
     this._initModels3dToggle();
@@ -1468,6 +1487,41 @@ export class StyleManager extends ShellFacade {
     });
   }
 
+  /** Wire the map's own device-location dot and FOLLOW button. */
+  _initMyLocation() {
+    this._myLocation?.destroy();
+    this._myLocation = null;
+    if (!this._myLocationBtn) return;
+    this._myLocation = createMyLocation({
+      viewer: this.viewer,
+      button: this._myLocationBtn,
+      location: deviceLocation().consumer(),
+      navigation: {
+        run: (noun, move) => this._runExplicitNavigation(noun, move),
+        subscribeHandoff: (listener) =>
+          this._navigation.subscribeCameraHandoff(listener),
+      },
+      onPrivate: () => markTakDataPrivate(this.viewer),
+      showToast: (message) => this._showToast(message),
+    });
+  }
+
+  /** Wire the Location tray's start-view row (saved on this device). */
+  _initStartView() {
+    this._startViewControls?.destroy();
+    this._startViewControls = bindStartViewControls({
+      viewer: this.viewer,
+      storageKey: this._startViewStorageKey,
+      canUseStorage: this._canUseStartViewStorage,
+      elements: {
+        status: this._startViewStatus,
+        set: this._startViewSetBtn,
+        clear: this._startViewClearBtn,
+      },
+      showToast: (message) => this._showToast(message),
+    });
+  }
+
   // ── Share Button ─────────────────────────────
 
   /**
@@ -1478,7 +1532,13 @@ export class StyleManager extends ShellFacade {
     this._lifetime.listen(this._shareBtn, 'click', async () => {
       const success = await this.shareLinkManager.copyLink();
       if (!this._disposed)
-        this._showToast(success ? 'Link copied!' : 'Copy failed');
+        this._showToast(
+          success
+            ? 'Link copied!'
+            : isTakPrivacyBlocked(this.viewer, 'sharing')
+              ? TAK_PRIVACY_MESSAGE
+              : 'Copy failed',
+        );
     });
   }
 
@@ -1583,6 +1643,8 @@ export class StyleManager extends ShellFacade {
     this._displayBindings.destroy();
     this._mapSourceControls?.destroy();
     this._cameraOrientationControls?.destroy();
+    this._myLocation?.destroy();
+    this._startViewControls?.destroy();
     this._clearLayersControl?.destroy();
     this._cctvControls?.destroy();
     this.services?.streetLevelLayer?.attachNavigation?.(null);

@@ -5,7 +5,7 @@ import { createCotOverlay } from './cotOverlay.js';
 import { createGatewayTransport, fetchGatewaySession } from './transport.js';
 import { createTakPanel } from './ui.js';
 import { createMissionPackagePanel } from './packagesUi.js';
-import { createGeolocation } from './geolocation.js';
+import { deviceLocation } from '../location/deviceLocation.js';
 import { createMobileSession } from './mobile.js';
 import { signOutOperator } from './session.js';
 import { createSavedMaps, shellMessage } from '../maps/offline/ui.js';
@@ -16,6 +16,7 @@ import {
 } from '../routing/deviceRouting.js';
 import { createNavigationPanel } from './navigationUi.js';
 import { createDrawingsPanel } from './drawingsUi.js';
+import { createPicturePanel } from './pictureUi.js';
 import { createNavigationFocus } from './navigationCamera.js';
 import { isEmbedded } from '../app/embed.js';
 import {
@@ -117,8 +118,10 @@ export function initTakWebClient({
   let navigation = null;
   let packages = null;
   let drawings = null;
+  let picture = null;
   const mobile = createMobileSession();
-  const geolocation = createGeolocation();
+  // One device watch is shared with the map's own location dot.
+  const geolocation = deviceLocation().consumer();
 
   const client = createTakClient({
     createTransport: (handlers) => createGatewayTransport(handlers),
@@ -146,6 +149,7 @@ export function initTakWebClient({
     getMapCenter: () => mapCenter(viewer),
     geolocation,
     mobile,
+    clearRetainedPicture: () => picture?.hide(),
     async logout() {
       logoutController = new AbortController();
       await signOutOperator({
@@ -224,6 +228,26 @@ export function initTakWebClient({
     focusTarget: createNavigationFocus(viewer, navigate),
     markPrivate: () => markTakDataPrivate(viewer),
   });
+  if (!embedded && accountContext?.storageAllowed) {
+    const historicalOverlay = createCotOverlay(viewer, overlays, {
+      namespace: 'tak-history',
+      sourceName: 'TAK historical picture',
+      onActivate: (uid) => {
+        if (accountCurrent() && !retired && !controller.signal.aborted)
+          historicalOverlay.focus(uid);
+      },
+      navigate,
+    });
+    picture = createPicturePanel({
+      container: document.getElementById('tak-web-panel'),
+      client,
+      overlay: historicalOverlay,
+      context: accountContext,
+      isCurrent: accountCurrent,
+      signal: controller.signal,
+      markPrivate: () => markTakDataPrivate(viewer),
+    });
+  }
   let mapBootstrap = null;
   let mapBootstrapAt = 0;
   // Saved maps and road packs authenticate the same way.
@@ -363,6 +387,7 @@ export function initTakWebClient({
     navigation,
     packages,
     drawings,
+    picture,
     privacy: () => takPrivacyState(viewer),
     operatorContext: () => ({ ...accountContext, retired }),
     destroy() {
@@ -383,6 +408,7 @@ export function initTakWebClient({
       navigation.destroy();
       packages.destroy();
       drawings.destroy();
+      picture?.destroy();
       mapBootstrap = null;
       panel.destroy();
       overlay.destroy();

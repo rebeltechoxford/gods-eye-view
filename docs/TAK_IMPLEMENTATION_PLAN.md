@@ -1,7 +1,16 @@
 # God's Eye View Ã— TAK implementation and acceptance plan
 
-Updated: 2026-10-17 UTC. Work is integrated into `dev/tak-web-foundation` in
-`rebeltechoxford/gods-eye-view`; `main` is outside this work's execution authority.
+Updated: 2026-10-19 UTC. Work is integrated into `dev/tak-web-foundation` in
+`rebeltechoxford/gods-eye-view`; the owner has authorized verified releases to `main`.
+
+The October 19 candidate adds account-scoped, explicit device retention of a
+historical TAK picture and WGS84 UPS polar navigation. PR #14 location/privacy
+repairs are reviewed separately before integration; PR #15 adds the historical
+layer without changing live ownership or transport. Acceptance requires the
+new IndexedDB/account/closed-server browser gate, independent UPS vectors and
+the existing GEV suite. Next implementation priorities remain official-server
+device-stream readiness, directed/group chat and mission synchronization;
+physical iPhone, native TAK peers and receiver tests need their actual hardware.
 The fetched/inspected starting checkpoint is
 `aee71aba3e39f908c4df4cf797108ab472b9ee4d`. Local candidate code is evidence to
 audit, not a dependency on another agent or a promise of completed features.
