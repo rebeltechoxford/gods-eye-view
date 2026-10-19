@@ -24,7 +24,11 @@ import { bindCameraOrientationControls } from './cameraOrientationControls.js';
 import { createMyLocation } from './myLocation.js';
 import { bindStartViewControls, START_VIEW_STORAGE_KEY } from './startView.js';
 import { deviceLocation } from '../location/deviceLocation.js';
-import { markTakDataPrivate } from '../tak/privacy.js';
+import {
+  markTakDataPrivate,
+  isTakPrivacyBlocked,
+  TAK_PRIVACY_MESSAGE,
+} from '../tak/privacy.js';
 import { createMapSourceControls } from './mapSource.js';
 import { STYLES } from './effects.js';
 import { isHudLayout } from '../hudLayouts.js';
@@ -1528,7 +1532,13 @@ export class StyleManager extends ShellFacade {
     this._lifetime.listen(this._shareBtn, 'click', async () => {
       const success = await this.shareLinkManager.copyLink();
       if (!this._disposed)
-        this._showToast(success ? 'Link copied!' : 'Copy failed');
+        this._showToast(
+          success
+            ? 'Link copied!'
+            : isTakPrivacyBlocked(this.viewer, 'sharing')
+              ? TAK_PRIVACY_MESSAGE
+              : 'Copy failed',
+        );
     });
   }
 

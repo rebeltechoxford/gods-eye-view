@@ -100,6 +100,13 @@ page.on('request', (request) =>
 );
 // Count device watches the page opens.
 await page.evaluateOnNewDocument(() => {
+  window.__gevClipboardWrites = [];
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (text) => window.__gevClipboardWrites.push(text),
+    },
+  });
   const geo = navigator.geolocation;
   const watch = geo.watchPosition.bind(geo);
   window.__gevWatchCount = 0;
@@ -421,10 +428,20 @@ try {
         'disclosure permissions are never restored',
       );
       await page.click('#share-btn');
+      await page.waitForFunction(() =>
+        /privacy protection/i.test(
+          document.getElementById('toast')?.textContent || '',
+        ),
+      );
       assert.match(
         await page.$eval('#toast', (element) => element.textContent),
         /privacy protection/i,
         'sharing the restored private camera requires fresh consent',
+      );
+      assert.deepEqual(
+        await page.evaluate(() => window.__gevClipboardWrites),
+        [],
+        'blocked private sharing never calls the clipboard writer',
       );
       const leaks = requests
         .slice(privateReloadRequestIndex)
