@@ -140,7 +140,11 @@ export function createMyLocation({
       const height = viewer.scene?.globe?.getHeight(
         Cesium.Cartographic.fromDegrees(lon, lat),
       );
-      return Number.isFinite(height) ? height : 0;
+      // getHeight intersects the currently loaded terrain mesh. At a distant
+      // fix its coarse triangles can lie kilometres below the ellipsoid even
+      // with a zero-height terrain provider. Never turn that transient mesh
+      // depth (or real below-sea-level terrain) into an underground camera.
+      return Number.isFinite(height) ? Math.max(0, height) : 0;
     } catch {
       return 0;
     }
