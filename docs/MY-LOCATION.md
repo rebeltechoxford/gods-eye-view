@@ -32,12 +32,25 @@ plain HTTP the button explains this instead.
 
 ## Start view
 
-The app opens on downtown Austin by default (inherited from the original
-project). To open somewhere else, go there (search, a city pill, or follow
-yourself with the location button), open **Location** in the bottom bar and
-tap **Start here**. The tray then reads `Start view: 34.37°N 89.52°W`, and
-the app opens there on this device from then on, with the same short fly-in
-from above. **Reset** goes back to Austin.
+Where the app opens when no share link or saved map area says otherwise.
+
+**For a deployment:** set `VITE_GEV_START_VIEW` in `.env` and rebuild.
+`oxford` opens on the Square in Oxford, MS (the camera about 1 km
+south-southwest, 600 m up, looking at it). `austin` is the original
+project's downtown Austin view. `lat,lon` opens straight down 2.5 km above
+that point. `.env.example` ships `oxford`. A build without the setting
+(CI and the browser test scripts, which expect Austin) opens on Austin. If
+you already have a `.env`, add the line yourself:
+
+```sh
+VITE_GEV_START_VIEW=oxford
+```
+
+**On one device:** go where you want (search, a city pill, or follow yourself
+with the location button), open **Location** in the bottom bar and tap
+**Start here**. The tray then reads `Start view: 34.37°N 89.52°W`, and the
+app opens there on this device, with the same short fly-in from above.
+**Reset** goes back to the deployment default.
 
 - Saved in this browser only (`localStorage`, key `gev.startView.v1`): the
   latitude, longitude, height, heading and pitch, labelled by coordinates.
@@ -86,18 +99,23 @@ emulation), Node 22 in a cloud container:
 - `node --test src/location/deviceLocation.test.mjs src/ui/myLocation.test.mjs src/tak/geolocation.test.mjs src/ui/startView.test.mjs`:
   24 pass. The start-view tests check the stored view is validated (bad
   values fall back to the default) and that the default flies in exactly as
-  the original Austin start did. Covers the shared watch (one device watch for two consumers,
+  the original Austin start did, that `VITE_GEV_START_VIEW` resolves
+  (`oxford`, `austin`, `lat,lon`, anything else to Austin) and that the
+  Oxford view's centre line lands within 50 m of the Square. Covers the shared watch (one device watch for two consumers,
   released with the last), FOLLOW (claimed once, moves with each fix at the
   current zoom, ends on a drag or another camera owner, survives a pinch),
   refusal in cockpit view, stale fixes, HTTPS, denied permission, teardown,
   and the private marking.
-- `npm run build && npm run qa:my-location`: 11 of 11 against the production
+- `npm run build && npm run qa:my-location`, and again with
+  `VITE_GEV_START_VIEW=oxford` set for both: 11 of 11 each against the production
   build on the private HTTPS host. Dot and ring at the emulated fix, the
   camera follows a moved fix, a mouse drag ends FOLLOW while the dot keeps
   moving, tap follows again and tap turns it off, **no request after the
   first fix carried the device coordinates**, a denied permission is
   explained, **Start here** saves the view and a reload opens there (not
-  Austin) and **Reset** returns a reload to Austin, the six top-bar buttons
+  the default) and **Reset** returns a reload to the default, checked
+  exactly (within ~100 m and 5 m of height) so a nearby saved view cannot
+  pass for it, the six top-bar buttons
   fit a 390 px phone without overlap,
   and no uncaught browser errors. With the private marking removed, the
   coordinate check fails (nearby-places carried the position), so the check

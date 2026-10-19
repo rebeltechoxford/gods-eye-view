@@ -59,8 +59,9 @@ export function createApplicationControls({
       });
     } else {
       const startView = readStartView();
-      loaderStatus.textContent = `Flying to ${startView ? startView.label || formatStartViewPlace(startView) : 'Austin, TX'}...`;
-      defer(flyToStartView(viewer, startView || DEFAULT_START_VIEW));
+      const view = startView || DEFAULT_START_VIEW;
+      loaderStatus.textContent = `Flying to ${view.label || formatStartViewPlace(view)}...`;
+      defer(flyToStartView(viewer, view));
     }
   } else {
     loaderStatus.textContent = 'Restoring shared view...';

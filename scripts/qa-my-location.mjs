@@ -21,6 +21,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { startTakHttpsServer } from '../server/standalone/tak-https.mjs';
 import { createTakTlsFixtures } from '../src/tooling/takTlsFixtures.mjs';
+import { resolveDefaultStartView } from '../src/ui/startView.js';
 
 const argv = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -36,6 +37,8 @@ await fs.access(path.join(distRoot, 'index.html')).catch(() => {
 await fs.mkdir(artifactDir, { recursive: true });
 
 const OXFORD = { latitude: 34.3665, longitude: -89.5192, accuracy: 15 };
+// The default the build was made with (VITE_GEV_START_VIEW, else Austin).
+const DEFAULT_START = resolveDefaultStartView(process.env.VITE_GEV_START_VIEW);
 const MOVED = { latitude: 34.3712, longitude: -89.5301, accuracy: 6 };
 const PANNED = { latitude: 34.3755, longitude: -89.5402, accuracy: 6 };
 
@@ -347,7 +350,7 @@ try {
         '#start-view-status',
         (e) => e.textContent,
       );
-      assert.equal(before, 'Start view: Austin (default)');
+      assert.equal(before, `Start view: ${DEFAULT_START.label} (default)`);
       savedCamera = await camera();
       await page.click('#start-view-set');
       const after = await page.$eval(
@@ -380,14 +383,20 @@ try {
     await page.click('#start-view-clear');
     assert.equal(
       await page.$eval('#start-view-status', (e) => e.textContent),
-      'Start view: Austin (default)',
+      `Start view: ${DEFAULT_START.label} (default)`,
     );
     await reloadFresh();
     const opened = await camera();
     assert.ok(
-      nearCamera(opened, { lat: 30.2672, lon: -97.7431 }, 0.05),
+      // ~100 m and the default's height: tells it apart from a saved view
+      // nearby (step 7 saves one in Oxford).
+      nearCamera(opened, DEFAULT_START, 1e-3) &&
+        Math.abs(opened.height - DEFAULT_START.height) < 5,
       `opened at ${JSON.stringify(opened)}`,
     );
+    await page.screenshot({
+      path: path.join(artifactDir, 'start-view-default.png'),
+    });
     return { opened };
   });
 

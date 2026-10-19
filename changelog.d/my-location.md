@@ -16,4 +16,7 @@
 
 - Start view: the Location tray has **Start here**, which makes the current
   view the one the app opens on in this browser, and **Reset** back to the
-  Austin default. Share links and saved map areas still take priority.
+  default. Share links and saved map areas still take priority. The default
+  is set per deployment with `VITE_GEV_START_VIEW` (`oxford`, `austin` or
+  `lat,lon`); `.env.example` ships `oxford`, and builds without it keep
+  Austin.

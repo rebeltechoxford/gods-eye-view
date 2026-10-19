@@ -230,3 +230,43 @@ test('a camera looking above the horizon is saved level, not rejected', () => {
   const view = captureStartView(cameraAt({ ...OXFORD, pitch: 12 }));
   assert.equal(view.pitch, 0);
 });
+
+test('the deployment default comes from VITE_GEV_START_VIEW; anything else is Austin', async () => {
+  const { START_VIEW_PRESETS, resolveDefaultStartView } =
+    await import('./startView.js');
+  assert.equal(resolveDefaultStartView('oxford'), START_VIEW_PRESETS.oxford);
+  assert.equal(resolveDefaultStartView(' Oxford '), START_VIEW_PRESETS.oxford);
+  assert.equal(resolveDefaultStartView('austin'), START_VIEW_PRESETS.austin);
+  for (const value of [undefined, '', 'paris', '91,0', '1,2,3', 'toString'])
+    assert.equal(
+      resolveDefaultStartView(value),
+      START_VIEW_PRESETS.austin,
+      String(value),
+    );
+  const point = resolveDefaultStartView('34.40,-89.50');
+  assert.equal(point.lat, 34.4);
+  assert.equal(point.lon, -89.5);
+  assert.equal(point.pitch, -90);
+  assert.equal(point.label, '34.40°N 89.50°W');
+  // Unit tests and unconfigured builds keep the original load view.
+  assert.equal(DEFAULT_START_VIEW, START_VIEW_PRESETS.austin);
+});
+
+test('the Oxford view looks at the Square', async () => {
+  const { START_VIEW_PRESETS } = await import('./startView.js');
+  const view = START_VIEW_PRESETS.oxford;
+  // Where the view's centre line meets flat ground, on a local tangent plane.
+  const reach = view.height / Math.tan(Cesium.Math.toRadians(-view.pitch));
+  const heading = Cesium.Math.toRadians(view.heading);
+  const lat = view.lat + (reach * Math.cos(heading)) / 110_950;
+  const lon =
+    view.lon +
+    (reach * Math.sin(heading)) /
+      (111_320 * Math.cos(Cesium.Math.toRadians(view.lat)));
+  const square = { lat: 34.3662, lon: -89.5192 };
+  const metres = Math.hypot(
+    (lat - square.lat) * 110_950,
+    (lon - square.lon) * 111_320 * Math.cos(Cesium.Math.toRadians(square.lat)),
+  );
+  assert.ok(metres < 50, `centre line lands ${metres.toFixed(0)} m away`);
+});

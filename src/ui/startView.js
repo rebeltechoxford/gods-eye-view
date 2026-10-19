@@ -3,14 +3,58 @@ import * as Cesium from 'cesium';
 // The view the app opens on when no share link or saved map area says
 // otherwise. Saved on this device only, by "Start here" in the Location tray.
 export const START_VIEW_STORAGE_KEY = 'gev.startView.v1';
-export const DEFAULT_START_VIEW = Object.freeze({
-  label: 'Austin',
-  lat: 30.2672,
-  lon: -97.7431,
-  height: 600,
-  heading: 15,
-  pitch: -30,
+// Built-in start views. Each camera sits about 1 km south-southwest of its
+// subject, 600 m up, looking 30° down at it.
+export const START_VIEW_PRESETS = Object.freeze({
+  // Downtown Austin, the original project's load view. Builds without
+  // VITE_GEV_START_VIEW (CI and the browser gates) keep it.
+  austin: Object.freeze({
+    label: 'Austin',
+    lat: 30.2672,
+    lon: -97.7431,
+    height: 600,
+    heading: 15,
+    pitch: -30,
+  }),
+  // The Square, Oxford, MS (Lafayette County Courthouse at 34.3662, -89.5192).
+  oxford: Object.freeze({
+    label: 'Oxford',
+    lat: 34.3572,
+    lon: -89.5221,
+    height: 600,
+    heading: 15,
+    pitch: -30,
+  }),
 });
+
+/**
+ * The deployment's default start view from `VITE_GEV_START_VIEW`: a preset
+ * name (`oxford`, `austin`) or `lat,lon` (a straight-down view 2.5 km up).
+ * Anything else, or nothing, is Austin.
+ */
+export function resolveDefaultStartView(setting) {
+  const value = String(setting ?? '')
+    .trim()
+    .toLowerCase();
+  if (Object.hasOwn(START_VIEW_PRESETS, value))
+    return START_VIEW_PRESETS[value];
+  const match = value.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if (match) {
+    const view = parseStartView(
+      JSON.stringify({
+        label: '',
+        lat: Number(match[1]),
+        lon: Number(match[2]),
+        height: 2_500,
+        heading: 0,
+        pitch: -90,
+      }),
+    );
+    if (view)
+      return Object.freeze({ ...view, label: formatStartViewPlace(view) });
+  }
+  return START_VIEW_PRESETS.austin;
+}
 // The startup flight begins this high, straight down, then flies in.
 const APPROACH_HEIGHT_M = 25_000;
 const MAX_HEIGHT_M = 40_000_000;
@@ -153,6 +197,11 @@ export function formatStartViewPlace(view) {
   const lon = `${Math.abs(view.lon).toFixed(2)}°${view.lon >= 0 ? 'E' : 'W'}`;
   return `${lat} ${lon}`;
 }
+
+/** The configured default start view (see resolveDefaultStartView). */
+export const DEFAULT_START_VIEW = resolveDefaultStartView(
+  import.meta.env?.VITE_GEV_START_VIEW,
+);
 
 /**
  * The Location tray's start-view row: what the app opens on, "Start here"
