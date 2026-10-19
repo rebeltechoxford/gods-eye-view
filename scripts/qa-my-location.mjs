@@ -347,18 +347,25 @@ try {
       };
     });
   async function openStartRow() {
-    const shown = () =>
-      page.evaluate(() => {
-        const row = document.getElementById('start-view-set');
-        const r = row?.getBoundingClientRect();
-        return Boolean(r && r.width > 0 && r.height > 0);
-      });
-    if (!(await shown())) await page.click('#location-bar-toggle');
+    // The sliding tray retains layout dimensions while collapsed. Check its
+    // actual state, then wait until the Reset control can receive a real click.
+    if (
+      await page.$eval('#location-bar', (bar) =>
+        bar.classList.contains('collapsed'),
+      )
+    )
+      await page.click('#location-bar-toggle');
     await page.waitForFunction(() => {
-      const r = document
-        .getElementById('start-view-set')
-        ?.getBoundingClientRect();
-      return r && r.width > 0 && r.height > 0;
+      const bar = document.getElementById('location-bar');
+      const button = document.getElementById('start-view-clear');
+      const r = button?.getBoundingClientRect();
+      if (!bar || bar.classList.contains('collapsed') || !r?.width || !r.height)
+        return false;
+      const hit = document.elementFromPoint(
+        r.x + r.width / 2,
+        r.y + r.height / 2,
+      );
+      return hit === button || button.contains(hit);
     });
   }
   async function reloadFresh() {
