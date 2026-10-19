@@ -41,6 +41,11 @@ export const REPLAY_LIMIT = 2000;
 export const REPLAY_BYTES_LIMIT = 8 * 1024 * 1024;
 export const SERVER_PING_INTERVAL_MS = 30_000;
 export const GATEWAY_SUBMISSION_LIMIT = 256;
+// Distinct device identities a gateway admits at once. A device that
+// disconnects keeps its slot for a grace period, so a reconnect or its own
+// position echoed back on the mesh cannot be mistaken for another source.
+export const GATEWAY_IDENTITY_LIMIT = 32;
+export const IDENTITY_RELEASE_GRACE_MS = 10 * 60_000;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEVICE_UID =
@@ -168,7 +173,12 @@ export function createTakGateway({
   const browserContexts = new WeakMap();
   const ownedMarkers = new Map(); // uid -> { owner: device uid, staleMs }
   const browserGeometryEvents = new WeakMap();
-  const registeredIdentities = new Set();
+  // uid -> { live: open browsers holding it, releasedAt: when the last closed }
+  const registeredIdentities = new Map();
+  function releaseIdentity(uid) {
+    const entry = registeredIdentities.get(uid);
+    if (entry && --entry.live === 0) entry.releasedAt = now();
+  }
   const networkUids = new Set();
   let replayBytes = 0;
   let browserSeq = 0;
@@ -283,6 +293,9 @@ export function createTakGateway({
     for (const [uid, item] of replay) if (item.staleMs <= t) dropReplay(uid);
     for (const [uid, item] of ownedMarkers)
       if (item.staleMs <= t) ownedMarkers.delete(uid);
+    for (const [uid, entry] of registeredIdentities)
+      if (!entry.live && entry.releasedAt + IDENTITY_RELEASE_GRACE_MS <= t)
+        registeredIdentities.delete(uid);
   }
   router.subscribe((event, { xml, from }) => {
     prune();
@@ -777,6 +790,7 @@ export function createTakGateway({
           const uid = message.uid;
           const callsign =
             typeof message.callsign === 'string' ? message.callsign.trim() : '';
+          prune(); // released identities past their grace free their slot
           if (
             !DEVICE_UID.test(uid || '') ||
             !callsign ||
@@ -784,7 +798,8 @@ export function createTakGateway({
             /[\u0000-\u001f\u007f]/.test(callsign) ||
             networkUids.has(uid) ||
             (browser.identity && browser.identity.uid !== uid) ||
-            (!registeredIdentities.has(uid) && registeredIdentities.size >= 32)
+            (!registeredIdentities.has(uid) &&
+              registeredIdentities.size >= GATEWAY_IDENTITY_LIMIT)
           ) {
             control(ws, {
               op: 'reject',
@@ -808,7 +823,11 @@ export function createTakGateway({
               return;
             }
           }
-          registeredIdentities.add(uid);
+          if (firstIdentity) {
+            const entry = registeredIdentities.get(uid);
+            if (entry) entry.live++;
+            else registeredIdentities.set(uid, { live: 1, releasedAt: 0 });
+          }
           browser.identity = { uid, callsign };
           link.authorized = true;
           clearTimeout(identityTimeout);
@@ -876,6 +895,7 @@ export function createTakGateway({
     });
     ws.on('close', () => {
       devicePool?.detach(browser);
+      if (browser.identity) releaseIdentity(browser.identity.uid);
       for (const record of browser.submissions.values()) cancelRecord(record);
       for (const record of browser.legacySubmissions) cancelRecord(record);
       browser.submissions.clear();
