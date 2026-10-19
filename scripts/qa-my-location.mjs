@@ -346,27 +346,36 @@ try {
         height: c.height,
       };
     });
-  async function openStartRow() {
+  async function openStartRow(selector = '#start-view-set') {
     // The sliding tray retains layout dimensions while collapsed. Check its
-    // actual state, then wait until the Reset control can receive a real click.
+    // actual state, then wait until the requested control can receive a real click.
     if (
       await page.$eval('#location-bar', (bar) =>
         bar.classList.contains('collapsed'),
       )
     )
       await page.click('#location-bar-toggle');
-    await page.waitForFunction(() => {
-      const bar = document.getElementById('location-bar');
-      const button = document.getElementById('start-view-clear');
-      const r = button?.getBoundingClientRect();
-      if (!bar || bar.classList.contains('collapsed') || !r?.width || !r.height)
-        return false;
-      const hit = document.elementFromPoint(
-        r.x + r.width / 2,
-        r.y + r.height / 2,
-      );
-      return hit === button || button.contains(hit);
-    });
+    await page.waitForFunction(
+      (target) => {
+        const bar = document.getElementById('location-bar');
+        const button = document.querySelector(target);
+        const r = button?.getBoundingClientRect();
+        if (
+          !bar ||
+          bar.classList.contains('collapsed') ||
+          !r?.width ||
+          !r.height
+        )
+          return false;
+        const hit = document.elementFromPoint(
+          r.x + r.width / 2,
+          r.y + r.height / 2,
+        );
+        return hit === button || button.contains(hit);
+      },
+      {},
+      selector,
+    );
   }
   async function reloadFresh() {
     // No hash: a share-link camera would take priority over the start view.
@@ -472,7 +481,7 @@ try {
   );
 
   await step('Reset returns the start view to the default', async () => {
-    await openStartRow();
+    await openStartRow('#start-view-clear');
     await page.click('#start-view-clear');
     assert.equal(
       await page.$eval('#start-view-status', (e) => e.textContent),
