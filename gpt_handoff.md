@@ -103,3 +103,13 @@ and validates one.
 
 Do not substitute an older portal-only IPA, claim background operation, or label
 synthetic TCP peers as ATAK/WinTAK/iTAK interoperability evidence.
+
+## Delivery record
+
+The candidate was pushed to `origin/feature/tak-completion-20261027`; integration
+commit `832b13c7` includes the upstream merge and local-bundle source. The public
+Actions page did not show a run for this branch after the push, so automatic build
+startup is not confirmed. With access to the repository, dispatch **iOS unsigned
+IPA** for this branch and inspect its result. No new IPA was retrieved or produced
+in this environment. The cloud startup draft has been updated for this candidate;
+saving it does not apply the pending API network setting or publish an environment.

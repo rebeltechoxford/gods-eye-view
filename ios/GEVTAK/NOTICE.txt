@@ -1,7 +1,11 @@
-GEV TAK connected iOS shell
+GEV TAK bundled iOS application
 
 The application icon is rendered from public/logo.svg in God's Eye View.
 No ATAK Android application or plugin source is included.
+The WebApp directory contains the complete production web bundle. Its data,
+model, font and dependency notices retain their respective terms; see the
+included fonts/licenses, models/README.md and application attribution controls.
+The source repository's DATA_SOURCES.md describes bundled datasets and providers.
 
 MIT License
 
