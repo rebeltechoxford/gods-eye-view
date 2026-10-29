@@ -255,13 +255,13 @@ test('manifest retains clean same-origin launch and generated GEV logo icons', (
       'utf8',
     ),
   );
-  assert.equal(manifest.start_url, '/');
-  assert.equal(manifest.scope, '/');
+  assert.equal(manifest.start_url, '.');
+  assert.equal(manifest.scope, '.');
   assert.equal(manifest.display, 'standalone');
-  assert.equal(manifest.icons.length, 2);
+  assert.equal(manifest.icons.length, 3);
   for (const icon of manifest.icons) {
     const image = readFileSync(
-      new URL(`../../public${icon.src}`, import.meta.url),
+      new URL(`../../public/${icon.src}`, import.meta.url),
     );
     const dimension = Number(icon.sizes.split('x')[0]);
     assert.equal(image.readUInt32BE(16), dimension);

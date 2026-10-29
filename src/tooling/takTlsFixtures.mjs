@@ -122,7 +122,46 @@ export function createTakTlsFixtures({
       ]);
     sign('server', 'server', 'server');
     sign('server', 'wrong-host', 'wrong-host');
-    sign('server', 'expired', 'server', '-1');
+    // OpenSSL 3.5 rejects negative -days. Use explicit past validity dates
+    // through the CA command so the rejection test still uses a real signature.
+    writeFileSync(file('expiry-index'), '');
+    writeFileSync(file('expiry-serial'), '01\n');
+    writeFileSync(
+      file('expiry.cnf'),
+      `[ca]
+ default_ca=issuer
+[issuer]
+ database=expiry-index
+ serial=expiry-serial
+ new_certs_dir=.
+ certificate=ca.pem
+ private_key=ca.key
+ default_md=sha256
+ policy=policy
+[policy]
+ commonName=supplied
+[server]
+ subjectAltName=DNS:localhost,IP:127.0.0.1
+ extendedKeyUsage=serverAuth
+`,
+    );
+    run([
+      'ca',
+      '-batch',
+      '-config',
+      'expiry.cnf',
+      '-in',
+      'server.csr',
+      '-out',
+      'expired.pem',
+      '-startdate',
+      '200101000000Z',
+      '-enddate',
+      '210101000000Z',
+      '-extensions',
+      'server',
+      '-notext',
+    ]);
     sign('client', 'client', 'client');
     sign('client', 'untrusted-client', 'client', '2', 'other-ca');
     return {

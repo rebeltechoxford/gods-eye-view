@@ -104,22 +104,27 @@ function subsettedGlyphs() {
     [...names].sort(),
     'Official icon subset names must stay alphabetically sorted',
   );
-  const request = manifest.cssSources
-    .map((source) => new URL(source.url))
-    .find((url) =>
-      url.searchParams
-        .getAll('family')
-        .some((family) => family.startsWith('Material Symbols Outlined:')),
-    );
-  assert(
-    request,
-    'Retain the original official Material Symbols subset request for provenance',
-  );
-  assert.equal(request.origin, 'https://fonts.googleapis.com');
+  const build = manifest.materialSymbols.localBuild;
+  assert.match(build.sourceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(
-    request.searchParams.get('icon_names')?.split(','),
+    [...build.verifiedLigatures, ...build.nonIconText].sort(),
     names,
-    'Declared icons must match the original font-source request',
+  );
+  assert.deepEqual(build.nonIconText, [
+    'absent',
+    'normal',
+    'on',
+    'unavailable',
+  ]);
+  const asset = manifest.assets.find(
+    (entry) => entry.family === 'Material Symbols Outlined',
+  );
+  const source = new URL(asset.sourceUrl);
+  assert.equal(source.origin, 'https://raw.githubusercontent.com');
+  assert.ok(
+    source.pathname.includes(
+      '/' + manifest.materialSymbolsRepositoryCommit + '/',
+    ),
   );
   return new Set(names);
 }
@@ -246,7 +251,9 @@ test('self-hosted typography preserves weights, Unicode subsets and licensed bin
       total += bytes.length;
       assert.equal(
         new URL(entry.sourceUrl).origin,
-        'https://fonts.gstatic.com',
+        entry.family === 'Material Symbols Outlined'
+          ? 'https://raw.githubusercontent.com'
+          : 'https://fonts.gstatic.com',
       );
     }
   }

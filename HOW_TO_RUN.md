@@ -1,15 +1,27 @@
 # Run God's Eye View × TAK
 
-The release branch is `main` in `rebeltechoxford/gods-eye-view`; ongoing
-integration uses `dev/tak-web-foundation`. The TAK work adds to the existing GEV app;
-public globe, layers, HUD, camera, scenes and voice remain available under their
-existing provider/key requirements.
+The current integration candidate is `feature/tak-completion-20261027`. It combines
+public upstream `bilawalsidhu/gods-eye-view` at `f2c6ff08` (version 0.3.0) with the
+fork's TAK, offline maps, routing, GPS, saved views and historical-picture work.
+See [gpt_handoff.md](gpt_handoff.md) for current checks and unfinished work. Older
+release-review results do not certify this newer candidate.
 
-The verified candidate is merged into the integration branch. Release through
-[PR #6](https://github.com/rebeltechoxford/gods-eye-view/pull/6) brings it to
-`main`. See the pull request for the merge record.
-[Release checks](docs/TAK_RELEASE_REVIEW.md) passed. Physical-device and native
-TAK peer acceptance remain open.
+For a local run, install Node 24.14+ within 24.x (or supported 26.x), then run:
+
+```sh
+npm ci
+npm run tak:lab
+```
+
+Open the local address printed in the terminal on that computer. This starts
+the full app plus a synthetic TAK peer. In TAK, choose **Connect**; the isolated
+lab supplies its session automatically. Stop with Ctrl+C. For just the standalone
+web app, use `npm run dev` instead. Provider-backed features retain their key and
+network requirements.
+
+For an iPhone, use the [iLoader / IPA instructions](docs/TAK_IOS_IPA.md). The new
+native source opens bundled GEV without gateway login; connecting to a gateway
+is separate. A new IPA and physical-device acceptance are still outstanding.
 
 The full GEV globe is the workspace for TAK. Google photorealistic 3D remains
 the preferred map when a configured Google/Cesium provider can supply it; the

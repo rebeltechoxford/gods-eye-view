@@ -189,8 +189,5 @@ test('highway ramps produce on-ramp, merge and off-ramp steps', () => {
     ['depart', 'on ramp', 'merge', 'off ramp', 'turn', 'arrive'],
   );
   assert.equal(payload.steps[2].instruction, 'Merge slightly right onto I 22');
-  assert.match(
-    payload.steps[3].instruction,
-    /^Take the exit on the (slightly )?(left|right)/,
-  );
+  assert.match(payload.steps[3].instruction, /^Take the exit slightly left$/);
 });

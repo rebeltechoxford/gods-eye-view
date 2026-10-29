@@ -35,7 +35,18 @@ function memoryStorage(initial = {}) {
 }
 
 class FakeWorker {
-  postMessage() {}
+  constructor() {
+    // Like the real worker, report ready once loaded.
+    queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+  }
+
+  // Like the real worker, every numbered samples block is acknowledged.
+  postMessage(message) {
+    if (message?.type === 'samples' && Number.isSafeInteger(message.id))
+      queueMicrotask(() =>
+        this.onmessage?.({ data: { type: 'ack', id: message.id } }),
+      );
+  }
   terminate() {}
 }
 
@@ -360,10 +371,11 @@ test('WebUSB picker remains available when no authorized receiver matches', asyn
 
 /** Resolve with the promise's value, or 'timed out' after `ms`. */
 function within(promise, ms = 1_000) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(() => resolve('timed out'), ms)),
-  ]);
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('timed out'), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -1116,6 +1128,7 @@ test('airband tunes the centre 250 kHz above the channel, reports the channel an
   const configure = workers[0].messages.find((m) => m.type === 'configure');
   assert.deepEqual(configure, {
     type: 'configure',
+    tune: 1,
     mode: 'air',
     sampleRate: 1_024_000,
     location: null,
@@ -1127,6 +1140,7 @@ test('airband tunes the centre 250 kHz above the channel, reports the channel an
   assert.equal(events.at(-1), 'device:tune:137225000', 'valid at the top edge');
   assert.deepEqual(workers[0].messages.at(-1), {
     type: 'reset',
+    tune: 2,
     offsetHz: -250_000,
   });
   state = controller.getState();
@@ -1157,6 +1171,7 @@ test('the worker offset follows the centre frequency the tuner actually reached'
   await controller.tuneAir(122_750_000);
   assert.deepEqual(workers[0].messages.at(-1), {
     type: 'reset',
+    tune: 2,
     offsetHz: -250_003,
   });
   assert.equal(controller.getState().frequencyHz, 122_750_000);
@@ -1303,11 +1318,14 @@ test('squelch is bounded to 0-30 dB, remembered and applied live', async (t) => 
 });
 
 test('airband worker output plays through the shared audio path', async (t) => {
+  const { RecordingWorker } = recordingWorkers();
+  t.after(replaceGlobal('Worker', RecordingWorker));
   const { controller, audio } = airbandController(t);
-  await controller._ensureAudio();
+  await controller.connect('air');
   const samples = new Float32Array([0.1, -0.1]);
   controller._handleWorkerMessage({
     type: 'air',
+    tune: controller._fmTune,
     samples,
     snr: 14.2,
     squelchOpen: true,
@@ -1318,10 +1336,277 @@ test('airband worker output plays through the shared audio path', async (t) => {
   assert.equal(controller.getState().squelchOpen, true);
   controller._handleWorkerMessage({
     type: 'air',
+    tune: controller._fmTune,
     samples: new Float32Array(2),
     snr: null,
     squelchOpen: false,
   });
   assert.equal(controller.getState().snr, null);
   assert.equal(controller.getState().squelchOpen, false);
+  const before = audio.posted.length;
+  controller._handleWorkerMessage({
+    type: 'air',
+    tune: controller._fmTune - 1,
+    samples: new Float32Array(2),
+    snr: 99,
+    squelchOpen: true,
+  });
+  assert.equal(audio.posted.length, before, 'old tuning epoch must not play');
+  assert.equal(controller.getState().squelchOpen, false);
+});
+
+/** An FM spectrum frame centred on `center` with carriers at `stations`. */
+function fmSpectrum(stations, center, sampleRate) {
+  const bins = new Float32Array(512).fill(-80);
+  for (const station of stations) {
+    const index = Math.round(
+      (station - center) / (sampleRate / bins.length) + bins.length / 2,
+    );
+    for (let bin = index - 5; bin <= index + 5; bin += 1) {
+      if (bin >= 0 && bin < bins.length) bins[bin] = -10;
+    }
+  }
+  return bins;
+}
+
+/**
+ * An open FM receiver hearing `stations`. Like the real worker, spectra of
+ * samples read before a retune keep arriving after it: one during the retune
+ * and one after the worker's reset, each drawn at the previous centre and
+ * tagged with the previous tune, before the first spectrum at the new centre.
+ */
+function fmSeekController(stations) {
+  const events = [];
+  const controller = new SdrController({
+    storage: memoryStorage(),
+    webUsb: {},
+  });
+  const { sampleRate } = controller.getState();
+  let center = null;
+  let workerTune = 0;
+  const deliver = (tune, at) =>
+    controller._handleWorkerMessage({
+      type: 'fm',
+      bins: fmSpectrum(stations, at, sampleRate),
+      tune,
+    });
+  let previous = null;
+  controller._worker = {
+    postMessage(message) {
+      if (message.type !== 'reset') return;
+      const stale = [workerTune, previous];
+      const fresh = [message.tune, center];
+      workerTune = message.tune;
+      if (stale[1] !== null) setTimeout(() => deliver(...stale), 0);
+      setTimeout(() => deliver(...fresh), 1);
+    },
+    terminate() {},
+  };
+  const device = fakeDevice(events);
+  const setCenterFrequency = device.setCenterFrequency;
+  device.setCenterFrequency = async (frequency) => {
+    if (center !== null) deliver(workerTune, center);
+    previous = center;
+    center = frequency;
+    return setCenterFrequency(frequency);
+  };
+  controller._device = device;
+  return { controller, events };
+}
+
+async function seekFrom(origin, direction, stations, prepare = () => {}) {
+  const { controller, events } = fmSeekController(stations);
+  await controller.tuneFm(origin);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  prepare(controller);
+  events.length = 0;
+  const scanned = new Set();
+  controller.subscribe(({ seekMessage }) => {
+    const match = /^Scanning ([\d.]+) MHz/.exec(seekMessage);
+    if (match) scanned.add(Number(match[1]));
+  });
+  const peak = await controller.seekFm(direction);
+  const tuned = events.filter((event) => event.startsWith('device:tune:'));
+  return { peak, state: controller.getState(), tuned, scanned };
+}
+
+test('FM seek wraps past either band edge and finds the next station', async () => {
+  const cases = [
+    // [origin, direction, stations, expected]
+    [107_500_000, 1, [88_500_000], 88_500_000],
+    [107_500_000, 1, [106_000_000, 88_500_000, 87_900_000], 87_900_000],
+    [107_900_000, 1, [87_500_000], 87_500_000],
+    [88_000_000, -1, [107_000_000], 107_000_000],
+    [88_000_000, -1, [89_000_000, 107_000_000, 107_600_000], 107_600_000],
+    [87_600_000, -1, [108_000_000], 108_000_000],
+  ];
+  for (const [origin, direction, stations, expected] of cases) {
+    const { peak, state } = await seekFrom(origin, direction, stations);
+    const label = `${direction > 0 ? 'up' : 'down'} from ${origin}`;
+    assert.equal(peak?.frequency, expected, label);
+    assert.equal(state.frequencyHz, expected, label);
+    assert.equal(state.seeking, false, label);
+  }
+});
+
+test('FM seek reaches both band-edge channels from anywhere in the band', async () => {
+  for (let origin = 87_600_000; origin < 108_000_000; origin += 1_300_000) {
+    for (const direction of [1, -1]) {
+      for (const station of [87_500_000, 108_000_000]) {
+        const { peak } = await seekFrom(origin, direction, [station]);
+        assert.equal(
+          peak?.frequency,
+          station,
+          `${direction > 0 ? 'up' : 'down'} from ${origin} to ${station}`,
+        );
+      }
+    }
+  }
+});
+
+test('FM seek laps the band to a station just behind the origin', async () => {
+  assert.equal(
+    (await seekFrom(98_500_000, 1, [98_200_000])).peak?.frequency,
+    98_200_000,
+  );
+  assert.equal(
+    (await seekFrom(98_500_000, -1, [98_800_000])).peak?.frequency,
+    98_800_000,
+  );
+});
+
+test('FM seek with no other station stops after one lap and returns to the origin', async () => {
+  for (const stations of [[], [98_500_000]]) {
+    for (const direction of [1, -1]) {
+      const { peak, state, tuned, scanned } = await seekFrom(
+        98_500_000,
+        direction,
+        stations,
+      );
+      const label = `${stations.length} station(s), direction ${direction}`;
+      assert.equal(peak, null, label);
+      assert.equal(state.seeking, false, label);
+      assert.equal(state.seekMessage, 'No FM signal found', label);
+      assert.equal(state.frequencyHz, 98_500_000, label);
+      // 19 frames, then the retune to the origin.
+      assert.equal(tuned.length, 20, label);
+      for (const mhz of scanned) {
+        assert.ok(mhz >= 87.5 && mhz <= 108, `${label}: scanning ${mhz} MHz`);
+      }
+    }
+  }
+});
+
+test('FM seek passes over its own station to the next one in the same frame', async () => {
+  // The first frame's spectrum never arrives, so 98.7 is first seen in the
+  // last frame of the lap, behind the origin's own carrier.
+  const { peak } = await seekFrom(
+    98_500_000,
+    1,
+    [98_500_000, 98_700_000],
+    (controller) => {
+      const wait = controller._waitForSpectrum.bind(controller);
+      let first = true;
+      controller._waitForSpectrum = async (...args) => {
+        if (!first) return wait(...args);
+        first = false;
+        return false;
+      };
+    },
+  );
+  assert.equal(peak?.frequency, 98_700_000);
+});
+
+test('FM seek stops when a retune fails instead of reading the old frame', async () => {
+  const { peak, state, tuned } = await seekFrom(
+    98_500_000,
+    1,
+    [102_100_000],
+    (controller) => {
+      const device = controller._device;
+      const setCenterFrequency = device.setCenterFrequency;
+      let calls = 0;
+      device.setCenterFrequency = async (frequency) => {
+        calls += 1;
+        if (calls === 2) throw new Error('transfer error');
+        return setCenterFrequency(frequency);
+      };
+    },
+  );
+  assert.equal(peak, null);
+  assert.equal(state.seeking, false);
+  assert.equal(state.seekMessage, 'Seek stopped');
+  assert.equal(state.status, 'error');
+  assert.equal(tuned.length, 1, 'no frame is tuned after the failure');
+});
+
+test('a retune that fails part-way drops spectra until a retune succeeds', async () => {
+  const resets = [];
+  const controller = new SdrController({
+    storage: memoryStorage(),
+    webUsb: {},
+  });
+  const device = fakeDevice();
+  controller._device = device;
+  controller._worker = {
+    postMessage: (message) => {
+      if (message.type === 'reset') resets.push(message.tune);
+    },
+    terminate() {},
+  };
+  const spectrum = (tune) =>
+    controller._handleWorkerMessage({
+      type: 'fm',
+      bins: new Float32Array(512),
+      tune,
+    });
+  assert.equal(await controller.tuneFm(98_500_000), true);
+  const workerTune = resets.at(-1);
+  spectrum(workerTune);
+  const accepted = controller._spectrumSequence;
+  assert.equal(accepted, 1);
+  // The tuner moves, then the buffer reset fails: the worker is never reset,
+  // so samples at the new frequency still carry its old tag.
+  device.resetBuffer = async () => {
+    throw new Error('transfer error');
+  };
+  assert.equal(await controller.tuneFm(99_700_000), false);
+  assert.deepEqual(resets, [workerTune]);
+  spectrum(workerTune);
+  assert.equal(controller._spectrumSequence, accepted);
+  device.resetBuffer = async () => {};
+  assert.equal(await controller.tuneFm(99_700_000), true);
+  spectrum(resets.at(-1));
+  assert.equal(controller._spectrumSequence, accepted + 1);
+});
+
+test("a rebuilt decoder worker's spectra are accepted before its first reset", async (t) => {
+  const workers = [];
+  class TaggedWorker {
+    constructor() {
+      workers.push(this);
+    }
+
+    postMessage() {}
+
+    terminate() {}
+  }
+  t.after(replaceGlobal('Worker', TaggedWorker));
+  const controller = new SdrController({
+    storage: memoryStorage(),
+    webUsb: {},
+  });
+  controller._device = fakeDevice();
+  controller._ensureWorker();
+  await controller.tuneFm(98_500_000);
+  await controller.tuneFm(99_700_000);
+  controller._discardWorker();
+  controller._ensureWorker();
+  assert.equal(workers.length, 2);
+  const before = controller._spectrumSequence;
+  // Like sdr.worker.js, a fresh worker tags its spectra 0 until a reset.
+  workers[1].onmessage({
+    data: { type: 'fm', bins: new Float32Array(512), tune: 0 },
+  });
+  assert.equal(controller._spectrumSequence, before + 1);
 });

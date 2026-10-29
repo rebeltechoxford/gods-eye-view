@@ -1,26 +1,30 @@
 {
-  "id": "/",
+  "id": ".",
   "name": "God's Eye View TAK EUD",
   "short_name": "GEV TAK",
-  "description": "Private globe and TAK operator interface. Foreground connectivity and location only.",
-  "start_url": "/",
-  "scope": "/",
+  "description": "Globe and TAK operator interface. Foreground connectivity and location only.",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#0a0a0f",
-  "theme_color": "#0b1929",
-  "prefer_related_applications": false,
+  "theme_color": "#0a0a0f",
   "icons": [
     {
-      "src": "/pwa/icon-192.png",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
     },
     {
-      "src": "/pwa/icon-512.png",
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "maskable"
     }
   ]
 }

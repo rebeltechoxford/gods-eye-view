@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "acquiredAt": "2026-10-16T20:46:35.099Z",
-  "purpose": "Self-host existing GEV fonts for disconnected application launch; no new font families or glyph set.",
+  "purpose": "Self-host GEV typography and an expanded official icon subset for disconnected startup.",
   "fontsRepositoryCommit": "47d54ca1ebb14fd864695f1d39dc734f39017c33",
   "materialSymbolsRepositoryCommit": "49d4db35df873165d6bd6ba09b063c7dafbac2f4",
   "cssSources": [
@@ -15,8 +15,19 @@
     }
   ],
   "weights": {
-    "Inter": [300, 400, 500, 600],
-    "JetBrains Mono": [300, 400, 500, 600, 700]
+    "Inter": [
+      300,
+      400,
+      500,
+      600
+    ],
+    "JetBrains Mono": [
+      300,
+      400,
+      500,
+      600,
+      700
+    ]
   },
   "materialSymbols": {
     "axes": {
@@ -56,17 +67,64 @@
       "right_panel_close",
       "right_panel_open",
       "rocket_launch",
+      "settings",
       "skip_next",
       "skip_previous",
       "unavailable",
-      "view_in_ar"
+      "upload_file",
+      "view_in_ar",
+      "visibility"
     ],
-    "inventoryDescription": "Conservative source-scanner request, not a list or count of actual font glyphs. It includes fallback text literals absent/unavailable; the official Google API ignores unsupported names. Adding those literals returned byte-identical WOFF2 to the prior32-name GEV request, preserving every existing real glyph.",
-    "priorGevSubsetSha256": "3152b1e9e317530b8cabefdc4ffcbf68a21e49967284eecab8a4b3f19034e497"
+    "inventoryDescription": "Source-scanner inventory; locally built from the commit-pinned official TTF. Every supported name has a verified GSUB ligature in the output. Non-icon fallback text is recorded separately.",
+    "localBuild": {
+      "sourceSha256": "77ff1c20896afc6f1abf7d57fc408234dfd021ab050b63e0442e71d6c9f0d6b8",
+      "fontToolsVersion": "4.61.1",
+      "verifiedLigatures": [
+        "adjust",
+        "arrow_drop_down",
+        "arrow_forward",
+        "arrow_left",
+        "arrow_right",
+        "bolt",
+        "chevron_left",
+        "chevron_right",
+        "close",
+        "close_fullscreen",
+        "dark_mode",
+        "draw",
+        "east",
+        "flare",
+        "flight",
+        "layers_clear",
+        "light_mode",
+        "local_fire_department",
+        "my_location",
+        "navigation",
+        "open_in_full",
+        "public",
+        "radar",
+        "radio",
+        "right_panel_close",
+        "right_panel_open",
+        "rocket_launch",
+        "settings",
+        "skip_next",
+        "skip_previous",
+        "upload_file",
+        "view_in_ar",
+        "visibility"
+      ],
+      "nonIconText": [
+        "absent",
+        "normal",
+        "on",
+        "unavailable"
+      ]
+    }
   },
   "stylesheet": {
     "path": "/fonts/gev-fonts.css",
-    "sha256": "002f3b8a83c23dc6c0223d2ec79afbda144400e764c5d97b07648d484ea98282"
+    "sha256": "3b21c435dcba04e8f7a0a61b0dfb20012b47c4abc709dea7dc9171a31eda7b1d"
   },
   "assets": [
     {
@@ -189,11 +247,11 @@
     {
       "family": "Material Symbols Outlined",
       "subset": "subset",
-      "path": "/fonts/material-symbols-outlined-v377-subset.woff2",
-      "sourceUrl": "https://fonts.gstatic.com/l/font?kit=kJF1BvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzByHX9rA6RzaxHMPdY43zj-jCxv3fzvRNU22ZXGJpEpjC_1p-p_4MrImHCIJIZrDCvHOejdcMkzUJPvbB--NyU9cW9D-I3cSFCBNDtTy7ky-Y6bMLNaQhBVNRbF_cugDfkhV2_k8hGVE28sHt4FB78CUMp4xblTyedGw&skey=b8dc2088854b122f&v=v377",
+      "path": "/fonts/material-symbols-outlined-local-subset.woff2",
+      "sourceUrl": "https://raw.githubusercontent.com/google/material-design-icons/49d4db35df873165d6bd6ba09b063c7dafbac2f4/variablefont/MaterialSymbolsOutlined%5BFILL,GRAD,opsz,wght%5D.ttf",
       "license": "Apache-2.0",
-      "bytes": 4652,
-      "sha256": "3152b1e9e317530b8cabefdc4ffcbf68a21e49967284eecab8a4b3f19034e497"
+      "bytes": 4892,
+      "sha256": "7c783522d5bc94196df039b268508fee2539235ab9be3affef07a611a60cd339"
     }
   ],
   "licenses": [
@@ -219,6 +277,6 @@
       "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
     }
   ],
-  "fontBytes": 309408,
+  "fontBytes": 309648,
   "materialSymbolsNotice": "No upstream root NOTICE file exists at the recorded source commit (GitHub API HTTP404)."
 }

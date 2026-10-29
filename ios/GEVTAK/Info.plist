@@ -8,12 +8,13 @@
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>0.3.0</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSRequiresIPhoneOS</key><true/>
-  <key>NSLocationWhenInUseUsageDescription</key><string>Show your current position in the approved private GEV TAK console while you use device GPS.</string>
-  <key>NSMicrophoneUsageDescription</key><string>Use voice controls in your approved private console when you explicitly enable its microphone.</string>
-  <key>NSCameraUsageDescription</key><string>Use camera features requested by your approved private console after you grant permission.</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>Show your current position in GEV TAK while you use device GPS.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Use voice controls in GEV TAK when you explicitly enable its microphone.</string>
+  <key>NSCameraUsageDescription</key><string>Use camera features requested by GEV TAK after you grant permission.</string>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
   <key>NSLocalNetworkUsageDescription</key><string>Connect to your approved private GEV TAK gateway on your local network.</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>

@@ -5,6 +5,7 @@ import {
   ApplicationRedirectError,
   describeError,
 } from './standalone/errors.js';
+import { t } from './i18n/index.js';
 
 const application = createStandaloneApplication({
   googleApiKey: import.meta.env.GOOGLE_MAPS_API_KEY,

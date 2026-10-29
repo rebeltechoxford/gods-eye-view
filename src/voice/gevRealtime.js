@@ -67,8 +67,13 @@ export function initGevVoiceCommands(options) {
   const referents = createReferentRegistry();
   // The controller exists only after the runner, so its hooks bind late.
   const deixis = { pointer, referents, cameraKey };
+  let commands;
   const baseRunner = withToolCatalog(
-    createGevActionRunner({ ...options, deixis }),
+    createGevActionRunner({
+      ...options,
+      deixis,
+      readVoicePanelOperation: () => commands?.captureVoicePanelOperation?.(),
+    }),
     options.toolCatalog,
   );
   const runner = async (name, args, callOptions = {}) => {
@@ -85,7 +90,7 @@ export function initGevVoiceCommands(options) {
   runner.resetConversation = (...args) =>
     baseRunner.resetConversation?.(...args);
   runner.dispose = (...args) => baseRunner.dispose?.(...args);
-  const commands = createVoiceCommands({
+  commands = createVoiceCommands({
     ...options,
     pointer,
     referents,
@@ -99,7 +104,8 @@ export function initGevVoiceCommands(options) {
   });
   deixis.imageFrame = () => commands.retainedImageFrame?.() || null;
   deixis.onPointerUsed = () => commands.announcePointer?.();
-  commands.session?.signal?.addEventListener(
+  const lifetime = commands.signal ?? commands.session?.signal;
+  lifetime?.addEventListener(
     'abort',
     () => {
       removePrivacyListener();
@@ -107,5 +113,9 @@ export function initGevVoiceCommands(options) {
     },
     { once: true },
   );
+  if (lifetime?.aborted) {
+    removePrivacyListener();
+    pointer?.destroy();
+  }
   return commands;
 }

@@ -4,6 +4,8 @@ import WebKit
 @MainActor
 final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, UIDocumentPickerDelegate {
     private static let endpointKey = "approvedConsoleOrigin"
+    private var bundledServer: BundledAppServer?
+    private var standalone = false
     private var endpoint: EndpointOrigin?
     private var webView: WKWebView?
     private var entryPanel: UIStackView!
@@ -35,17 +37,13 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         reload.accessibilityLabel = "Reload private console"
         navigationItem.rightBarButtonItems = [settings, reload]
         buildEntryPanel()
-        if let saved = UserDefaults.standard.string(forKey: Self.endpointKey),
-           let origin = try? EndpointOrigin(saved) {
-            open(origin)
-        } else {
-            showEntry()
-        }
+        openStandalone()
+
     }
 
     private func buildEntryPanel() {
         let heading = UILabel()
-        heading.text = "Connect to your private console"
+        heading.text = "Connect GEV TAK gateway"
         heading.font = .preferredFont(forTextStyle: .title2)
         heading.numberOfLines = 0
         let explanation = UILabel()
@@ -70,11 +68,16 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         connect.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         endpointField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         let limit = UILabel()
-        limit.text = "Keep the app visible for device GPS. Offline maps and reliable background TAK connections are not provided by this package."
+        limit.text = "Keep the app visible for device GPS. Direct radio connections and background TAK connections are not available."
         limit.numberOfLines = 0
         limit.font = .preferredFont(forTextStyle: .footnote)
         limit.textColor = .secondaryLabel
-        entryPanel = UIStackView(arrangedSubviews: [heading, explanation, endpointField, connect, limit])
+        let local = UIButton(type: .system)
+        local.setTitle("Return to local app", for: .normal)
+        local.accessibilityIdentifier = "openLocalApp"
+        local.addTarget(self, action: #selector(openStandalone), for: .touchUpInside)
+        local.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        entryPanel = UIStackView(arrangedSubviews: [heading, explanation, endpointField, connect, local, limit])
         entryPanel.axis = .vertical
         entryPanel.spacing = 18
         entryPanel.translatesAutoresizingMaskIntoConstraints = false
@@ -97,9 +100,10 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     }
 
     private func showEntry() {
+        webView?.isHidden = true
         entryContainer.isHidden = false
         backItem.isEnabled = false
-        endpointField.text = nil
+        endpointField.text = UserDefaults.standard.string(forKey: Self.endpointKey)
     }
 
     @objc private func saveEndpoint() {
@@ -111,8 +115,66 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         } catch { showMessage("Check the server address", String(describing: error)) }
     }
 
+    @objc private func openStandalone() {
+        view.endEditing(true)
+        if standalone, let webView, bundledServer != nil {
+            entryContainer.isHidden = true
+            webView.isHidden = false
+            backItem.isEnabled = webView.canGoBack
+            return
+        }
+        guard let root = Bundle.main.url(forResource: "WebApp", withExtension: nil) else {
+            showMessage("Bundled app missing", "Rebuild the IPA with the full God’s Eye View web assets.")
+            return
+        }
+        if bundledServer != nil { showConsole(BundledAppServer.origin); return }
+        let server = BundledAppServer(root: root)
+        bundledServer = server
+        do {
+            try server.start { [weak self] error in
+                guard let self else { return }
+                if let error {
+                    self.bundledServer = nil
+                    self.showMessage("Local app unavailable", error.localizedDescription)
+                } else { self.showConsole(BundledAppServer.origin) }
+            }
+        } catch {
+            bundledServer = nil
+            showMessage("Local app unavailable", error.localizedDescription)
+        }
+    }
+
+    private func trusted(_ url: URL) -> Bool {
+        if standalone {
+            return url.scheme == "http" && url.host == "127.0.0.1" && url.port == Int(BundledAppServer.port) && url.user == nil && url.password == nil
+        }
+        return endpoint?.contains(url) == true
+    }
+
+    private func permitsDownload(_ url: URL) -> Bool {
+        if trusted(url) { return true }
+        guard url.scheme == "blob", url.absoluteString.count <= 4096,
+              let embedded = URL(string: String(url.absoluteString.dropFirst(5))) else { return false }
+        return trusted(embedded)
+    }
+
+    private func trusted(scheme: String, host: String, port: Int) -> Bool {
+        if standalone { return scheme == "http" && host == "127.0.0.1" && port == Int(BundledAppServer.port) }
+        return endpoint?.contains(protocol: scheme, host: host, port: port) == true
+    }
+
     private func open(_ origin: EndpointOrigin) {
         endpoint = origin
+        showConsole(origin.url)
+    }
+
+    private func showConsole(_ url: URL) {
+        cancelExport()
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
+        webView?.removeFromSuperview()
+        standalone = url == BundledAppServer.origin
         entryContainer.isHidden = true
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
@@ -135,14 +197,21 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         ])
         // The server redirects unauthenticated root requests to /login. A valid
         // cookie resumes the console without forcing another login form.
-        console.load(URLRequest(url: origin.url, cachePolicy: .reloadIgnoringLocalCacheData))
+        console.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
     @objc private func goBack() { if webView?.canGoBack == true { webView?.goBack() } }
     @objc private func reloadConsole() { webView?.reloadFromOrigin() }
 
     @objc private func changeServer() {
-        guard endpoint != nil, !clearingWebsite else { return }
+        guard !clearingWebsite else { return }
+        if standalone {
+            let choice = UIAlertController(title: "TAK connection", message: "The full globe runs locally without login. Connect to your private GEV TAK gateway for network services; its server session is separate from local mode.", preferredStyle: .alert)
+            choice.addAction(UIAlertAction(title: "Keep working locally", style: .cancel))
+            choice.addAction(UIAlertAction(title: "Configure server", style: .default) { [weak self] _ in self?.showEntry() })
+            present(choice, animated: true)
+            return
+        }
         let alert = UIAlertController(title: "Change private server?", message: "First use TAK → NETWORK → Sign out to revoke your server session. Continue clears this device's WebKit cookies and website data. It does not confirm server-side sign-out.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Clear this device", style: .destructive) { [weak self] _ in self?.clearDevice() })
@@ -164,7 +233,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { [weak self] in
             Task { @MainActor in
                 self?.clearingWebsite = false
-                self?.showEntry()
+                self?.openStandalone()
             }
         }
     }
@@ -188,7 +257,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
         if clearingWebsite && url.absoluteString == "about:blank" { decisionHandler(.allow); return }
         if navigationAction.targetFrame?.isMainFrame == true,
-           endpoint?.contains(url) == true, url.path == "/login" {
+           trusted(url), url.path == "/login" {
             // Web logout and session expiry return here without a JS/native
             // bridge. Retire any native export before showing the login page.
             if presentedViewController is UIDocumentPickerViewController { dismiss(animated: false) }
@@ -196,7 +265,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         }
         if navigationAction.shouldPerformDownload || url.scheme?.lowercased() == "blob" {
             guard mayPresent(for: webView, frame: navigationAction.sourceFrame),
-                  endpoint?.permitsDownload(url) == true, canBeginExport
+                  permitsDownload(url), canBeginExport
             else { decisionHandler(.cancel); return }
             downloadPending = true
             decisionHandler(.download)
@@ -208,7 +277,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
             decisionHandler(["https", "about", "blob", "data"].contains(url.scheme?.lowercased() ?? "") ? .allow : .cancel)
             return
         }
-        guard endpoint?.contains(url) == true else {
+        guard trusted(url) else {
             decisionHandler(.cancel)
             offerExternal(url)
             return
@@ -226,7 +295,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if navigationResponse.isForMainFrame,
            let url = navigationResponse.response.url,
-           endpoint?.contains(url) != true {
+           !trusted(url) {
             decisionHandler(.cancel)
         } else if navigationResponse.isForMainFrame && !navigationResponse.canShowMIMEType {
             guard mainNavigationMayDownload, canBeginExport else { decisionHandler(.cancel); return }
@@ -246,14 +315,14 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
 
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
         let allowed = UIApplication.shared.applicationState == .active && frame.isMainFrame &&
-            endpoint?.contains(protocol: origin.protocol, host: origin.host, port: origin.port) == true
+            trusted(scheme: origin.protocol, host: origin.host, port: origin.port)
         decisionHandler(allowed ? .prompt : .deny)
     }
 
     private func mayPresent(for candidate: WKWebView, frame: WKFrameInfo) -> Bool {
         candidate === webView && !clearingWebsite && presentedViewController == nil &&
         UIApplication.shared.applicationState == .active && frame.isMainFrame &&
-        endpoint?.contains(protocol: frame.securityOrigin.protocol, host: frame.securityOrigin.host, port: frame.securityOrigin.port) == true
+        trusted(scheme: frame.securityOrigin.protocol, host: frame.securityOrigin.host, port: frame.securityOrigin.port)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
@@ -300,7 +369,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
 
     private func receive(_ download: WKDownload, from candidate: WKWebView) {
         guard candidate === webView, downloadPending, activeDownload == nil,
-              let url = download.originalRequest?.url, endpoint?.permitsDownload(url) == true
+              let url = download.originalRequest?.url, permitsDownload(url)
         else {
             if candidate === webView { downloadPending = false }
             download.cancel(nil)
@@ -313,7 +382,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
         guard download === activeDownload, !clearingWebsite,
-              let url = response.url, endpoint?.permitsDownload(url) == true,
+              let url = response.url, permitsDownload(url),
               ExportPolicy.accepts(length: response.expectedContentLength),
               (response as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) ?? true,
               presentedViewController == nil, UIApplication.shared.applicationState == .active

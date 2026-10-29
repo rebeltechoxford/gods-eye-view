@@ -10,17 +10,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="GEV TAK" />
-    <link
-      rel="manifest"
-      href="/manifest.webmanifest"
-      crossorigin="use-credentials"
-    />
-    <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <title>God's Eye View</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="stylesheet" href="/style.css" />
     <!-- Existing typography and icon subset are self-hosted for disconnected
-       launch. Keep public/fonts/provenance.json requestedIconNames in sync
+       launch. Regenerate with scripts/build-icon-subset.py and keep public/fonts/provenance.json in sync
        with source glyphs; the font subset regression test enforces coverage.
        Redistribution licenses are retained under public/fonts/licenses/. -->
     <link rel="stylesheet" href="/fonts/gev-fonts.css" />

@@ -92,7 +92,7 @@ test('the AIR mode sits between FM and ADS-B with airband help and a squelch sli
   );
   assert.match(
     html,
-    /id="sdr-frequency-label" for="sdr-frequency-input">FM MHZ</,
+    /id="sdr-frequency-label" for="sdr-frequency-input"[^>]*>FM MHZ</,
   );
   assert.match(css, /\.sdr-squelch-row\[hidden\]/);
 });

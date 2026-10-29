@@ -1,5 +1,6 @@
 import { renderMapStackChips, syncMapStackChips } from '../mapStackChips.js';
 import { createMapReferenceControls } from './mapReferenceControls.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Own Map Source presentation and selection without constructing map providers.
@@ -31,7 +32,7 @@ export function createMapSourceControls({
       statusElement.textContent =
         state.status === 'switching'
           ? '...'
-          : stack?.shortLabel || stack?.label || 'MAP';
+          : stack?.shortLabel || stack?.label || t('MAP');
       statusElement.classList.toggle('warn', !!state.lastError);
     }
   }

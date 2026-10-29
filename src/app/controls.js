@@ -11,8 +11,13 @@ import { identityStorageKey } from '../tak/operatorContext.js';
 import { isEmbedded } from './embed.js';
 import { initCockpitCloudEffects } from '../cockpitCloudEffects.js';
 import * as Cesium from 'cesium';
+import { t } from '../i18n/index.js';
 
-/** Construct the existing controls and camera presentation. */
+/**
+ * Construct the existing controls and camera presentation. `initialShareCode`
+ * opens a share code (the `<code>` of `/share/<code>`) at start-up, for a host
+ * whose address does not carry one.
+ */
 export function createApplicationControls({
   scene: { viewer, mapStackController, operations, savedMapBounds },
   loaderStatus,
@@ -21,6 +26,7 @@ export function createApplicationControls({
   catalog,
   placeSearch,
   defer,
+  initialShareCode = null,
 }) {
   // Bind persistence to the already-resolved operator. Never expose another
   // account's view (or a personal view in an embed), and restore sticky privacy
@@ -52,6 +58,8 @@ export function createApplicationControls({
     requestServices: operations.requests,
     mapStackController,
     placeSearch,
+    // A share code to open at start-up instead of the page's address.
+    initialShareCode,
   });
   // An explicit device map survives stale public map= fields in old URLs.
   // Camera, visual, panel and layer restoration keep their existing authority.
@@ -79,11 +87,14 @@ export function createApplicationControls({
       });
     } else {
       const view = startView || DEFAULT_START_VIEW;
-      loaderStatus.textContent = `Flying to ${view.label || formatStartViewPlace(view)}...`;
+      loaderStatus.textContent =
+        view === DEFAULT_START_VIEW
+          ? t('Flying to Austin, TX...')
+          : `Flying to ${view.label || formatStartViewPlace(view)}...`;
       defer(flyToStartView(viewer, view));
     }
   } else {
-    loaderStatus.textContent = 'Restoring shared view...';
+    loaderStatus.textContent = t('Restoring shared view...');
   }
 
   return { styleManager, weatherEffects, cockpitCloudEffects };

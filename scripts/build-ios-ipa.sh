@@ -2,7 +2,7 @@
 # Build an unsigned DEVICE IPA. No Apple account, provisioning or remote server.
 set -euo pipefail
 if [[ "$(uname -s)" != Darwin ]]; then
-  printf '%s\n' 'This build requires macOS and Xcode 26. Windows can inspect the source but cannot compile an iOS IPA.' >&2
+  printf '%s\n' 'This build requires macOS and Xcode 26. Other operating systems can inspect the source but cannot compile an iOS IPA.' >&2
   exit 1
 fi
 case "${1:-}" in
@@ -11,6 +11,8 @@ case "${1:-}" in
   *) printf '%s\n' 'Usage: scripts/build-ios-ipa.sh [--smoke]' >&2; exit 2 ;;
 esac
 task_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Bundle the entire current web application before invoking Xcode.
+(cd "$task_root" && npm run build && node scripts/stage-ios-web.mjs)
 output_root="$task_root/output/ios"
 mkdir -p "$output_root"
 build_root="$(mktemp -d "$output_root/build.XXXXXX")"
@@ -45,6 +47,11 @@ xcrun swiftc -parse-as-library -swift-version 5 \
   "$task_root/ios/Tests/EndpointOriginTests.swift" \
   -o "$build_root/endpoint-policy-tests"
 "$build_root/endpoint-policy-tests"
+xcrun swiftc -parse-as-library -swift-version 5 \
+  "$task_root/ios/GEVTAK/BundledAppServer.swift" \
+  "$task_root/ios/Tests/BundledAppServerTests.swift" \
+  -o "$build_root/bundled-server-tests"
+"$build_root/bundled-server-tests"
 
 xcodebuild -quiet -project "$project" -scheme GEVTAK -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' \
@@ -67,7 +74,7 @@ with open(sys.argv[1], 'rb') as handle:
 assert info['CFBundleIdentifier'] == sys.argv[2]
 assert info['CFBundleExecutable'] == 'GEVTAK'
 assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS']
-assert 'NSAppTransportSecurity' not in info, 'No ATS trust exceptions are permitted'
+assert info.get('NSAppTransportSecurity') == {'NSAllowsLocalNetworking': True}, 'Only local networking may use HTTP; remote TLS remains verified'
 for key in ['NSLocationWhenInUseUsageDescription', 'NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:
     assert info.get(key), key
 assert not info.get('UIBackgroundModes'), 'No background capability is claimed'
@@ -79,7 +86,7 @@ mkdir "$build_root/Payload"
 ipa="$output_root/GEVTAK-unsigned.ipa"
 /usr/bin/ditto -c -k --norsrc --keepParent "$build_root/Payload" "$ipa"
 python3 - "$ipa" <<'PY'
-import plistlib, sys, zipfile
+import hashlib, json, plistlib, sys, zipfile
 with zipfile.ZipFile(sys.argv[1]) as archive:
     names = archive.namelist()
     assert names and all(name.startswith('Payload/GEVTAK.app/') or name == 'Payload/' or name == 'Payload/GEVTAK.app/' for name in names)
@@ -88,6 +95,10 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS']
     assert not any(name.endswith(('embedded.mobileprovision', '.pem', '.p12', '.pfx', '.key', '.env')) for name in names)
     assert not any('/../' in name or name.startswith('/') for name in names)
+    manifest = json.loads(archive.read('Payload/GEVTAK.app/WebApp/bundle-manifest.json'))
+    assert any(f['path'] == 'index.html' for f in manifest['files'])
+    for entry in manifest['files']:
+        assert hashlib.sha256(archive.read('Payload/GEVTAK.app/WebApp/' + entry['path'])).hexdigest() == entry['sha256']
     assert archive.testzip() is None
 print('PASS: Payload IPA structure, device platform and archive integrity')
 PY
@@ -160,10 +171,11 @@ provenance = {
     'architectures': sys.argv[3].split(), 'bundleIdentifier': 'uk.rebeltechoxford.gevtak',
     'platform': 'iPhoneOS', 'signing': 'unsigned; personal signing required',
     'deviceArchiveValidated': True, 'payloadValidated': True,
-    'endpointPolicyTestsPassed': True, 'simulatorSetupSmokePassed': sys.argv[4] == '1',
+    'endpointPolicyTestsPassed': True, 'simulatorLaunchSmokePassed': sys.argv[4] == '1',
     'simulatorRuntime': sys.argv[5] or None, 'simulatorDeviceType': sys.argv[6] or None,
     'physicalDeviceTested': False, 'privateEndpointConfigured': False,
-    'liveTakPeerTested': False, 'offlineMapsImplemented': False,
+    'liveTakPeerTested': False, 'bundledWebApp': True, 'standaloneDeviceAcceptancePassed': False,
+    'directNativeTakTransportImplemented': False, 'offlineMapsImplemented': False,
     'githubRunID': os.environ.get('GITHUB_RUN_ID'),
 }
 (ipa.parent/'provenance.json').write_text(json.dumps(provenance, indent=2)+'\n')

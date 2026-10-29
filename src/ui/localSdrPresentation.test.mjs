@@ -7,7 +7,10 @@ import {
   localSdrFeedLine,
   localSdrAudioActive,
   localSdrModeHasAudio,
+  localSdrFmAudioActive,
+  localSdrGainOptionLabel,
 } from './localSdrPresentation.js';
+import { setLocale } from '../i18n/index.js';
 
 const idle = Object.freeze({
   webUsbSupported: true,
@@ -275,4 +278,16 @@ test('airband audio counts as local listening, like FM', () => {
     localSdrAudioActive({ ...streamingAir, connected: false }),
     false,
   );
+});
+
+test('gain option labels follow the page language; values stay numeric', () => {
+  try {
+    setLocale('en');
+    assert.equal(localSdrGainOptionLabel('28.0'), '28.0\u00a0dB');
+    assert.equal(localSdrGainOptionLabel('0.9'), '0.9\u00a0dB');
+    setLocale('ru');
+    assert.match(localSdrGainOptionLabel('28.0'), /^28,0\u00a0\S+$/);
+  } finally {
+    setLocale('en');
+  }
 });
