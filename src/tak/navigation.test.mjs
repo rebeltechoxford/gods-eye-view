@@ -7,6 +7,8 @@ import {
   parseCoordinate,
   fromUtm,
   toUtm,
+  fromUps,
+  toUps,
   utmZone,
   rangeBearing,
   validateWaypoint,
@@ -238,7 +240,7 @@ test('MGRS roundtrips representative zones/hemispheres and labels polar limits w
         lat,
       );
   }
-  assert.deepEqual(COORDINATE_FORMATS, ['DD', 'DMS', 'MGRS', 'UTM']);
+  assert.deepEqual(COORDINATE_FORMATS, ['DD', 'DMS', 'MGRS', 'UTM', 'UPS']);
 });
 
 test('coarse MGRS cells crossing Svalbard, Norway and the southern limit are clipped to their declared grid', () => {
@@ -414,4 +416,78 @@ test('camera focus claims existing navigation ownership before moving and never 
   })({ lat: 0, lon: 0 });
   assert.equal(attempted, true);
   assert.equal(calls.length, 2, 'a denied camera owner cannot move');
+});
+
+test('UPS matches independent PROJ 9.5.1 EPSG:5041/5042 vectors in both polar regions', () => {
+  // Generated with pyproj 3.7.2, Transformer.from_crs(4326, 5041/5042,
+  // always_xy=True). These are independent fixtures, not our inverse output.
+  const vectors = [
+    [85, 0, 2000000, 1444542.6086173223],
+    [85, 90, 2555457.3913826775, 2000000],
+    [84, 45, 2471447.6804798758, 1528552.319520124],
+    [89.9, -135, 1992149.4287935556, 2007850.5712064444],
+    [-80, 0, 2000000, 3112951.1369549055],
+    [-85, 90, 2555457.3913826775, 2000000],
+    [-85, 180, 2000000, 1444542.6086173223],
+    [-89.9, -45, 1992149.4287935556, 2007850.5712064444],
+  ];
+  for (const [lat, lon, easting, northing] of vectors) {
+    const hemisphere = lat < 0 ? 'S' : 'N';
+    const grid = toUps({ lat, lon });
+    assert.equal(grid.hemisphere, hemisphere);
+    near(grid.easting, easting, 1e-6, 'PROJ easting');
+    near(grid.northing, northing, 1e-6, 'PROJ northing');
+    const point = fromUps({ hemisphere, easting, northing });
+    near(point.lat, lat, 1e-9, 'PROJ inverse latitude');
+    near(point.lon, lon, 1e-9, 'PROJ inverse longitude');
+    const rounded = parseCoordinate(
+      formatCoordinate({ lat, lon }, 'UPS'),
+      'UPS',
+    );
+    assert.ok(rangeBearing({ lat, lon }, rounded).distanceM < 0.1);
+  }
+});
+
+test('UPS pole convention and strict parsing retain hemisphere without inventing a longitude', () => {
+  for (const [lat, hemisphere] of [
+    [90, 'N'],
+    [-90, 'S'],
+  ]) {
+    assert.equal(
+      formatCoordinate({ lat, lon: 123 }, 'UPS'),
+      `${hemisphere} 2000000.0 2000000.0`,
+    );
+    assert.deepEqual(
+      parseCoordinate(`${hemisphere.toLowerCase()} 2000000 2000000`, 'UPS'),
+      { lat, lon: 0 },
+    );
+  }
+  for (const bad of [
+    'N 1e6 2000000',
+    'Z 2000000 2000000',
+    'N -1 2000000',
+    'N 4000001 2000000',
+    'N 0 0',
+    'S 0 0',
+    'N 2000000 2000000 trailing',
+    '31 N 2000000 2000000',
+    'N NaN 2000000',
+  ])
+    assert.throws(() => parseCoordinate(bad, 'UPS'));
+  for (const lat of [-79.999, 0, 83.999])
+    assert.throws(() => toUps({ lat, lon: 0 }), /UPS/);
+  for (const easting of [null, undefined, '2000000', NaN, Infinity])
+    assert.throws(() =>
+      fromUps({ hemisphere: 'N', easting, northing: 2000000 }),
+    );
+  // Opposite-hemisphere shape with the south domain radius is not valid in north UPS.
+  assert.throws(
+    () =>
+      fromUps({
+        hemisphere: 'N',
+        easting: 2000000,
+        northing: 3112951.1369549055,
+      }),
+    /UPS/,
+  );
 });

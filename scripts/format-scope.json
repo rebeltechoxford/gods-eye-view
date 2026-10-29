@@ -1115,5 +1115,13 @@
   "docs/MY-LOCATION.md",
   "changelog.d/14-location-and-identity.md",
   "src/ui/startView.js",
-  "src/ui/startView.test.mjs"
+  "src/ui/startView.test.mjs",
+  "src/tak/picture.js",
+  "src/tak/pictureStorage.js",
+  "src/tak/pictureWorkflow.js",
+  "src/tak/pictureUi.js",
+  "src/tak/picture.test.mjs",
+  "docs/TAK_OFFLINE_PICTURE.md",
+  "scripts/qa-tak-picture.mjs",
+  "changelog.d/15-offline-picture-and-ups.md"
 ]

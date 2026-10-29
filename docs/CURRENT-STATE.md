@@ -1,5 +1,16 @@
 # God's Eye View Current State
 
+## Offline picture and polar navigation — October 19, 2026 candidate
+
+PR #15 adds explicit device retention of a historical TAK picture, separate
+from the live store and transport. The account-scoped record is limited to 500
+contacts/drawings and 1 MiB, preserves source timestamps and requires explicit
+Save/Restore. Hide, Delete and logout have distinct retention behavior. See
+[TAK_OFFLINE_PICTURE.md](TAK_OFFLINE_PICTURE.md). The navigation panel also
+supports WGS84 UPS polar coordinates with independent PROJ reference vectors.
+Runtime acceptance is pending for this candidate; physical-device and native
+peer acceptance remain open.
+
 ## Location and identity review — October 19, 2026 candidate
 
 PR #14 adds a shared foreground GPS watch, a map location dot/FOLLOW control,

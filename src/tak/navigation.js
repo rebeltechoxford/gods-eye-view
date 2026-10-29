@@ -5,7 +5,13 @@ import { Cartographic, Ellipsoid, EllipsoidGeodesic } from 'cesium';
 // module. Reflect avoids requesting a nonexistent static default ESM export.
 const mgrs = Reflect.get(mgrsModule, 'default') ?? mgrsModule;
 
-export const COORDINATE_FORMATS = Object.freeze(['DD', 'DMS', 'MGRS', 'UTM']);
+export const COORDINATE_FORMATS = Object.freeze([
+  'DD',
+  'DMS',
+  'MGRS',
+  'UTM',
+  'UPS',
+]);
 const RAD = Math.PI / 180;
 const A = 6378137;
 const F = 1 / 298.257223563;
@@ -37,7 +43,72 @@ const DMS = new RegExp(
   'i',
 );
 const GRID_DOMAIN =
-  'UTM/MGRS supports 80°S to 84°N; polar UPS is not implemented.';
+  'UTM/MGRS supports 80°S to 84°N; use UPS for polar coordinates.';
+
+// WGS84 polar stereographic (Snyder, USGS PP1395): UPS uses k0=0.994,
+// Greenwich meridian, and a 2,000,000 m false easting/northing at each pole.
+// Independent arithmetic implementation; reference vectors come from PROJ.
+const UPS_FALSE = 2_000_000;
+const UPS_FACTOR =
+  (2 * A * 0.994) / Math.sqrt((1 + E) ** (1 + E) * (1 - E) ** (1 - E));
+const UPS_DOMAIN = 'UPS supports 84°N…90°N and 80°S…90°S. Use UTM elsewhere.';
+
+export function toUps(point) {
+  const { lat, lon } = validateWaypoint(point);
+  if (lat < 84 && lat > -80) throw new RangeError(UPS_DOMAIN);
+  const phi = Math.abs(lat) * RAD;
+  const sin = Math.sin(phi);
+  const t =
+    Math.tan(Math.PI / 4 - phi / 2) /
+    ((1 - E * sin) / (1 + E * sin)) ** (E / 2);
+  const rho = Math.abs(lat) === 90 ? 0 : UPS_FACTOR * t;
+  return {
+    hemisphere: lat < 0 ? 'S' : 'N',
+    easting: UPS_FALSE + rho * Math.sin(lon * RAD),
+    northing: UPS_FALSE + (lat < 0 ? 1 : -1) * rho * Math.cos(lon * RAD),
+  };
+}
+
+export function fromUps({ hemisphere, easting, northing }) {
+  if (
+    !['N', 'S'].includes(hemisphere) ||
+    !Number.isFinite(easting) ||
+    !Number.isFinite(northing) ||
+    easting < 0 ||
+    easting > 4_000_000 ||
+    northing < 0 ||
+    northing > 4_000_000
+  )
+    throw new TypeError(
+      'Use hemisphere N/S and UPS easting/northing in metres (0…4000000).',
+    );
+  const x = easting - UPS_FALSE;
+  const y = (northing - UPS_FALSE) * (hemisphere === 'N' ? -1 : 1);
+  const rho = Math.hypot(x, y);
+  // Longitude at the pole is indeterminate. Use Greenwich as the display convention.
+  if (rho === 0) return { lat: hemisphere === 'N' ? 90 : -90, lon: 0 };
+  const t = rho / UPS_FACTOR;
+  let phi = Math.PI / 2 - 2 * Math.atan(t);
+  for (let i = 0; i < 12; i++) {
+    const sin = Math.sin(phi);
+    const next =
+      Math.PI / 2 -
+      2 * Math.atan(t * ((1 - E * sin) / (1 + E * sin)) ** (E / 2));
+    const difference = Math.abs(next - phi);
+    phi = next;
+    if (difference < 1e-14) break;
+  }
+  const minimum = hemisphere === 'N' ? 84 : 80;
+  const absoluteLat = phi / RAD;
+  // A displayed coordinate rounds to decimetres; permit only that boundary error.
+  const boundary = toUps({ lat: hemisphere === 'N' ? 84 : -80, lon: 0 });
+  const maxRho = Math.abs(boundary.northing - UPS_FALSE);
+  if (rho > maxRho + 0.08) throw new RangeError(UPS_DOMAIN);
+  return validateWaypoint({
+    lat: Math.max(minimum, absoluteLat) * (hemisphere === 'N' ? 1 : -1),
+    lon: Math.atan2(x, y) / RAD,
+  });
+}
 
 export function validateWaypoint(point) {
   if (
@@ -218,6 +289,20 @@ export function parseCoordinate(text, format = 'DD') {
     throw new TypeError('Enter one coordinate, up to 160 characters.');
   const value = text.trim();
   if (format === 'MGRS') return parseMgrs(value);
+  if (format === 'UPS') {
+    const match = /^([NS])\s+(\d{1,7}(?:\.\d+)?)\s+(\d{1,7}(?:\.\d+)?)$/i.exec(
+      value,
+    );
+    if (!match)
+      throw new TypeError(
+        'Use UPS hemisphere N/S, easting and northing in metres, e.g. N 2000000 1444542.6.',
+      );
+    return fromUps({
+      hemisphere: match[1].toUpperCase(),
+      easting: Number(match[2]),
+      northing: Number(match[3]),
+    });
+  }
   if (format === 'DD') {
     const match = DD.exec(value);
     if (!match)
@@ -276,6 +361,10 @@ export function formatCoordinate(point, format = 'DD') {
   const { lat, lon } = validateWaypoint(point);
   if (format === 'DD') return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   if (format === 'DMS') return `${dms(lat, 'N', 'S')} ${dms(lon, 'E', 'W')}`;
+  if (format === 'UPS') {
+    const ups = toUps(point);
+    return `${ups.hemisphere} ${ups.easting.toFixed(1)} ${ups.northing.toFixed(1)}`;
+  }
   if (format === 'MGRS') {
     gridPoint(point);
     // At the inclusive 84° boundary the dependency omits Svalbard exceptions.

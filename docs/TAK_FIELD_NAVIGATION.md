@@ -1,18 +1,20 @@
 # Field coordinates and waypoint navigation
 
 The TAK panel adds **COORDINATES / NAVIGATION** to the existing GEV globe. It
-accepts decimal degrees, degrees/minutes/seconds, MGRS and UTM without external
+accepts decimal degrees, degrees/minutes/seconds, MGRS, UTM and polar UPS without external
 geocoding or additional dependencies. Every coordinate uses **WGS84**. This is
 a waypoint/range tool; it does not compute a route, terrain clearance, magnetic
 declination, elevation or a device GPS fix.
 
 1. Choose an input format and enter a coordinate, then press **Validate
-   coordinate**. Readouts show all four supported representations. Examples:
+   coordinate**. Readouts show five representations with their valid regions. Examples:
    - DD: `38.88927, -77.05020` (latitude first).
    - DMS: `38°53′21.37″N 77°03′00.72″W` (hemispheres required).
    - MGRS: `18S UJ 22185 06486` (spaces optional; precision is explicit).
    - UTM: `18 N 322185.1 4306486.7` (zone, **hemisphere**, easting and northing
      in metres; N/S here is not an MGRS latitude band).
+   - UPS: `N 2000000 1444542.6` (hemisphere, easting and northing in metres;
+     approximately 85°N, 0°E). UPS has no UTM zone number.
 2. **Use map center** or **Use my position** can fill the waypoint. Map-center
    and operator-set positions are clearly labelled as not device GPS. The tool
    refuses a GPS fix that is stale, stopped or backgrounded.
@@ -26,8 +28,11 @@ declination, elevation or a device GPS fix.
    **Add local waypoint marker** uses the existing TAK client with sharing
    explicitly disabled. It does not change or broadcast self position.
 
-UTM/MGRS covers 80°S…84°N, including Norway/Svalbard zone exceptions. Polar UPS
-and alternate datums are unavailable; DD/DMS still works at the poles. MGRS
+UTM/MGRS covers 80°S…84°N, including Norway/Svalbard zone exceptions. UPS covers
+84°N…90°N and 80°S…90°S, including both poles; the numeric UPS display uses
+WGS84 polar stereographic, scale 0.994 and false easting/northing of 2,000,000 m.
+At a pole longitude is indeterminate and the UPS inverse displays 0° by convention.
+Polar MGRS lettering and alternate datums remain unavailable. MGRS
 represents a grid area: the tool uses its centre, clipped at grid-zone/band
 boundaries, and reports the square width. Extra readout digits never improve
 input or GPS accuracy. Inputs are bounded and reject missing fields, invalid
@@ -46,7 +51,7 @@ controls retain 44 px targets and 16 px input text.
 
 `node --test src/tak/navigation.test.mjs` exercises numerical UTM checkpoints
 from the official PROJ examples, northern/southern and zone-edge roundtrips,
-strict DD/DMS/MGRS/UTM validation, grid precision/polar limits, ellipsoidal
+strict DD/DMS/MGRS/UTM/UPS validation, grid precision/polar limits, ellipsoidal
 range/true bearing, GPS freshness, unshared marker construction, privacy,
 camera ownership and retired-workflow cleanup. Browser and physical-device
 acceptance must be recorded separately; unit tests do not establish either.
@@ -93,3 +98,18 @@ WGS84 ellipsoidal geodesics supply range/bearing. No Android TAK source is used.
 - [NGA: coordinate systems and MGRS references](https://earth-info.nga.mil/index.php?dir=coordsys&action=coordsys)
 - [Existing mgrs conversion API and license information](https://github.com/proj4js/mgrs)
 - [Cesium EllipsoidGeodesic API](https://cesium.com/learn/cesiumjs/ref-doc/EllipsoidGeodesic.html)
+
+### Polar UPS addition, October 19, 2026
+
+The independent UPS implementation uses the published polar stereographic
+formulas. Numerical fixtures were generated with pyproj 3.7.2 / PROJ 9.5.1,
+EPSG:4326 to EPSG:5041 (north) and EPSG:5042 (south), always_xy=True, outside
+application dependencies. Tests compare both forward and inverse coordinates
+against eight independent reference vectors, boundary rounding, invalid inputs
+and pole conventions. Browser acceptance adds northern and southern UPS form
+entry and checks that GPS and network transmission remain off. Acceptance for
+the integrated candidate is recorded in the release review; these are synthetic
+checks, not operational navigation or device validation.
+
+- [PROJ UPS reference](https://proj.org/en/stable/operations/projections/ups.html)
+- [USGS Snyder, Map Projections: A Working Manual, polar stereographic](https://pubs.usgs.gov/pp/1395/report.pdf)

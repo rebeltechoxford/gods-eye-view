@@ -67,11 +67,18 @@ accepted the write; it does not confirm a remote peer received it. Local imports
 and unshared markers are never automatically resent. See
 [delivery semantics](docs/TAK_DELIVERY.md).
 
-**NAVIGATION** accepts DD, DMS, MGRS and UTM coordinates. Validate a coordinate,
+**NAVIGATION** accepts DD, DMS, MGRS, UTM and polar UPS coordinates. Validate a coordinate,
 focus the globe or create a local marker, and measure horizontal WGS84 range and
 true bearing from the map center or a fresh position. The origin is labeled;
 map center is not GPS. Turn guidance, magnetic bearings and terrain clearance are not
 part of this workflow. See [formats and limits](docs/TAK_FIELD_NAVIGATION.md).
+
+**DEVICE TAK PICTURE** saves one historical copy of contacts and drawings on
+this device, after explicit retention consent. Restore displays it separately
+from live contacts, with observation times and expiry labels; it never transmits
+the saved data. Hide keeps the copy, Delete removes it, and signing out locks it.
+Own GPS, chat and trails are excluded. Save the app separately for offline
+launch; see [retention and account limits](docs/TAK_OFFLINE_PICTURE.md).
 
 **DRAWINGS / ROUTES** creates lines, filled areas and ordered routes on the
 same globe. Choose a kind, name it, then add coordinates or map-center vertices.
