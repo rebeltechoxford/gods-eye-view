@@ -1,3 +1,5 @@
+import { t, translateKnown } from '../i18n/index.js';
+
 import './packages.css';
 import { readPackageFile } from './packagesFile.js';
 import {
@@ -7,6 +9,16 @@ import {
   createMissionPackage,
   missionPackageAttachment,
 } from './packages.js';
+
+// Catalog strings are text, including when interpolated into trusted markup.
+const escapeHtml = (text) =>
+  String(text).replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        character
+      ],
+  );
 
 /** Local, session-memory package controls mounted within the existing TAK panel. */
 export function createMissionPackagePanel({
@@ -19,22 +31,22 @@ export function createMissionPackagePanel({
   root.className = 'tak-web-section tak-package-panel';
   root.dataset.takSection = 'packages';
   root.innerHTML = `
-    <summary>Mission packages · local</summary>
-    <p>Inspect a TAK ZIP, then import its contacts locally. Nothing is sent to the gateway. Attachments are download-only.</p>
-    <label>Package ZIP / DP (32 MiB maximum)<input data-tak-package-file type="file" accept=".zip,.dp,application/zip"></label>
-    <button data-tak-package-inspect type="button">Inspect package</button>
+    <summary>${escapeHtml(t('Mission packages · local'))}</summary>
+    <p>${escapeHtml(t('Inspect a TAK ZIP, then import its contacts locally. Nothing is sent to the gateway. Attachments are download-only.'))}</p>
+    <label>${escapeHtml(t('Package ZIP / DP (32 MiB maximum)'))}<input data-tak-package-file type="file" accept=".zip,.dp,application/zip"></label>
+    <button data-tak-package-inspect type="button">${escapeHtml(t('Inspect package'))}</button>
     <div data-tak-package-preview></div>
-    <button data-tak-package-apply type="button" disabled>Import inspected contacts locally</button>
+    <button data-tak-package-apply type="button" disabled>${escapeHtml(t('Import inspected contacts locally'))}</button>
     <hr>
-    <label>New package name<input data-tak-package-name maxlength="128" placeholder="Local mission package"></label>
-    <label>Filter available contacts<input data-tak-package-filter maxlength="128" type="search" placeholder="Callsign or UID"></label>
+    <label>${escapeHtml(t('New package name'))}<input data-tak-package-name maxlength="128" placeholder="${escapeHtml(t('Local mission package'))}"></label>
+    <label>${escapeHtml(t('Filter available contacts'))}<input data-tak-package-filter maxlength="128" type="search" placeholder="${escapeHtml(t('Callsign or UID'))}"></label>
     <p data-tak-package-count></p>
-    <fieldset><legend>Choose contacts to export</legend><div data-tak-package-contacts></div></fieldset>
-    <label>Add PNG, JPEG, PDF or TXT files (8 MiB each)<input data-tak-package-attachments type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.txt"></label>
-    <label class="tak-web-check"><input data-tak-package-authorize type="checkbox">Allow this selected package to leave the app as a download.</label>
-    <button data-tak-package-export type="button">Export selected package</button>
-    <button data-tak-package-clear type="button">Clear package files and selections</button>
-    <p data-tak-package-status role="status" aria-live="polite">Local files stay in page memory until cleared or this session ends.</p>`;
+    <fieldset><legend>${escapeHtml(t('Choose contacts to export'))}</legend><div data-tak-package-contacts></div></fieldset>
+    <label>${escapeHtml(t('Add PNG, JPEG, PDF or TXT files (8 MiB each)'))}<input data-tak-package-attachments type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.txt"></label>
+    <label class="tak-web-check"><input data-tak-package-authorize type="checkbox">${escapeHtml(t('Allow this selected package to leave the app as a download.'))}</label>
+    <button data-tak-package-export type="button">${escapeHtml(t('Export selected package'))}</button>
+    <button data-tak-package-clear type="button">${escapeHtml(t('Clear package files and selections'))}</button>
+    <p data-tak-package-status role="status" aria-live="polite">${escapeHtml(t('Local files stay in page memory until cleared or this session ends.'))}</p>`;
   container.append(root);
   const query = (selector) =>
     root.querySelector(`[data-tak-package-${selector}]`);
@@ -49,7 +61,7 @@ export function createMissionPackagePanel({
     destroyed = false,
     busy = false;
   function report(message) {
-    if (!destroyed) query('status').textContent = message;
+    if (!destroyed) query('status').textContent = translateKnown(message);
   }
   function resetOperation() {
     operation.abort();
@@ -75,7 +87,7 @@ export function createMissionPackagePanel({
     urls.clear();
     retainedBytes = 0;
     renderContacts(false);
-    report('Package files and selections cleared.');
+    report(t('Package files and selections cleared.'));
   }
   function save(bytes, name, signal) {
     signal.throwIfAborted();
@@ -85,7 +97,9 @@ export function createMissionPackagePanel({
       retainedBytes + bytes.length > PACKAGE_LIMITS.archiveBytes
     )
       throw new Error(
-        'Download memory limit reached. Wait up to 30 seconds or clear package files before retrying.',
+        t(
+          'Download memory limit reached. Wait up to 30 seconds or clear package files before retrying.',
+        ),
       );
     const url = URL.createObjectURL(
       new Blob([bytes], { type: 'application/octet-stream' }),
@@ -123,7 +137,8 @@ export function createMissionPackagePanel({
     try {
       await action(signal);
     } catch (error) {
-      if (!signal.aborted) report(error?.message || 'Package operation failed');
+      if (!signal.aborted)
+        report(error?.message || t('Package operation failed'));
     } finally {
       if (!signal.aborted) busy = false;
     }
@@ -174,7 +189,15 @@ export function createMissionPackagePanel({
       row.label.remove();
       rows.delete(uid);
     }
-    const message = `Showing ${visible.length} of ${matching.length} matching (${contacts.length} total). ${selectedUids.size} selected, maximum 127. Use the filter to find more contacts.`;
+    const message = t(
+      'Showing {visible} of {matching} matching ({total} total). {selected} selected, maximum 127. Use the filter to find more contacts.',
+      {
+        visible: visible.length,
+        matching: matching.length,
+        total: contacts.length,
+        selected: selectedUids.size,
+      },
+    );
     if (query('count').textContent !== message)
       query('count').textContent = message;
   }
@@ -193,7 +216,9 @@ export function createMissionPackagePanel({
     query('preview').replaceChildren();
     query('apply').disabled = true;
     query('authorize').checked = false;
-    report('Press Inspect package to validate every entry before importing.');
+    report(
+      t('Press Inspect package to validate every entry before importing.'),
+    );
   }
   on('attachments', 'change', () => {
     query('authorize').checked = false;
@@ -207,7 +232,7 @@ export function createMissionPackagePanel({
     if (!uid) return;
     if (input.checked && selectedUids.size >= 127) {
       input.checked = false;
-      report('At most 127 contents can be selected for one package.');
+      report(t('At most 127 contents can be selected for one package.'));
     } else if (input.checked) selectedUids.add(uid);
     else selectedUids.delete(uid);
     renderContacts();
@@ -219,10 +244,10 @@ export function createMissionPackagePanel({
       void run(async (signal) => {
         const file = query('file').files[0];
         if (!file || file.size > PACKAGE_LIMITS.archiveBytes)
-          throw new Error('Choose one ZIP / DP of at most 32 MiB');
+          throw new Error(t('Choose one ZIP / DP of at most 32 MiB'));
         markPrivate();
         report(
-          'Validating archive, manifest, CoT, attachment types and hashes…',
+          t('Validating archive, manifest, CoT, attachment types and hashes…'),
         );
         const bytes = await readPackageFile(file, {
           limit: PACKAGE_LIMITS.archiveBytes,
@@ -237,19 +262,33 @@ export function createMissionPackagePanel({
         const title = document.createElement('p'),
           hash = document.createElement('p'),
           list = document.createElement('ul');
-        title.textContent = `${result.name} · ${result.contacts} contact(s), ${result.attachments} attachment(s)`;
+        title.textContent = t(
+          '{name} · contacts: {contacts}, attachments: {attachments}',
+          {
+            name: result.name,
+            contacts: result.contacts,
+            attachments: result.attachments,
+          },
+        );
         hash.className = 'tak-package-hash';
-        hash.textContent = `SHA-256 ${result.sha256} (integrity identifier; sender identity is not verified)`;
+        hash.textContent = t(
+          'SHA-256 {hash} (integrity identifier; sender identity is not verified)',
+          { hash: result.sha256 },
+        );
         for (const entry of result.contents) {
           const item = document.createElement('li'),
             label = document.createElement('span');
-          label.textContent = `${entry.path} · ${entry.bytes} bytes${entry.ignored ? ' · manifest ignore=true' : ''}`;
+          label.textContent = t('{path} · {bytes} bytes{ignored}', {
+            path: entry.path,
+            bytes: entry.bytes,
+            ignored: entry.ignored ? t(' · manifest ignore=true') : '',
+          });
           item.append(label);
           if (entry.kind === 'attachment') {
             const button = document.createElement('button');
             button.type = 'button';
             button.dataset.takPackageSave = entry.path;
-            button.textContent = 'Save this attachment';
+            button.textContent = t('Save this attachment');
             button.addEventListener(
               'click',
               () => {
@@ -261,7 +300,7 @@ export function createMissionPackagePanel({
                   );
                   save(attachment.bytes, attachment.name, operation.signal);
                   report(
-                    'Only the chosen attachment was offered for download.',
+                    t('Only the chosen attachment was offered for download.'),
                   );
                 } catch (error) {
                   report(error.message);
@@ -276,7 +315,9 @@ export function createMissionPackagePanel({
         query('preview').replaceChildren(title, hash, list);
         query('apply').disabled = !result.contacts;
         report(
-          'Package fully validated. Import is local. Drawing/route details are retained CoT; only their position is rendered. Attachments are never opened automatically.',
+          t(
+            'Package fully validated. Import is local. Drawing/route details are retained CoT; only their position is rendered. Attachments are never opened automatically.',
+          ),
         );
       }),
   );
@@ -286,7 +327,14 @@ export function createMissionPackagePanel({
       markPrivate();
       const result = applyMissionPackage(inspected, client.store);
       report(
-        `Imported ${result.contact} contact(s); ${result.ignored} older/unchanged. ${result.attachments} attachment(s) remain available for explicit download. Nothing was sent.`,
+        t(
+          'Imported contacts: {contacts}; older/unchanged: {ignored}. Attachments available for explicit download: {attachments}. Nothing was sent.',
+          {
+            contacts: result.contact,
+            ignored: result.ignored,
+            attachments: result.attachments,
+          },
+        ),
       );
     } catch (error) {
       report(error.message);
@@ -301,7 +349,9 @@ export function createMissionPackagePanel({
         query('authorize').checked = false;
         if (!authorized)
           throw new Error(
-            'Allow this selected package download first. This does not authorize other disclosures.',
+            t(
+              'Allow this selected package download first. This does not authorize other disclosures.',
+            ),
           );
         const contacts = [...selectedUids].map((uid) => client.store.get(uid));
         const files = [...query('attachments').files];
@@ -310,17 +360,17 @@ export function createMissionPackagePanel({
           files.length + contacts.length >= PACKAGE_LIMITS.entries
         )
           throw new Error(
-            'Selection changed or exceeds 127 contents. Select again.',
+            t('Selection changed or exceeds 127 contents. Select again.'),
           );
         if (files.some((file) => file.size > PACKAGE_LIMITS.entryBytes))
-          throw new Error('An attachment exceeds 8 MiB');
+          throw new Error(t('An attachment exceeds 8 MiB'));
         markPrivate();
         const attachments = [];
         let total = 0;
         for (const file of files) {
           total += file.size;
           if (total > PACKAGE_LIMITS.expandedBytes)
-            throw new Error('Attachments exceed the 32 MiB package budget');
+            throw new Error(t('Attachments exceed the 32 MiB package budget'));
           attachments.push({
             name: file.name,
             bytes: await readPackageFile(file, {
@@ -339,7 +389,10 @@ export function createMissionPackagePanel({
         signal.throwIfAborted();
         save(result.bytes, result.name, signal);
         report(
-          `Selected package offered for download · SHA-256 ${result.sha256}. ATAK/iTAK acceptance has not been verified.`,
+          t(
+            'Selected package offered for download · SHA-256 {hash}. ATAK/iTAK acceptance has not been verified.',
+            { hash: result.sha256 },
+          ),
         );
       }),
   );

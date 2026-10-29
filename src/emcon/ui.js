@@ -1,3 +1,4 @@
+import { t, msg } from '../i18n/index.js';
 // The EMCON control: a button above the TAK launcher (and in the TAK panel
 // header while the panel covers it), a banner while
 // EMCON is on, and deliberate confirmations both ways. Entering is live:
@@ -5,12 +6,15 @@
 // every feed, the TAK link and the saved-app worker restart cleanly.
 import './emcon.css';
 
-const ENTER_TEXT =
-  'Pause app network requests: close active app connections and media, freeze data feeds, and use saved maps. Received contacts, markers, drawings and installed offline routes stay available. Requests already in flight, other browser contexts and the server may still transmit.';
-const RADIO_TEXT =
-  'This app cannot switch off your device radios. Turn on Airplane Mode, then check Wi-Fi and Bluetooth are off.';
-const LEAVE_TEXT =
-  'The app reloads, reconnects to the server and resumes data feeds. Session chat and contacts received over TAK are not kept across the reload.';
+const ENTER_TEXT = msg(
+  'Pause app network requests: close active app connections and media, freeze data feeds, and use saved maps. Received contacts, markers, drawings and installed offline routes stay available. Requests already in flight, other browser contexts and the server may still transmit.',
+);
+const RADIO_TEXT = msg(
+  'This app cannot switch off your device radios. Turn on Airplane Mode, then check Wi-Fi and Bluetooth are off.',
+);
+const LEAVE_TEXT = msg(
+  'The app reloads, reconnects to the server and resumes data feeds. Session chat and contacts received over TAK are not kept across the reload.',
+);
 
 const clock = (iso) => {
   const date = iso ? new Date(iso) : null;
@@ -70,18 +74,18 @@ export function mountEmconControl({
     dialog.setAttribute('aria-modal', 'true');
     dialog.dataset.emcon = 'dialog';
     const heading = doc.createElement('h2');
-    heading.textContent = title;
+    heading.textContent = t(title);
     dialog.append(heading);
     for (const line of lines) {
       const p = doc.createElement('p');
-      p.textContent = line;
+      p.textContent = t(line);
       dialog.append(p);
     }
     const row = doc.createElement('div');
     row.className = 'gev-emcon-actions';
     const yes = doc.createElement('button');
     yes.type = 'button';
-    yes.textContent = accept;
+    yes.textContent = t(accept);
     yes.dataset.emcon = 'accept';
     yes.addEventListener('click', () => {
       closeDialog();
@@ -89,7 +93,7 @@ export function mountEmconControl({
     });
     const no = doc.createElement('button');
     no.type = 'button';
-    no.textContent = 'Cancel';
+    no.textContent = t('Cancel');
     no.dataset.emcon = 'cancel';
     no.addEventListener('click', closeDialog);
     row.append(yes, no);
@@ -103,20 +107,21 @@ export function mountEmconControl({
     const record = state.current();
     const active = Boolean(record);
     for (const element of buttons) {
-      element.textContent = active ? 'EMCON ON' : 'EMCON';
+      // i18n-ignore: EMCON is the standardized mode code; its active state is translated.
+      element.textContent = active ? t('EMCON ON') : 'EMCON';
       element.setAttribute('aria-pressed', String(active));
       element.title = active
-        ? 'Leave emissions control'
-        : 'Emissions control: pause app network requests';
+        ? t('Leave emissions control')
+        : t('Emissions control: pause app network requests');
     }
     doc.documentElement.toggleAttribute('data-emcon', active);
     banner.hidden = !active;
     banner.textContent = active
       ? [
-          'EMCON · APP REQUESTS PAUSED',
-          record.since ? `since ${clock(record.since)}` : '',
-          'feeds frozen',
-          'Airplane Mode: turn it on',
+          t('EMCON · APP REQUESTS PAUSED'),
+          record.since ? t('since {time}', { time: clock(record.since) }) : '',
+          t('feeds frozen'),
+          t('Airplane Mode: turn it on'),
           note,
         ]
           .filter(Boolean)
@@ -128,15 +133,17 @@ export function mountEmconControl({
     const { persisted } = state.set(true);
     const persistence = persisted
       ? ''
-      : 'will not survive a reload on this device';
-    note = [persistence, 'saved-app protection pending']
+      : t('will not survive a reload on this device');
+    note = [persistence, t('saved-app protection pending')]
       .filter(Boolean)
       .join(' · ');
     render();
     const confirmed = await syncWorker(true).catch(() => false);
     note = [
       persistence,
-      confirmed ? 'saved app cache-only' : 'saved-app protection unconfirmed',
+      confirmed
+        ? t('saved app cache-only')
+        : t('saved-app protection unconfirmed'),
     ]
       .filter(Boolean)
       .join(' · ');
@@ -152,16 +159,16 @@ export function mountEmconControl({
   const onClick = () => {
     if (state.isActive())
       confirm({
-        title: 'Leave EMCON?',
+        title: t('Leave EMCON?'),
         lines: [LEAVE_TEXT],
-        accept: 'Leave EMCON',
+        accept: t('Leave EMCON'),
         onAccept: () => void leave(),
       });
     else
       confirm({
-        title: 'Enter EMCON?',
+        title: t('Enter EMCON?'),
         lines: [ENTER_TEXT, RADIO_TEXT],
-        accept: 'Pause app requests',
+        accept: t('Pause app requests'),
         onAccept: () => void enter(),
       });
   };

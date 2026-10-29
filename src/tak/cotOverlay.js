@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import * as Cesium from 'cesium';
 import { geometryGraphics } from './geometryGraphics.js';
 import {
@@ -392,7 +393,9 @@ export function createCotOverlay(
                   ? 100
                   : 1000,
             protected: contact.emergency || contact.origin === 'self',
-            accessibilityLabel: `Focus ${contact.callsign}`,
+            accessibilityLabel: t('Focus {callsign}', {
+              callsign: contact.callsign,
+            }),
             activate: () => onActivate(contact.uid),
           };
           const record = entities.get(contact.uid);

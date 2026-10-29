@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { MAX_COT_DOCUMENT_BYTES } from './protocol/cot.js';
 import { describePosition } from './position.js';
 import {
@@ -6,6 +7,20 @@ import {
   TAK_TEAMS,
   TAK_TEAM_COLORS,
 } from './protocol/builders.js';
+
+function escapeHtml(text) {
+  return String(text).replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character],
+  );
+}
 
 const ROSTER_LIMIT = 150;
 const CHAT_LIMIT = 60;
@@ -19,119 +34,119 @@ const LINK_LABELS = Object.freeze({
   closed: 'LOCAL',
 });
 
-const PANEL_HTML = `
-<button class="tak-web-launcher" type="button" aria-expanded="false" aria-controls="tak-web-panel">TAK <span data-tak-badge>LOCAL</span></button>
-<section id="tak-web-panel" class="tak-web-panel" hidden aria-label="TAK operations">
+const PANEL_HTML = () => `
+<button class="tak-web-launcher" type="button" aria-expanded="false" aria-controls="tak-web-panel">TAK <span data-tak-badge>${escapeHtml(t('LOCAL'))}</span></button>
+<section id="tak-web-panel" class="tak-web-panel" hidden aria-label="${escapeHtml(t('TAK operations'))}">
   <header class="tak-web-header">
-    <strong>TAK OPERATIONS</strong>
-    <span data-tak-link role="status" aria-live="polite">LOCAL</span>
+    <strong>${escapeHtml(t('TAK OPERATIONS'))}</strong>
+    <span data-tak-link role="status" aria-live="polite">${escapeHtml(t('LOCAL'))}</span>
   </header>
-  <p class="tak-web-hint" data-tak-device-state>Foreground device state…</p>
-  <p class="tak-web-explainer" data-tak-gateway>Checking gateway…</p>
-  <label class="tak-web-check"><input type="checkbox" data-tak-visible checked/> Show TAK layer on globe</label>
+  <p class="tak-web-hint" data-tak-device-state>${escapeHtml(t('Foreground device state…'))}</p>
+  <p class="tak-web-explainer" data-tak-gateway>${escapeHtml(t('Checking gateway…'))}</p>
+  <label class="tak-web-check"><input type="checkbox" data-tak-visible checked/> ${escapeHtml(t('Show TAK layer on globe'))}</label>
   <details class="tak-web-section" data-tak-section="privacy" open>
-    <summary>PRIVATE DATA PERMISSIONS</summary>
-    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="ai"/> Allow AI / voice providers to receive private locations, context and map images for this page session</label>
-    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="sharing"/> Allow public links, scene capture / export and embedded view sharing to include private locations for this page session</label>
-    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="recording"/> Allow recording mode to include private data and locations for this page session</label>
-    <button type="button" data-tak-revoke>Revoke all permissions</button>
+    <summary>${escapeHtml(t('PRIVATE DATA PERMISSIONS'))}</summary>
+    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="ai"/> ${escapeHtml(t('Allow AI / voice providers to receive private locations, context and map images for this page session'))}</label>
+    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="sharing"/> ${escapeHtml(t('Allow public links, scene capture / export and embedded view sharing to include private locations for this page session'))}</label>
+    <label class="tak-web-check"><input type="checkbox" data-tak-disclosure="recording"/> ${escapeHtml(t('Allow recording mode to include private data and locations for this page session'))}</label>
+    <button type="button" data-tak-revoke>${escapeHtml(t('Revoke all permissions'))}</button>
   </details>
-  <p class="tak-web-hint" data-tak-privacy>Privacy protection starts when TAK data is loaded.</p>
+  <p class="tak-web-hint" data-tak-privacy>${escapeHtml(t('Privacy protection starts when TAK data is loaded.'))}</p>
   <details class="tak-web-section" data-tak-section="phone">
-    <summary>PHONE EUD / INSTALL</summary>
-    <button type="button" data-tak-install>Install / home screen</button>
-    <p class="tak-web-hint" data-tak-install-state>Private HTTPS is required on a real phone. Use Saved Maps to retain approved maps and the app for offline launch. Keep the app visible for device GPS; reliable background tracking requires native support.</p>
+    <summary>${escapeHtml(t('PHONE EUD / INSTALL'))}</summary>
+    <button type="button" data-tak-install>${escapeHtml(t('Install / home screen'))}</button>
+    <p class="tak-web-hint" data-tak-install-state>${escapeHtml(t('Private HTTPS is required on a real phone. Use Saved Maps to retain approved maps and the app for offline launch. Keep the app visible for device GPS; reliable background tracking requires native support.'))}</p>
   </details>
 
   <details class="tak-web-section" data-tak-section="identity">
-    <summary>IDENTITY · <span data-tak-whoami></span></summary>
+    <summary>${escapeHtml(t('IDENTITY ·'))} <span data-tak-whoami></span></summary>
     <form data-tak-identity-form>
-      <input data-tak-callsign-self maxlength="40" aria-label="Callsign" placeholder="Callsign" required/>
+      <input data-tak-callsign-self maxlength="40" aria-label="${escapeHtml(t('Callsign'))}" placeholder="${escapeHtml(t('Callsign'))}" required/>
       <div class="tak-web-row">
-        <select data-tak-team aria-label="Team"></select>
-        <select data-tak-role aria-label="Role"></select>
+        <select data-tak-team aria-label="${escapeHtml(t('Team'))}"></select>
+        <select data-tak-role aria-label="${escapeHtml(t('Role'))}"></select>
       </div>
-      <button type="submit">Save identity</button>
+      <button type="submit">${escapeHtml(t('Save identity'))}</button>
       <p class="tak-web-hint" data-tak-uid></p>
     </form>
   </details>
 
   <details class="tak-web-section" data-tak-section="network">
-    <summary>NETWORK</summary>
+    <summary>${escapeHtml(t('NETWORK'))}</summary>
     <form data-tak-connect-form>
-      <input data-tak-token type="password" autocomplete="off" aria-label="Gateway token (if configured)" placeholder="Gateway token (if configured)"/>
+      <input data-tak-token type="password" autocomplete="off" aria-label="${escapeHtml(t('Gateway token (if configured)'))}" placeholder="${escapeHtml(t('Gateway token (if configured)'))}"/>
       <div class="tak-web-row">
-        <button type="submit" data-tak-connect>Connect</button>
-        <button type="button" data-tak-disconnect>Disconnect</button>
-        <button type="button" data-tak-logout hidden>Sign out</button>
+        <button type="submit" data-tak-connect>${escapeHtml(t('Connect'))}</button>
+        <button type="button" data-tak-disconnect>${escapeHtml(t('Disconnect'))}</button>
+        <button type="button" data-tak-logout hidden>${escapeHtml(t('Sign out'))}</button>
       </div>
     </form>
     <p class="tak-web-hint" data-tak-uplinks></p>
   </details>
 
   <details class="tak-web-section" data-tak-section="position" open>
-    <summary>MY POSITION</summary>
-    <p class="tak-web-hint" data-tak-fix>No position set.</p>
+    <summary>${escapeHtml(t('MY POSITION'))}</summary>
+    <p class="tak-web-hint" data-tak-fix>${escapeHtml(t('No position set.'))}</p>
     <div class="tak-web-row">
-      <button type="button" data-tak-gps aria-pressed="false">Use device GPS</button>
-      <button type="button" data-tak-fix-center>Set to map center</button>
+      <button type="button" data-tak-gps aria-pressed="false">${escapeHtml(t('Use device GPS'))}</button>
+      <button type="button" data-tak-fix-center>${escapeHtml(t('Set to map center'))}</button>
     </div>
-    <label class="tak-web-check"><input type="checkbox" data-tak-sa/> Broadcast my position (SA)</label>
+    <label class="tak-web-check"><input type="checkbox" data-tak-sa/> ${escapeHtml(t('Broadcast my position (SA)'))}</label>
     <p class="tak-web-hint" data-tak-presence hidden></p>
-    <button type="button" class="tak-web-alert" data-tak-emergency aria-pressed="false">RAISE 911 ALERT</button>
+    <button type="button" class="tak-web-alert" data-tak-emergency aria-pressed="false">${escapeHtml(t('RAISE 911 ALERT'))}</button>
   </details>
 
   <details class="tak-web-section" data-tak-section="marker">
-    <summary>DROP MARKER</summary>
+    <summary>${escapeHtml(t('DROP MARKER'))}</summary>
     <form data-tak-marker-form>
-      <input data-tak-callsign maxlength="120" aria-label="Marker label" placeholder="Label" required/>
+      <input data-tak-callsign maxlength="120" aria-label="${escapeHtml(t('Marker label'))}" placeholder="${escapeHtml(t('Label'))}" required/>
       <div class="tak-web-row">
-        <input data-tak-lat aria-label="Latitude" type="number" step="any" min="-90" max="90" placeholder="Latitude" required/>
-        <input data-tak-lon aria-label="Longitude" type="number" step="any" min="-180" max="180" placeholder="Longitude" required/>
+        <input data-tak-lat aria-label="${escapeHtml(t('Latitude'))}" type="number" step="any" min="-90" max="90" placeholder="${escapeHtml(t('Latitude'))}" required/>
+        <input data-tak-lon aria-label="${escapeHtml(t('Longitude'))}" type="number" step="any" min="-180" max="180" placeholder="${escapeHtml(t('Longitude'))}" required/>
       </div>
-      <input data-tak-remarks maxlength="500" aria-label="Remarks" placeholder="Remarks (optional)"/>
+      <input data-tak-remarks maxlength="500" aria-label="${escapeHtml(t('Remarks'))}" placeholder="${escapeHtml(t('Remarks (optional)'))}"/>
       <div class="tak-web-row">
-        <button type="button" data-tak-marker-center>Map center</button>
-        <button type="submit">Add marker</button>
+        <button type="button" data-tak-marker-center>${escapeHtml(t('Map center'))}</button>
+        <button type="submit">${escapeHtml(t('Add marker'))}</button>
       </div>
-      <label class="tak-web-check"><input type="checkbox" data-tak-marker-broadcast/> Share with network</label>
+      <label class="tak-web-check"><input type="checkbox" data-tak-marker-broadcast/> ${escapeHtml(t('Share with network'))}</label>
     </form>
   </details>
 
   <div class="tak-web-roster-header">
-    <strong data-tak-count>CONTACTS · 0</strong>
-    <button type="button" data-tak-clear>Clear</button>
+    <strong data-tak-count>${escapeHtml(t('CONTACTS · 0'))}</strong>
+    <button type="button" data-tak-clear>${escapeHtml(t('Clear'))}</button>
   </div>
   <p class="tak-web-hint" data-tak-resources hidden></p>
-  <input data-tak-filter aria-label="Filter contacts" placeholder="Filter callsign…"/>
+  <input data-tak-filter aria-label="${escapeHtml(t('Filter contacts'))}" placeholder="${escapeHtml(t('Filter callsign…'))}"/>
   <div class="tak-web-roster" data-tak-list role="list"></div>
 
   <details class="tak-web-section" data-tak-section="chat">
     <summary>CHAT · ${ALL_CHAT_ROOMS.toUpperCase()} <span data-tak-chat-count></span></summary>
     <div class="tak-web-chat" data-tak-chat role="log" aria-live="polite"></div>
     <form data-tak-chat-form class="tak-web-row">
-      <input data-tak-chat-input maxlength="1000" aria-label="Chat message" placeholder="Message" required/>
-      <button type="submit">Send</button>
+      <input data-tak-chat-input maxlength="1000" aria-label="${escapeHtml(t('Chat message'))}" placeholder="${escapeHtml(t('Message'))}" required/>
+      <button type="submit">${escapeHtml(t('Send'))}</button>
     </form>
   </details>
 
   <details class="tak-web-section" data-tak-section="submissions">
-    <summary>NETWORK SUBMISSIONS <span data-tak-submission-count></span></summary>
-    <p class="tak-web-hint">Submitted means a local uplink write succeeded. Peer receipt is unconfirmed. Queued attempts expire within 30 seconds; disconnected attempts are never retried by this page.</p>
-    <div class="tak-web-chat" data-tak-submissions aria-label="Recent network submissions"></div>
+    <summary>${escapeHtml(t('NETWORK SUBMISSIONS'))} <span data-tak-submission-count></span></summary>
+    <p class="tak-web-hint">${escapeHtml(t('Submitted means a local uplink write succeeded. Peer receipt is unconfirmed. Queued attempts expire within 30 seconds; disconnected attempts are never retried by this page.'))}</p>
+    <div class="tak-web-chat" data-tak-submissions aria-label="${escapeHtml(t('Recent network submissions'))}"></div>
   </details>
 
   <details class="tak-web-section" data-tak-section="import">
-    <summary>IMPORT COT FILE</summary>
-    <label class="tak-web-label" for="tak-web-file">Import .cot or .xml (up to 1 MiB, stays local)</label>
+    <summary>${escapeHtml(t('IMPORT COT FILE'))}</summary>
+    <label class="tak-web-label" for="tak-web-file">${escapeHtml(t('Import .cot or .xml (up to 1 MiB, stays local)'))}</label>
     <input id="tak-web-file" data-tak-file type="file" accept=".cot,.xml,text/xml,application/xml"/>
-    <label class="tak-web-label" for="tak-web-xml">Or paste CoT XML</label>
+    <label class="tak-web-label" for="tak-web-xml">${escapeHtml(t('Or paste CoT XML'))}</label>
     <textarea id="tak-web-xml" data-tak-xml rows="3" spellcheck="false" placeholder="&lt;event ...&gt;...&lt;/event&gt;"></textarea>
-    <button data-tak-import type="button" class="tak-web-primary">Import XML to globe</button>
+    <button data-tak-import type="button" class="tak-web-primary">${escapeHtml(t('Import XML to globe'))}</button>
   </details>
 
-  <div class="tak-web-status" data-tak-status role="status" aria-live="polite">Imported files and unshared markers never leave this page.</div>
-  <footer data-tak-footer>NOT VERIFIED TACTICAL DATA · OPERATOR JUDGEMENT REQUIRED</footer>
+  <div class="tak-web-status" data-tak-status role="status" aria-live="polite">${escapeHtml(t('Imported files and unshared markers never leave this page.'))}</div>
+  <footer data-tak-footer>${escapeHtml(t('NOT VERIFIED TACTICAL DATA · OPERATOR JUDGEMENT REQUIRED'))}</footer>
 </section>`;
 
 function describeGateway(link, gatewayInfo) {
@@ -225,8 +240,8 @@ export function createTakPanel({
 }) {
   const root = document.createElement('section');
   root.className = 'tak-web-root';
-  root.setAttribute('aria-label', 'TAK web client');
-  root.innerHTML = PANEL_HTML;
+  root.setAttribute('aria-label', t('TAK web client'));
+  root.innerHTML = PANEL_HTML();
   document.body.appendChild(root);
   const $ = (selector) => root.querySelector(selector);
 
@@ -269,7 +284,7 @@ export function createTakPanel({
     $('[data-tak-callsign-self]').value = id.callsign;
     teamSelect.value = id.team;
     roleSelect.value = id.role;
-    $('[data-tak-uid]').textContent = `Device uid ${id.uid}`;
+    $('[data-tak-uid]').textContent = t('Device uid {uid}', { uid: id.uid });
   }
 
   function clearPrivateInputs() {
@@ -284,7 +299,7 @@ export function createTakPanel({
     $('[data-tak-submissions]').replaceChildren();
     $('[data-tak-submission-count]').textContent = '';
     renderedSubmissions = null;
-    $('[data-tak-fix]').textContent = 'No position set.';
+    $('[data-tak-fix]').textContent = t('No position set.');
     $('[data-tak-presence]').hidden = true;
     $('[data-tak-presence]').textContent = '';
     $('[data-tak-whoami]').textContent = '';
@@ -296,10 +311,10 @@ export function createTakPanel({
     gpsOn = false;
     const gps = $('[data-tak-gps]');
     gps.setAttribute('aria-pressed', 'false');
-    gps.textContent = 'Use device GPS';
+    gps.textContent = t('Use device GPS');
     const emergency = $('[data-tak-emergency]');
     emergency.setAttribute('aria-pressed', 'false');
-    emergency.textContent = 'RAISE 911 ALERT';
+    emergency.textContent = t('RAISE 911 ALERT');
   }
 
   const rosterRows = new Map();
@@ -343,7 +358,9 @@ export function createTakPanel({
     const contacts = client.store
       .list()
       .filter((c) => !filter || c.callsign.toLowerCase().includes(filter));
-    $('[data-tak-count]').textContent = `CONTACTS · ${client.store.count()}`;
+    $('[data-tak-count]').textContent = t('CONTACTS · {count}', {
+      count: client.store.count(),
+    });
     const roster = $('[data-tak-list]');
     const visible = contacts.slice(0, ROSTER_LIMIT);
     const wanted = new Set(visible.map((contact) => contact.uid));
@@ -361,7 +378,7 @@ export function createTakPanel({
       }
       const { row, entry, swatch, label, meta, remove } = record;
       entry.classList.toggle('tak-web-contact-emergency', contact.emergency);
-      entry.title = `Focus on ${contact.callsign}`;
+      entry.title = t('Focus on {callsign}', { callsign: contact.callsign });
       label.data = contact.callsign;
       swatch.className = `tak-web-swatch tak-web-${contact.origin === 'self' ? 'self' : contact.affiliation}`;
       meta.textContent = [
@@ -375,8 +392,8 @@ export function createTakPanel({
         .join(' · ');
       remove.hidden = contact.origin === 'self';
       remove.title = client.isOwnMarker(contact.uid)
-        ? `Delete ${contact.callsign} for everyone`
-        : `Remove ${contact.callsign} from this page`;
+        ? t('Delete {callsign} for everyone', { callsign: contact.callsign })
+        : t('Remove {callsign} from this page', { callsign: contact.callsign });
       remove.setAttribute('aria-label', remove.title);
       // Keep existing buttons attached across status, stale and position updates.
       // Replacing them between pointerdown/up loses a legitimate phone tap.
@@ -450,7 +467,7 @@ export function createTakPanel({
       row.textContent = `${new Date(item.createdAtMs).toISOString().slice(11, 19)}Z · ${item.kind.toUpperCase()} · ${label} · ${item.state.toUpperCase()}${item.reason ? ` · ${item.reason}` : ''}${routes ? ` · ${routes}` : ''}`;
       list.append(row);
     }
-    if (!newest) list.textContent = 'No network submissions this session.';
+    if (!newest) list.textContent = t('No network submissions this session.');
   }
 
   function render() {
@@ -476,8 +493,8 @@ export function createTakPanel({
     const reopenRequired = gatewayInfo()?.reopenRequired === true;
     $('[data-tak-logout]').hidden = !operatorSession && !reopenRequired;
     $('[data-tak-logout]').textContent = reopenRequired
-      ? 'Reopen / sign in'
-      : 'Sign out';
+      ? t('Reopen / sign in')
+      : t('Sign out');
     $('[data-tak-logout]').disabled = logoutPending;
     const tokenInput = $('[data-tak-token]');
     tokenInput.hidden = !!operatorSession || reopenRequired;
@@ -533,10 +550,10 @@ export function createTakPanel({
     $('[data-tak-device-state]').textContent =
       `${device.online ? 'BROWSER ONLINE' : 'OFFLINE / LOCAL'} · ${device.foreground ? 'FOREGROUND' : 'BACKGROUND · GPS paused'} · ${device.standalone ? 'INSTALLED' : 'BROWSER'}${device.secure ? '' : ' · PHONE HTTPS REQUIRED'}`;
     $('[data-tak-install]').textContent = device.standalone
-      ? 'Installed on this device'
+      ? t('Installed on this device')
       : device.installAvailable
-        ? 'Install EUD'
-        : 'Install / home screen';
+        ? t('Install EUD')
+        : t('Install / home screen');
     if (device.viewportHeight)
       root.style.setProperty(
         '--tak-viewport-height',
@@ -549,12 +566,12 @@ export function createTakPanel({
     $('[data-tak-sa]').checked = client.saEnabled();
     const gps = $('[data-tak-gps]');
     gps.setAttribute('aria-pressed', String(gpsOn));
-    gps.textContent = gpsOn ? 'Stop device GPS' : 'Use device GPS';
+    gps.textContent = gpsOn ? t('Stop device GPS') : t('Use device GPS');
     const emergency = $('[data-tak-emergency]');
     emergency.setAttribute('aria-pressed', String(client.emergencyActive()));
     emergency.textContent = client.emergencyActive()
-      ? 'CANCEL ALERT'
-      : 'RAISE 911 ALERT';
+      ? t('CANCEL ALERT')
+      : t('RAISE 911 ALERT');
     $('[data-tak-visible]').checked = overlay.isVisible();
     const policy = privacy.state();
     const permitted = [];
@@ -569,10 +586,15 @@ export function createTakPanel({
       if (input.checked) permitted.push(permissionLabels[scope]);
     }
     $('[data-tak-privacy]').textContent = permitted.length
-      ? `Allowed this page session: ${permitted.join(', ')}. Other uses stay protected.`
+      ? t(
+          'Allowed this page session: {permissions}. Other uses stay protected.',
+          { permissions: permitted.join(', ') },
+        )
       : policy.private
-        ? 'Protected: AI, sharing, scene capture/export and recording are blocked. Clearing or hiding contacts keeps locations protected until reload.'
-        : 'Privacy protection starts when TAK data is loaded.';
+        ? t(
+            'Protected: AI, sharing, scene capture/export and recording are blocked. Clearing or hiding contacts keeps locations protected until reload.',
+          )
+        : t('Privacy protection starts when TAK data is loaded.');
     if (!panel.hidden) {
       renderRoster();
       renderChat();

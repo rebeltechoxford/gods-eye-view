@@ -48,14 +48,14 @@ export function createMapSourceControls({
     } catch (error) {
       if (!destroyed && current === generation) {
         render(controller.getState());
-        onError(error?.message || String(error));
+        onError(t(error?.message || String(error)));
       }
       throw error;
     }
     if (destroyed || current !== generation) return state;
     render(controller.getState());
     if (state?.activeId === before && stackId !== before && state?.lastError)
-      onError(state.lastError);
+      onError(t(state.lastError));
     if (syncShare) onStateChanged();
     return state;
   }

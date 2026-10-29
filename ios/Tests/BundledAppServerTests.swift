@@ -45,6 +45,8 @@ struct BundledAppServerTests {
             let (_, response) = try await request(path)
             precondition(response.statusCode == 404)
         }
+        let (apiHead, apiHeadResponse) = try await request("/api/unknown", method: "HEAD")
+        precondition(apiHead.isEmpty && apiHeadResponse.statusCode == 404)
         let (_, rejected) = try await request("/", method: "POST")
         precondition(rejected.statusCode == 400)
         let (status, statusResponse) = try await request("/api/tak/status")

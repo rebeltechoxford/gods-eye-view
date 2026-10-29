@@ -1,3 +1,12 @@
+import { t } from '../../i18n/index.js';
+const htmlText = (value) =>
+  String(value).replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        char
+      ],
+  );
 import * as Cesium from 'cesium';
 import {
   planOfflineTiles,
@@ -139,41 +148,41 @@ export function createSavedMaps({
   const root = document.createElement('details');
   root.className = 'tak-web-section';
   root.dataset.takSection = 'maps';
-  root.innerHTML = `<summary>SAVED MAPS / OFFLINE</summary>
-    <p class="tak-web-hint">Download USGS Topo to the server and this device. These are raster maps; 3D elevation is separate. Import an authorized local MBTiles raster file below for other sources.</p>
+  root.innerHTML = `<summary>${htmlText(t('SAVED MAPS / OFFLINE'))}</summary>
+    <p class="tak-web-hint">${htmlText(t('Download USGS Topo to the server and this device. These are raster maps; 3D elevation is separate. Import an authorized local MBTiles raster file below for other sources.'))}</p>
     <form data-offline-form>
-      <input data-offline-name maxlength="80" placeholder="Saved area name" aria-label="Saved area name" value="My topographic area" required>
-      <div class="tak-web-row"><label>West<input data-offline-west type="number" step="any" min="-180" max="180" required></label><label>East<input data-offline-east type="number" step="any" min="-180" max="180" required></label></div>
-      <div class="tak-web-row"><label>South<input data-offline-south type="number" step="any" min="-85" max="85" required></label><label>North<input data-offline-north type="number" step="any" min="-85" max="85" required></label></div>
-      <button type="button" data-offline-center>Use 10 km around map center</button>
-      <div class="tak-web-row"><label>Min zoom<input data-offline-min type="number" min="0" max="23" value="8" required></label><label>Max zoom<input data-offline-max type="number" min="0" max="23" value="13" required></label></div>
+      <input data-offline-name maxlength="80" placeholder="${htmlText(t('Saved area name'))}" aria-label="${htmlText(t('Saved area name'))}" value="${htmlText(t('My topographic area'))}" required>
+      <div class="tak-web-row"><label>${htmlText(t('West'))}<input data-offline-west type="number" step="any" min="-180" max="180" required></label><label>${htmlText(t('East'))}<input data-offline-east type="number" step="any" min="-180" max="180" required></label></div>
+      <div class="tak-web-row"><label>${htmlText(t('South'))}<input data-offline-south type="number" step="any" min="-85" max="85" required></label><label>${htmlText(t('North'))}<input data-offline-north type="number" step="any" min="-85" max="85" required></label></div>
+      <button type="button" data-offline-center>${htmlText(t('Use 10 km around map center'))}</button>
+      <div class="tak-web-row"><label>${htmlText(t('Min zoom'))}<input data-offline-min type="number" min="0" max="23" value="8" required></label><label>${htmlText(t('Max zoom'))}<input data-offline-max type="number" min="0" max="23" value="13" required></label></div>
       <p class="tak-web-hint" data-offline-estimate></p>
-      <label class="tak-web-check"><input type="checkbox" data-offline-phone checked> Also retain on this device</label>
-      <p class="tak-web-hint">Saved areas and the offline app remain until deleted. Anyone using this browser profile can open them. Device storage may be removed by the OS; keep a server copy or export a backup.</p>
-      <button type="submit" data-offline-action>Download area</button>
+      <label class="tak-web-check"><input type="checkbox" data-offline-phone checked>${htmlText(t('Also retain on this device'))}</label>
+      <p class="tak-web-hint">${htmlText(t('Saved areas and the offline app remain until deleted. Anyone using this browser profile can open them. Device storage may be removed by the OS; keep a server copy or export a backup.'))}</p>
+      <button type="submit" data-offline-action>${htmlText(t('Download area'))}</button>
     </form>
     <form data-mbtiles-form>
-      <h4>IMPORT LOCAL MBTILES</h4>
-      <p class="tak-web-hint">256 px PNG/JPEG Web Mercator raster only. No vector tiles or 3D terrain. Uploads have a 15-second server deadline; interrupted uploads require the original file again.</p>
-      <label class="tak-web-hint">Local MBTiles file<input type="file" accept=".mbtiles,application/vnd.sqlite3" data-mbtiles-file required></label>
-      <input data-mbtiles-name maxlength="80" placeholder="Saved map name" aria-label="Imported saved map name" required>
-      <input data-mbtiles-source maxlength="512" placeholder="Source / publisher" aria-label="Imported map source or publisher" required>
-      <textarea data-mbtiles-license maxlength="8192" placeholder="License / permission notice" aria-label="Imported map license or permission notice" required></textarea>
-      <input data-mbtiles-edition maxlength="512" placeholder="Edition / effective date (optional)" aria-label="Imported map edition or effective date">
-      <input data-mbtiles-url maxlength="2048" type="url" placeholder="Source URL (optional; never fetched)" aria-label="Imported map informational source URL">
-      <label class="tak-web-check"><input type="checkbox" data-mbtiles-subset> Limit import to area and zooms entered above</label>
-      <p class="tak-web-hint" data-mbtiles-selection>Whole file: all supported tiles are imported within existing limits.</p>
-      <label class="tak-web-check"><input type="checkbox" data-mbtiles-rights required> I am authorized to copy and retain this map and its notices.</label>
-      <label class="tak-web-check"><input type="checkbox" data-mbtiles-phone checked> Also retain on this device and save the offline app</label>
-      <p class="tak-web-hint">This assertion records your permission; it does not verify the license or authorize AI, screenshots, sharing or recording. File contents and source notices remain private.</p>
-      <button type="submit" data-offline-action data-mbtiles-submit>Import MBTiles</button>
+      <h4>${htmlText(t('IMPORT LOCAL MBTILES'))}</h4>
+      <p class="tak-web-hint">${htmlText(t('256 px PNG/JPEG Web Mercator raster only. No vector tiles or 3D terrain. Uploads have a 15-second server deadline; interrupted uploads require the original file again.'))}</p>
+      <label class="tak-web-hint">${htmlText(t('Local MBTiles file'))}<input type="file" accept=".mbtiles,application/vnd.sqlite3" data-mbtiles-file required></label>
+      <input data-mbtiles-name maxlength="80" placeholder="${htmlText(t('Saved map name'))}" aria-label="${htmlText(t('Imported saved map name'))}" required>
+      <input data-mbtiles-source maxlength="512" placeholder="${htmlText(t('Source / publisher'))}" aria-label="${htmlText(t('Imported map source or publisher'))}" required>
+      <textarea data-mbtiles-license maxlength="8192" placeholder="${htmlText(t('License / permission notice'))}" aria-label="${htmlText(t('Imported map license or permission notice'))}" required></textarea>
+      <input data-mbtiles-edition maxlength="512" placeholder="${htmlText(t('Edition / effective date (optional)'))}" aria-label="${htmlText(t('Imported map edition or effective date'))}">
+      <input data-mbtiles-url maxlength="2048" type="url" placeholder="${htmlText(t('Source URL (optional; never fetched)'))}" aria-label="${htmlText(t('Imported map informational source URL'))}">
+      <label class="tak-web-check"><input type="checkbox" data-mbtiles-subset>${htmlText(t('Limit import to area and zooms entered above'))}</label>
+      <p class="tak-web-hint" data-mbtiles-selection>${htmlText(t('Whole file: all supported tiles are imported within existing limits.'))}</p>
+      <label class="tak-web-check"><input type="checkbox" data-mbtiles-rights required>${htmlText(t('I am authorized to copy and retain this map and its notices.'))}</label>
+      <label class="tak-web-check"><input type="checkbox" data-mbtiles-phone checked>${htmlText(t('Also retain on this device and save the offline app'))}</label>
+      <p class="tak-web-hint">${htmlText(t('This assertion records your permission; it does not verify the license or authorize AI, screenshots, sharing or recording. File contents and source notices remain private.'))}</p>
+      <button type="submit" data-offline-action data-mbtiles-submit>${htmlText(t('Import MBTiles'))}</button>
     </form>
-    <button type="button" data-offline-cancel hidden>Cancel current operation</button>
+    <button type="button" data-offline-cancel hidden>${htmlText(t('Cancel current operation'))}</button>
     <p role="status" aria-live="polite" data-offline-status></p>
-    <div class="tak-web-row"><button type="button" data-offline-refresh data-offline-action>Refresh saved maps</button><button type="button" data-offline-shell data-offline-action>Save app for offline launch</button></div>
-    <p class="tak-web-hint" data-offline-shell-state>Offline launch has not been checked on this device.</p>
-    <button type="button" data-offline-shell-delete data-offline-action>Remove offline app</button>
-    <label class="tak-web-hint">Restore a .gevmap backup<input type="file" accept=".gevmap" data-offline-import></label>
+    <div class="tak-web-row"><button type="button" data-offline-refresh data-offline-action>${htmlText(t('Refresh saved maps'))}</button><button type="button" data-offline-shell data-offline-action>${htmlText(t('Save app for offline launch'))}</button></div>
+    <p class="tak-web-hint" data-offline-shell-state>${htmlText(t('Offline launch has not been checked on this device.'))}</p>
+    <button type="button" data-offline-shell-delete data-offline-action>${htmlText(t('Remove offline app'))}</button>
+    <label class="tak-web-hint">${htmlText(t('Restore a .gevmap backup'))}<input type="file" accept=".gevmap" data-offline-import></label>
     <ul data-offline-list class="tak-saved-map-list"></ul>`;
   container.append(root);
   const $ = (selector) => root.querySelector(selector);
@@ -206,8 +215,9 @@ export function createSavedMaps({
         controller.removeLocalSource(stack.id);
     void storePromise?.then((store) => store.close()).catch(() => {});
     $('[data-offline-list]').replaceChildren();
-    $('[data-mbtiles-selection]').textContent =
-      'Reopen the application before choosing an import area.';
+    $('[data-mbtiles-selection]').textContent = t(
+      'Reopen the application before choosing an import area.',
+    );
     for (const input of root.querySelectorAll('input, textarea')) {
       input.disabled = true;
       if (input.type === 'checkbox') input.checked = false;
@@ -215,8 +225,9 @@ export function createSavedMaps({
     }
     for (const button of root.querySelectorAll('button'))
       button.disabled = true;
-    $('[data-offline-status]').textContent =
-      'Account changed. Reopen the application to use saved maps.';
+    $('[data-offline-status]').textContent = t(
+      'Account changed. Reopen the application to use saved maps.',
+    );
   });
   const status = (text) => {
     if (!destroyed && !retired) $('[data-offline-status]').textContent = text;
@@ -239,8 +250,15 @@ export function createSavedMaps({
   function estimate() {
     try {
       const tiles = planOfflineTiles(parameters());
-      $('[data-offline-estimate]').textContent =
-        `${tiles.length.toLocaleString()} tiles. Approx. ${size(tiles.length * 25_000)}; actual size varies. Limit ${OFFLINE_LIMITS.maxTiles.toLocaleString()} tiles / ${size(OFFLINE_LIMITS.maxPackBytes)}.`;
+      $('[data-offline-estimate]').textContent = t(
+        '{count} tiles. Approx. {size}; actual size varies. Limit {limit} tiles / {budget}.',
+        {
+          count: tiles.length.toLocaleString(),
+          size: size(tiles.length * 25_000),
+          limit: OFFLINE_LIMITS.maxTiles.toLocaleString(),
+          budget: size(OFFLINE_LIMITS.maxPackBytes),
+        },
+      );
     } catch (error) {
       $('[data-offline-estimate]').textContent = error.message;
     }
@@ -251,11 +269,18 @@ export function createSavedMaps({
         ? planOfflineTiles({ bounds, minZoom, maxZoom }).length
         : 0;
       $('[data-mbtiles-selection]').textContent = subset
-        ? `Subset: area and zoom limits entered above; at most ${count} cells. Boundary tiles remain whole. The entire original file still uploads and counts against quota.`
-        : 'Whole file: all supported tiles are imported within existing limits.';
+        ? t(
+            'Subset: area and zoom limits entered above; at most {count} cells. Boundary tiles remain whole. The entire original file still uploads and counts against quota.',
+            { count },
+          )
+        : t(
+            'Whole file: all supported tiles are imported within existing limits.',
+          );
     } catch (error) {
-      $('[data-mbtiles-selection]').textContent =
-        `Subset refused: ${error.message}`;
+      $('[data-mbtiles-selection]').textContent = t(
+        'Subset refused: {reason}',
+        { reason: error.message },
+      );
     }
   }
   function center() {
@@ -486,7 +511,16 @@ export function createSavedMaps({
       const pack = entry.local || entry.server;
       const row = document.createElement('li');
       const label = document.createElement('p');
-      label.textContent = `${pack.name}${pack.provenance?.selection ? ' · imported subset' : ''} · server ${entry.server?.state || 'unavailable'} · device ${entry.local?.state || 'absent'} · ${size(pack.downloadedBytes || 0)}`;
+      label.textContent = t(
+        '{name}{subset} · server {server} · device {device} · {size}',
+        {
+          name: pack.name,
+          subset: pack.provenance?.selection ? t(' · imported subset') : '',
+          server: entry.server?.state || t('unavailable'),
+          device: entry.local?.state || t('absent'),
+          size: size(pack.downloadedBytes || 0),
+        },
+      );
       row.append(label);
       if (pack.sourceId === OFFLINE_IMPORTED_SOURCE)
         button(row, 'Source / license / edition', async (nextSignal) => {
@@ -505,7 +539,23 @@ export function createSavedMaps({
           }
           const p = full.provenance;
           const s = p.selection;
-          notice.textContent = `Source: ${p.sourceTitle}\nLicense / permission: ${p.license}\nEdition / effective date: ${p.edition || 'not supplied'}\nImported: ${p.importedAt}\n${s ? `Imported subset: west ${s.bounds.west}, south ${s.bounds.south}, east ${s.bounds.east}, north ${s.bounds.north}; zoom ${s.minZoom}–${s.maxZoom}. Whole boundary tiles; sparse gaps remain blank.\n` : ''}Original SHA-256: ${p.sha256}\nInformational URL (not fetched): ${full.sourceUrl || 'not supplied'}`;
+          notice.textContent = t(
+            'Source: {source}\nLicense / permission: {license}\nEdition / effective date: {edition}\nImported: {imported}\n{subset}Original SHA-256: {hash}\nInformational URL (not fetched): {url}',
+            {
+              source: p.sourceTitle,
+              license: p.license,
+              edition: p.edition || t('not supplied'),
+              imported: p.importedAt,
+              subset: s
+                ? t(
+                    'Imported subset: west {west}, south {south}, east {east}, north {north}; zoom {min}–{max}. Whole boundary tiles; sparse gaps remain blank.\n',
+                    { ...s.bounds, min: s.minZoom, max: s.maxZoom },
+                  )
+                : '',
+              hash: p.sha256,
+              url: full.sourceUrl || t('not supplied'),
+            },
+          );
         });
       if (entry.local?.state === 'ready') {
         button(row, 'Show saved map', (nextSignal) =>
@@ -541,8 +591,9 @@ export function createSavedMaps({
       else if (entry.server?.sourceId === OFFLINE_IMPORTED_SOURCE) {
         const hint = document.createElement('p');
         hint.className = 'tak-web-hint';
-        hint.textContent =
-          'Incomplete imported map: reselect the original MBTiles file above. It cannot be repaired from USGS or the source URL.';
+        hint.textContent = t(
+          'Incomplete imported map: reselect the original MBTiles file above. It cannot be repaired from USGS or the source URL.',
+        );
         row.append(hint);
       } else if (entry.server && entry.server.state !== 'downloading')
         button(row, 'Resume server download', async (nextSignal) => {
@@ -587,8 +638,10 @@ export function createSavedMaps({
     const quota = await store.estimate();
     signal?.throwIfAborted();
     if (!accountCurrent()) throw new Error('Saved-map account context changed');
-    $('[data-offline-shell-state]').textContent =
-      `Browser storage: ${size(quota?.usage || 0)} used / ${size(quota?.quota || 0)} quota. Save the application as well as maps for disconnected launch.`;
+    $('[data-offline-shell-state]').textContent = t(
+      'Browser storage: {used} used / {quota} quota. Save the application as well as maps for disconnected launch.',
+      { used: size(quota?.usage || 0), quota: size(quota?.quota || 0) },
+    );
   }
   $('[data-mbtiles-file]').addEventListener(
     'change',

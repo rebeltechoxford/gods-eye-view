@@ -1,37 +1,8 @@
 name: iOS unsigned IPA
 
+# Build on explicit request, not on every web edit. Standard hosted runners
+# are free for public repositories; never substitute a paid/larger runner.
 on:
-  push:
-    branches: [feature/tak-ios-ipa, feature/tak-completion-20261027]
-    paths:
-      [
-        'ios/**',
-        'src/**',
-        'public/**',
-        'index.html',
-        'style.css',
-        'build/**',
-        'package*.json',
-        'scripts/stage-ios-web.mjs',
-        'scripts/build-ios-ipa.sh',
-        '.github/workflows/ios-ipa.yml',
-        'docs/TAK_IOS_IPA.md',
-      ]
-  pull_request:
-    paths:
-      [
-        'ios/**',
-        'src/**',
-        'public/**',
-        'index.html',
-        'style.css',
-        'build/**',
-        'package*.json',
-        'scripts/stage-ios-web.mjs',
-        'scripts/build-ios-ipa.sh',
-        '.github/workflows/ios-ipa.yml',
-        'docs/TAK_IOS_IPA.md',
-      ]
   workflow_dispatch:
 
 permissions:
@@ -44,6 +15,7 @@ concurrency:
 jobs:
   unsigned-device-ipa:
     name: Device IPA and simulator setup smoke
+    if: github.event.repository.private == false
     runs-on: macos-26
     timeout-minutes: 30
     env:
@@ -76,5 +48,6 @@ jobs:
             output/ios/provenance.json
             output/ios/SHA256SUMS
             output/ios/simulator-setup.png
+            output/ios/simulator-startup.json
           if-no-files-found: error
           retention-days: 7

@@ -75,7 +75,7 @@ function webUsbStatus(receiver, heard, feedState) {
       status: 'idle',
       statusMessage:
         receiver.mode === 'air'
-          ? 'receiver is in airband mode'
+          ? msg('receiver is in airband mode')
           : msg('receiver is in FM mode'),
     };
   const rate = Number.isFinite(receiver.messagesPerSecond)

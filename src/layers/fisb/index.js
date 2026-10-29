@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/marker.js';
 // FIS-B Weather: the weather and airspace picture your own 978 MHz receiver
 // hears, decoded on the host (/api/fisb). METAR stations are colored by
 // flight category; NOTAM/TFR, AIRMET, SIGMET, G-AIRMET and SUA areas are
@@ -426,8 +427,9 @@ export function createFisbLayer({
           ...base,
           status: state.missing ? 'unavailable' : 'idle',
           ...(state.missing ? { error: 'This host has no FIS-B route' } : {}),
-          statusMessage:
+          statusMessage: msg(
             'Set FISB_FEEDS on the host to a 978 MHz receiver (docs/FISB.md)',
+          ),
         };
       if (state.configured === null) return { ...base, loading: true };
       return {

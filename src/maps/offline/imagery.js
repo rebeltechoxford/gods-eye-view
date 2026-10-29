@@ -1,3 +1,4 @@
+import { t } from '../../i18n/index.js';
 import * as Cesium from 'cesium';
 import {
   validateOfflineManifest,
@@ -109,7 +110,7 @@ export function offlineSource(manifest, store, sdk = Cesium) {
     localOnly: true,
     descriptor: Object.freeze({
       id: `offline-${pack.id}`,
-      label: `Saved: ${pack.name}`,
+      label: t('Saved: {name}', { name: pack.name }),
       shortLabel: 'SAVED',
       kind: 'offline',
       requiresIon: false,

@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import {
   formatCoordinate,
   parseCoordinate,
@@ -17,30 +18,35 @@ export function navigationOrigin({
     return mapCenter
       ? {
           point: validateWaypoint(mapCenter),
-          label: 'MAP CENTER · not device GPS',
+          label: t('MAP CENTER · not device GPS'),
         }
-      : { point: null, label: 'Map center is looking at space.' };
+      : { point: null, label: t('Map center is looking at space.') };
   }
   if (!fix)
     return {
       point: null,
-      label: 'No position set. Use MY POSITION controls first.',
+      label: t('No position set. Use MY POSITION controls first.'),
     };
   if (fix.source === 'GPS') {
     if (!foreground || !gpsActive || !isGpsFixFresh(fix, nowMs))
       return {
         point: null,
-        label:
+        label: t(
           'Device GPS is stale, stopped or backgrounded. Range/bearing paused.',
+        ),
       };
     return {
       point: validateWaypoint(fix),
-      label: `DEVICE GPS · ${Number.isFinite(fix.ce) ? `±${Math.ceil(fix.ce)} m reported accuracy` : 'accuracy unknown'}`,
+      label: t('DEVICE GPS · {accuracy}', {
+        accuracy: Number.isFinite(fix.ce)
+          ? t('±{metres} m reported accuracy', { metres: Math.ceil(fix.ce) })
+          : t('accuracy unknown'),
+      }),
     };
   }
   return {
     point: validateWaypoint(fix),
-    label: 'OPERATOR-SET POSITION · not device GPS',
+    label: t('OPERATOR-SET POSITION · not device GPS'),
   };
 }
 
@@ -49,11 +55,11 @@ export function createNavigationWorkflow({ client, focusTarget, markPrivate }) {
   let target = null;
   let destroyed = false;
   function active() {
-    if (destroyed) throw new Error('Field navigation is closed.');
+    if (destroyed) throw new Error(t('Field navigation is closed.'));
   }
   function requireTarget() {
     active();
-    if (!target) throw new Error('Validate a waypoint first.');
+    if (!target) throw new Error(t('Validate a waypoint first.'));
     return target;
   }
   return Object.freeze({
@@ -91,7 +97,7 @@ export function createNavigationWorkflow({ client, focusTarget, markPrivate }) {
         label.trim().length > 120 ||
         /[\x00-\x1f\x7f]/.test(label)
       )
-        throw new Error('Enter a waypoint label of 1…120 characters.');
+        throw new Error(t('Enter a waypoint label of 1…120 characters.'));
       markPrivate();
       return client.addMarker({
         ...validateWaypoint(point),

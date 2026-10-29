@@ -27,7 +27,10 @@ The native server button offers **Configure server**. Enter the HTTPS origin of
 a GEV TAK gateway, such as `https://gev.internal:8443`, then authenticate to that
 gateway. This opens the gateway-hosted console; it is not a direct TAK TCP/TLS
 connection from the bundled page. **Return to local app** leaves setup without
-requiring a login. Local and gateway website storage have separate origins.
+requiring a login. Local and gateway website storage use separate WebKit stores. On iOS 17 and
+later, gateway sessions persist in a dedicated store; on iOS 16 they are kept
+only for the app session. Changing gateways clears gateway data and preserves
+standalone maps and preferences.
 
 | Capability | Candidate status |
 | --- | --- |
@@ -56,15 +59,16 @@ installation's `Contents/Developer` directory. The script builds the complete
 web app, stages every `dist` asset, runs native origin-policy tests, archives an
 unsigned ARM64 **device** app, validates the IPA and checks every bundled asset
 against its manifest. `--smoke` also builds and launches the simulator target.
-A simulator launch alone does not establish that the globe rendered or that
-physical-device GPS, audio, offline recovery and TAK peers work.
+The smoke requires the local application to initialize with all 34 layers and
+render a Cesium frame, and records `simulator-startup.json`. It does not establish
+physical-device GPS, audio, offline recovery or real TAK peer interoperability.
 
 Outputs:
 
 - `output/ios/GEVTAK-unsigned.ipa`
 - `output/ios/SHA256SUMS`
 - `output/ios/provenance.json`
-- `output/ios/simulator-setup.png` when using `--smoke`
+- `output/ios/simulator-setup.png` and `output/ios/simulator-startup.json` with `--smoke`
 
 No Apple signing account is needed to compile this unsigned artifact. The app
 must be signed for the device during installation. Linux cannot run this build.
@@ -72,10 +76,23 @@ must be signed for the device during installation. Linux cannot run this build.
 ## GitHub Actions
 
 The **iOS unsigned IPA** workflow in `.github/workflows/ios-ipa.yml` performs the
-same build on macOS. It runs for the integration branch when application or
-packaging files change, and can be dispatched manually. A successful run uploads
-`GEVTAK-unsigned-<commit>` containing the files above. A workflow definition or a
-push is not evidence that the build passed: inspect the run and its provenance.
+same build on a standard macOS runner. It is **manual only** to avoid spending
+build resources on every edit, and refuses to run for a private repository.
+GitHub's standard hosted runners are free for public repositories; this workflow
+does not select a larger runner, purchase minutes or alter billing settings.
+[GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+
+GitHub currently reports this fork's workflows are paused due to the scale of
+Actions usage. A repository maintainer must re-enable them on the
+[Actions page](https://github.com/rebeltechoxford/gods-eye-view/actions).
+This is why pushing the candidate did not start a build. Repeated pushes do not
+clear the pause. The GitHub API is also blocked by this cloud environment's
+current network policy; allowing it alone will not clear the repository pause.
+
+Once enabled, choose **iOS unsigned IPA → Run workflow**, select
+`feature/tak-completion-20261027`, and run it once. A successful run uploads
+`GEVTAK-unsigned-<commit>` containing the files above. Inspect that run's result
+and provenance before installing; no new IPA is available from this cloud task.
 
 ## Install with iLoader
 

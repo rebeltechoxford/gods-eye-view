@@ -1,6 +1,18 @@
+import { t, translateKnown } from '../i18n/index.js';
+
 import { isCotStale } from './protocol/cot.js';
 import { createPictureStorage } from './pictureStorage.js';
 import { createPictureWorkflow } from './pictureWorkflow.js';
+
+// Catalog strings are text, including when interpolated into trusted markup.
+const escapeHtml = (text) =>
+  String(text).replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        character
+      ],
+  );
 
 export function createPicturePanel({
   container,
@@ -15,12 +27,12 @@ export function createPicturePanel({
   section.className = 'tak-web-section';
   section.dataset.takSection = 'picture';
   section.innerHTML = `
-    <summary>DEVICE TAK PICTURE · <span data-picture-count>0</span></summary>
-    <p class="tak-web-hint">Keep one private historical picture for this account on this device. Save replaces the previous copy (500 items / 1 MiB). Own GPS, chat and position trails are excluded. Restoring never shares or updates live contacts.</p>
-    <label class="tak-web-check"><input type="checkbox" data-picture-consent> I authorize retaining these private contacts and drawings in this browser profile until I delete them. Device storage is not application-encrypted.</label>
-    <div class="tak-web-row"><button type="button" data-picture-save>Save current picture</button><button type="button" data-picture-restore>Restore saved picture</button></div>
-    <div class="tak-web-row"><button type="button" data-picture-hide>Hide historical picture</button><button type="button" data-picture-delete>Delete saved picture</button></div>
-    <p class="tak-web-hint">For offline launch, separately save the app in Saved Maps or Offline Roads. Signing out hides and locks the copy; Delete removes it. Browser storage may be cleared or evicted by the device.</p>
+    <summary>${escapeHtml(t('DEVICE TAK PICTURE ·'))} <span data-picture-count>0</span></summary>
+    <p class="tak-web-hint">${escapeHtml(t('Keep one private historical picture for this account on this device. Save replaces the previous copy (500 items / 1 MiB). Own GPS, chat and position trails are excluded. Restoring never shares or updates live contacts.'))}</p>
+    <label class="tak-web-check"><input type="checkbox" data-picture-consent> ${escapeHtml(t('I authorize retaining these private contacts and drawings in this browser profile until I delete them. Device storage is not application-encrypted.'))}</label>
+    <div class="tak-web-row"><button type="button" data-picture-save>${escapeHtml(t('Save current picture'))}</button><button type="button" data-picture-restore>${escapeHtml(t('Restore saved picture'))}</button></div>
+    <div class="tak-web-row"><button type="button" data-picture-hide>${escapeHtml(t('Hide historical picture'))}</button><button type="button" data-picture-delete>${escapeHtml(t('Delete saved picture'))}</button></div>
+    <p class="tak-web-hint">${escapeHtml(t('For offline launch, separately save the app in Saved Maps or Offline Roads. Signing out hides and locks the copy; Delete removes it. Browser storage may be cleared or evicted by the device.'))}</p>
     <p data-picture-status class="tak-web-status" role="status" aria-live="polite"></p>
     <ul data-picture-list class="tak-web-roster"></ul>`;
   container.append(section);
@@ -36,8 +48,8 @@ export function createPicturePanel({
       .join('');
     $('[data-picture-count]').textContent = String(contacts.length);
     $('[data-picture-status]').textContent = state.busy
-      ? 'Working with device storage…'
-      : state.message;
+      ? t('Working with device storage…')
+      : translateKnown(state.message);
     $('[data-picture-status]').classList.toggle('tak-web-error', state.error);
     for (const name of ['save', 'restore', 'delete'])
       $(`[data-picture-${name}]`).disabled = state.busy || state.locked;
@@ -51,7 +63,15 @@ export function createPicturePanel({
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.pictureUid = contact.uid;
-      button.textContent = `${contact.callsign} · ${isCotStale(contact.event) ? 'EXPIRED' : 'HISTORICAL'} · observed ${new Date(contact.event.timeMs).toISOString()} · ${contact.historical.source}`;
+      button.textContent = t(
+        '{callsign} · {status} · observed {time} · {source}',
+        {
+          callsign: contact.callsign,
+          status: isCotStale(contact.event) ? t('EXPIRED') : t('HISTORICAL'),
+          time: new Date(contact.event.timeMs).toISOString(),
+          source: contact.historical.source,
+        },
+      );
       row.append(button);
       return row;
     });

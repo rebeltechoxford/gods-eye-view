@@ -31,3 +31,17 @@ test('tool string bounds hold at their edges and on huge arguments', () => {
   assert.equal(validateValue(string({ maxLength: 60 }), huge).length, 1);
   assert.ok(performance.now() - started < 200, 'stops counting past the limit');
 });
+
+
+test('UTF-16 shortcut agrees with code-point counts including lone surrogates', () => {
+  for (const value of ['', 'a', 'abc', '😀', '😀😀😀', 'a😀b😀c', '\ud800', '\udc00a', 'a\ud800b']) {
+    const count = [...value].length;
+    for (let minLength = 0; minLength <= 8; minLength++) {
+      for (let maxLength = minLength; maxLength <= 8; maxLength++) {
+        const result = validateValue({ type: 'string', minLength, maxLength }, value);
+        assert.equal(result.length, Number(count < minLength) + Number(count > maxLength),
+          JSON.stringify({ value, minLength, maxLength }));
+      }
+    }
+  }
+});

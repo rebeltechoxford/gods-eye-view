@@ -12,7 +12,7 @@ case "${1:-}" in
 esac
 task_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # Bundle the entire current web application before invoking Xcode.
-(cd "$task_root" && npm run build && node scripts/stage-ios-web.mjs)
+(cd "$task_root" && node --test src/tooling/stageIosWeb.test.mjs && npm run build && node scripts/stage-ios-web.mjs)
 output_root="$task_root/output/ios"
 mkdir -p "$output_root"
 build_root="$(mktemp -d "$output_root/build.XXXXXX")"
@@ -83,7 +83,7 @@ PY
 
 mkdir "$build_root/Payload"
 /usr/bin/ditto "$app" "$build_root/Payload/GEVTAK.app"
-ipa="$output_root/GEVTAK-unsigned.ipa"
+ipa="$build_root/GEVTAK-unsigned.ipa"
 /usr/bin/ditto -c -k --norsrc --keepParent "$build_root/Payload" "$ipa"
 python3 - "$ipa" <<'PY'
 import hashlib, json, plistlib, sys, zipfile
@@ -97,6 +97,12 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     assert not any('/../' in name or name.startswith('/') for name in names)
     manifest = json.loads(archive.read('Payload/GEVTAK.app/WebApp/bundle-manifest.json'))
     assert any(f['path'] == 'index.html' for f in manifest['files'])
+    paths = [entry['path'] for entry in manifest['files']]
+    assert len(paths) == len(set(paths)), 'Duplicate bundle manifest entries'
+    assert all(not p.startswith('/') and '..' not in p.split('/') for p in paths)
+    bundle_prefix = 'Payload/GEVTAK.app/WebApp/'
+    actual = {name[len(bundle_prefix):] for name in names if name.startswith(bundle_prefix) and not name.endswith('/')}
+    assert actual == set(paths) | {'bundle-manifest.json'}, 'Bundled files differ from the manifest'
     for entry in manifest['files']:
         assert hashlib.sha256(archive.read('Payload/GEVTAK.app/WebApp/' + entry['path'])).hexdigest() == entry['sha256']
     assert archive.testzip() is None
@@ -145,14 +151,29 @@ print('PASS: simulator finished boot and system data migration')
 PY
   simulator_app="$build_root/DerivedData-simulator/Build/Products/Debug-iphonesimulator/GEVTAK.app"
   xcrun simctl install "$simulator_id" "$simulator_app"
-  launch_result="$(xcrun simctl launch "$simulator_id" "$bundle_id")"
+  launch_result="$(xcrun simctl launch "$simulator_id" "$bundle_id" --gev-smoke)"
   printf '%s\n' "$launch_result"
   app_pid="${launch_result##*: }"
   [[ "$app_pid" =~ ^[0-9]+$ ]]
-  sleep 3
-  kill -0 "$app_pid"
-  xcrun simctl io "$simulator_id" screenshot "$output_root/simulator-setup.png"
-  printf '%s\n' 'PASS: simulator build, install and running setup-screen smoke (no server configured)'
+  app_data="$(xcrun simctl get_app_container "$simulator_id" "$bundle_id" data)"
+  python3 - "$app_data/Library/Caches/gev-startup-smoke.json" "$app_pid" "$build_root" <<'PYSMOKE'
+import json, os, pathlib, sys, time
+marker = pathlib.Path(sys.argv[1])
+for _ in range(150):
+    os.kill(int(sys.argv[2]), 0)
+    if marker.exists():
+        record = json.loads(marker.read_text())
+        assert record.get('ready') is True, record
+        assert record.get('layers', 0) >= 34, record
+        (pathlib.Path(sys.argv[3])/'simulator-startup.json').write_text(json.dumps(record, indent=2)+'\n')
+        break
+    time.sleep(1)
+else:
+    raise RuntimeError('Bundled GEV did not initialize and render in the simulator')
+print('PASS: bundled GEV initialized, retained its layers and rendered a Cesium frame')
+PYSMOKE
+  xcrun simctl io "$simulator_id" screenshot "$build_root/simulator-setup.png"
+  printf '%s\n' 'PASS: simulator bundled-app startup and render smoke (no server configured)'
 fi
 
 python3 - "$task_root" "$ipa" "$architectures" "$smoke" "${runtime_id:-}" "${device_type:-}" <<'PY'
@@ -171,7 +192,8 @@ provenance = {
     'architectures': sys.argv[3].split(), 'bundleIdentifier': 'uk.rebeltechoxford.gevtak',
     'platform': 'iPhoneOS', 'signing': 'unsigned; personal signing required',
     'deviceArchiveValidated': True, 'payloadValidated': True,
-    'endpointPolicyTestsPassed': True, 'simulatorLaunchSmokePassed': sys.argv[4] == '1',
+    'endpointPolicyTestsPassed': True, 'bundledServerTestsPassed': True,
+    'simulatorLaunchSmokePassed': sys.argv[4] == '1', 'simulatorBundledRenderPassed': sys.argv[4] == '1',
     'simulatorRuntime': sys.argv[5] or None, 'simulatorDeviceType': sys.argv[6] or None,
     'physicalDeviceTested': False, 'privateEndpointConfigured': False,
     'liveTakPeerTested': False, 'bundledWebApp': True, 'standaloneDeviceAcceptancePassed': False,
@@ -182,3 +204,10 @@ provenance = {
 (ipa.parent/'SHA256SUMS').write_text(f'{sha}  {ipa.name}\n')
 print(f'Unsigned IPA ready: {ipa.name}; SHA-256 {sha}')
 PY
+
+# Publish only a fully validated artifact; a failed simulator check cannot leave
+# an unverified new IPA under the final output filename.
+mv "$ipa" "$build_root/provenance.json" "$build_root/SHA256SUMS" "$output_root/"
+if [[ "$smoke" == 1 ]]; then
+  mv "$build_root/simulator-setup.png" "$build_root/simulator-startup.json" "$output_root/"
+fi

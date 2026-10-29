@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { referenceMap } from '../maps/referenceCatalog.js';
 
 /** Extra curated sources share the existing controller selection owner. */
@@ -14,14 +15,14 @@ export function createMapReferenceControls({
   const root = doc.createElement('div');
   root.className = 'map-reference-controls';
   const label = doc.createElement('label');
-  label.textContent = 'More maps / charts';
+  label.textContent = t('More maps / charts');
   const select = doc.createElement('select');
   select.id = 'map-reference-select';
-  select.setAttribute('aria-label', 'More maps and charts');
+  select.setAttribute('aria-label', t('More maps and charts'));
   label.htmlFor = select.id;
   const placeholder = doc.createElement('option');
   placeholder.value = '';
-  placeholder.textContent = 'Choose a reference map or chart…';
+  placeholder.textContent = t('Choose a reference map or chart…');
   select.appendChild(placeholder);
   const groups = new Map();
   for (const stack of references) {
@@ -29,13 +30,13 @@ export function createMapReferenceControls({
     let group = groups.get(descriptor.family);
     if (!group) {
       group = doc.createElement('optgroup');
-      group.label = descriptor.family;
+      group.label = t(descriptor.family);
       select.appendChild(group);
       groups.set(descriptor.family, group);
     }
     const option = doc.createElement('option');
     option.value = stack.id;
-    option.textContent = descriptor.label;
+    option.textContent = t(descriptor.label);
     option.disabled = stack.available === false;
     group.appendChild(option);
   }
@@ -56,12 +57,14 @@ export function createMapReferenceControls({
       if (!descriptor) return;
       const text = doc.createElement('p');
       text.textContent = [
-        descriptor.coverage,
-        descriptor.lifecycle,
+        t(descriptor.coverage),
+        t(descriptor.lifecycle),
         descriptor.referenceOnly
-          ? 'Reference display only. Check current official charts and notices before navigation.'
+          ? t(
+              'Reference display only. Check current official charts and notices before navigation.',
+            )
           : '',
-        `Credit: ${descriptor.credit}.`,
+        t('Credit: {credit}.', { credit: descriptor.credit }),
       ]
         .filter(Boolean)
         .join(' ');
@@ -69,7 +72,7 @@ export function createMapReferenceControls({
       terms.href = descriptor.termsUrl;
       terms.target = '_blank';
       terms.rel = 'noopener noreferrer';
-      terms.textContent = 'Source information and terms';
+      terms.textContent = t('Source information and terms');
       details.append(text, terms);
     },
     destroy() {

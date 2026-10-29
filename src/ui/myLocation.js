@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import * as Cesium from 'cesium';
 
 const DOT_COLOR = Cesium.Color.fromCssColorString('#1a73e8');
@@ -75,7 +76,7 @@ export function createMyLocation({
   });
   const dot = dataSource.entities.add({
     id: 'my-location',
-    name: 'My location',
+    name: t('My location'),
     show: false,
     position: Cesium.Cartesian3.fromDegrees(0, 0),
     point: {
@@ -95,10 +96,10 @@ export function createMyLocation({
     button.dataset.state = state;
     button.setAttribute('aria-pressed', String(state !== 'off'));
     const label = {
-      off: 'Show my location',
-      locating: 'Finding your location. Tap to stop',
-      shown: 'Center on my location and follow',
-      following: 'Following your location. Tap to turn off',
+      off: t('Show my location'),
+      locating: t('Finding your location. Tap to stop'),
+      shown: t('Center on my location and follow'),
+      following: t('Following your location. Tap to turn off'),
     }[state];
     button.setAttribute('aria-label', label);
     button.title = label;
@@ -250,12 +251,14 @@ export function createMyLocation({
   function onError(message) {
     if (destroyed) return;
     turnOff();
-    showToast(message || 'Device location unavailable');
+    showToast(t(message) || t('Device location unavailable'));
   }
 
   function turnOn() {
     if (!isSecureContext()) {
-      showToast('Your location needs the app opened over HTTPS (or localhost)');
+      showToast(
+        t('Your location needs the app opened over HTTPS (or localhost)'),
+      );
       return;
     }
     followOnFix = true;
@@ -265,7 +268,7 @@ export function createMyLocation({
       // A synchronous permission error has already turned off and said why.
       if (state !== 'off') {
         turnOff();
-        showToast('Device location is not available in this browser');
+        showToast(t('Device location is not available in this browser'));
       }
       return;
     }

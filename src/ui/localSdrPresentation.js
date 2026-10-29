@@ -122,7 +122,7 @@ const FREQUENCY_FIELDS = Object.freeze({
     decimals: 1,
   }),
   air: Object.freeze({
-    label: 'AIR CARRIER MHZ',
+    label: msg('AIR CARRIER MHZ'),
     min: (AIRBAND_MIN_HZ / 1_000_000).toFixed(3),
     max: (AIRBAND_MAX_HZ / 1_000_000).toFixed(3),
     step: '0.005',
@@ -249,16 +249,16 @@ export function localSdrCardView(state) {
       ? !streaming
       : !fmInteractive || Boolean(state.seeking),
     seekGroupLabel: airActive
-      ? 'Step airband channels'
-      : 'Seek broadcast FM stations',
-    seekBackLabel: airActive ? '◀ 25 KHZ' : '◀ SEEK',
-    seekForwardLabel: airActive ? '25 KHZ ▶' : 'SEEK ▶',
+      ? t('Step airband channels')
+      : t('Seek broadcast FM stations'),
+    seekBackLabel: airActive ? '◀ 25 KHZ' : t('◀ SEEK'),
+    seekForwardLabel: airActive ? '25 KHZ ▶' : t('SEEK ▶'),
     seekBackTitle: airActive
-      ? 'Step down one 25 kHz airband channel'
-      : 'Seek down to the previous FM station',
+      ? t('Step down one 25 kHz airband channel')
+      : t('Seek down to the previous FM station'),
     seekForwardTitle: airActive
-      ? 'Step up one 25 kHz airband channel'
-      : 'Seek up to the next FM station',
+      ? t('Step up one 25 kHz airband channel')
+      : t('Seek up to the next FM station'),
     squelchHidden: !airActive,
     squelchValue: String(squelch),
     squelchText: formatSquelch(squelch),

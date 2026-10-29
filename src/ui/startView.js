@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import * as Cesium from 'cesium';
 import { markTakDataPrivate, takPrivacyState } from '../tak/privacy.js';
 
@@ -10,6 +11,7 @@ export const START_VIEW_PRESETS = Object.freeze({
   // Downtown Austin, the original project's load view. Builds without
   // VITE_GEV_START_VIEW (CI and the browser gates) keep it.
   austin: Object.freeze({
+    // i18n-ignore: geographic proper name retained in saved data
     label: 'Austin',
     lat: 30.2672,
     lon: -97.7431,
@@ -19,6 +21,7 @@ export const START_VIEW_PRESETS = Object.freeze({
   }),
   // The Square, Oxford, MS (Lafayette County Courthouse at 34.3662, -89.5192).
   oxford: Object.freeze({
+    // i18n-ignore: geographic proper name retained in saved data
     label: 'Oxford',
     lat: 34.3572,
     lon: -89.5221,
@@ -257,11 +260,13 @@ export function bindStartViewControls({
     const saved = canUseStorage() ? readStartView(storage, storageKey) : null;
     const name = saved
       ? saved.label || formatStartViewPlace(saved)
-      : `${DEFAULT_START_VIEW.label} (default)`;
-    status.textContent = `Start view: ${name}`;
+      : t('{place} (default)', { place: DEFAULT_START_VIEW.label });
+    status.textContent = t('Start view: {place}', { place: name });
     status.title = saved
-      ? 'The app opens here on this device unless a share link or saved map says otherwise'
-      : 'The built-in start view';
+      ? t(
+          'The app opens here on this device unless a share link or saved map says otherwise',
+        )
+      : t('The built-in start view');
     clear.hidden = !saved;
   }
 
@@ -270,7 +275,7 @@ export function bindStartViewControls({
     // search, which may no longer be where the camera is.
     const view = captureStartView(viewer);
     if (!view) {
-      showToast('This view cannot be used as the start view');
+      showToast(t('This view cannot be used as the start view'));
       return;
     }
     const record = {
@@ -280,13 +285,17 @@ export function bindStartViewControls({
     };
     if (!canUseStorage() || !store.set(storageKey, JSON.stringify(record))) {
       showToast(
-        'Browser or operator storage is blocked; the start view was not saved',
+        t(
+          'Browser or operator storage is blocked; the start view was not saved',
+        ),
       );
       return;
     }
     render();
     showToast(
-      `The app will open here: ${view.label || formatStartViewPlace(view)}`,
+      t('The app will open here: {place}', {
+        place: view.label || formatStartViewPlace(view),
+      }),
     );
   }
 
@@ -294,12 +303,18 @@ export function bindStartViewControls({
     if (!canUseStorage() || !store.remove(storageKey)) {
       render();
       showToast(
-        'Browser or operator storage is blocked; the start view was not reset',
+        t(
+          'Browser or operator storage is blocked; the start view was not reset',
+        ),
       );
       return;
     }
     render();
-    showToast(`The app will open on ${DEFAULT_START_VIEW.label} again`);
+    showToast(
+      t('The app will open on {place} again', {
+        place: DEFAULT_START_VIEW.label,
+      }),
+    );
   }
 
   set.addEventListener('click', onSet);

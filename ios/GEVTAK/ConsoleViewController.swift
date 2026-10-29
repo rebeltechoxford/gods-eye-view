@@ -4,6 +4,14 @@ import WebKit
 @MainActor
 final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, UIDocumentPickerDelegate {
     private static let endpointKey = "approvedConsoleOrigin"
+    // Keep gateway cookies and storage separate from persistent local maps.
+    // iOS 16 lacks named persistent stores, so gateway sessions are ephemeral there.
+    private let gatewayStore: WKWebsiteDataStore = {
+        if #available(iOS 17.0, *) {
+            return WKWebsiteDataStore(forIdentifier: UUID(uuidString: "F9F43D3B-60D8-49F6-AFB8-C8F1263C715C")!)
+        }
+        return .nonPersistent()
+    }()
     private var bundledServer: BundledAppServer?
     private var standalone = false
     private var endpoint: EndpointOrigin?
@@ -20,6 +28,9 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     private var declineExport: (() -> Void)?
     private var exportFile: URL?
     private var downloadTimer: Timer?
+#if DEBUG
+    private var smokeChecksRemaining = 120
+#endif
     private let exportRoot = FileManager.default.temporaryDirectory.appendingPathComponent("GEVTAKExports", isDirectory: true)
 
     override func viewDidLoad() {
@@ -130,6 +141,11 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         if bundledServer != nil { showConsole(BundledAppServer.origin); return }
         let server = BundledAppServer(root: root)
         bundledServer = server
+        server.didFail = { [weak self, weak server] error in
+            guard let self, self.bundledServer === server else { return }
+            self.bundledServer = nil
+            if self.standalone { self.showMessage("Local app unavailable", "The local service stopped. Use Reload to restart it.") }
+        }
         do {
             try server.start { [weak self] error in
                 guard let self else { return }
@@ -177,7 +193,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         standalone = url == BundledAppServer.origin
         entryContainer.isHidden = true
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = standalone ? .default() : gatewayStore
         configuration.allowsInlineMediaPlayback = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let console = WKWebView(frame: .zero, configuration: configuration)
@@ -201,7 +217,10 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     }
 
     @objc private func goBack() { if webView?.canGoBack == true { webView?.goBack() } }
-    @objc private func reloadConsole() { webView?.reloadFromOrigin() }
+    @objc private func reloadConsole() {
+        if standalone && bundledServer == nil { openStandalone() }
+        else { webView?.reloadFromOrigin() }
+    }
 
     @objc private func changeServer() {
         guard !clearingWebsite else { return }
@@ -212,7 +231,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
             present(choice, animated: true)
             return
         }
-        let alert = UIAlertController(title: "Change private server?", message: "First use TAK → NETWORK → Sign out to revoke your server session. Continue clears this device's WebKit cookies and website data. It does not confirm server-side sign-out.", preferredStyle: .alert)
+        let alert = UIAlertController(title: "Change private server?", message: "First use TAK → NETWORK → Sign out to revoke your server session. Continue clears gateway cookies and gateway website data on this device. Local maps and preferences are kept. It does not confirm server-side sign-out.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Clear this device", style: .destructive) { [weak self] _ in self?.clearDevice() })
         present(alert, animated: true)
@@ -230,7 +249,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         webView = nil
         endpoint = nil
         UserDefaults.standard.removeObject(forKey: Self.endpointKey)
-        WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { [weak self] in
+        gatewayStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { [weak self] in
             Task { @MainActor in
                 self?.clearingWebsite = false
                 self?.openStandalone()
@@ -304,17 +323,72 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         } else { decisionHandler(.allow) }
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { backItem.isEnabled = webView.canGoBack }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
+        backItem.isEnabled = webView.canGoBack
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--gev-smoke"), standalone {
+            checkBundledStartup(webView)
+        }
+#endif
+    }
+#if DEBUG
+    // Opt-in simulator evidence only. This is not present in release IPAs.
+    private func checkBundledStartup(_ candidate: WKWebView) {
+        guard candidate === webView, standalone, smokeChecksRemaining > 0 else { return }
+        smokeChecksRemaining -= 1
+        let script = """
+        (() => {
+          const app = window.__godsEyeView;
+          const viewer = app?.viewer;
+          const layers = app?.dataManager?.layers?.size || 0;
+          const initialized = !!viewer && !viewer.isDestroyed() && !!app.takClient && layers >= 34;
+          if (initialized && !window.__gevSmokeRenderRequested) {
+            window.__gevSmokeRenderRequested = true;
+            const remove = viewer.scene.postRender.addEventListener(() => {
+              window.__gevSmokeRendered = true;
+              remove();
+            });
+            viewer.scene.requestRender();
+          }
+          return {ready: initialized && !!window.__gevSmokeRendered,
+            layers, origin: location.origin, title: document.title};
+        })()
+        """
+        candidate.evaluateJavaScript(script) { [weak self, weak candidate] value, error in
+            guard let self, let candidate, candidate === self.webView, self.standalone else { return }
+            var record = value as? [String: Any] ?? ["ready": false]
+            if let error { record["error"] = error.localizedDescription }
+            let passed = record["ready"] as? Bool == true && record["origin"] as? String == BundledAppServer.origin.absoluteString
+            if passed || self.smokeChecksRemaining == 0 {
+                record["ready"] = passed
+                if let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
+                   let bytes = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) {
+                    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try? bytes.write(to: directory.appendingPathComponent("gev-startup-smoke.json"), options: .atomic)
+                }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak candidate] in
+                    if let candidate { self?.checkBundledStartup(candidate) }
+                }
+            }
+        }
+    }
+#endif
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code == NSURLErrorCancelled { return }
-        showMessage("Secure connection unavailable", "Check your approved server address, private network and the phone's trusted certificate chain. Certificate errors are not bypassed. Use Reload after correcting the connection.")
+        if standalone {
+            showMessage("Local app unavailable", "The bundled app could not load. Use Reload to retry the local service.")
+        } else {
+            showMessage("Secure connection unavailable", "Check your approved server address, private network and the phone's trusted certificate chain. Certificate errors are not bypassed. Use Reload after correcting the connection.")
+        }
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         showMessage("Console stopped", "WebKit stopped the page. Reload the console and reconnect if needed. Tactical data from the old page is not restored.")
     }
 
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        let allowed = UIApplication.shared.applicationState == .active && frame.isMainFrame &&
+        let allowed = webView === self.webView && !clearingWebsite && UIApplication.shared.applicationState == .active && frame.isMainFrame &&
             trusted(scheme: origin.protocol, host: origin.host, port: origin.port)
         decisionHandler(allowed ? .prompt : .deny)
     }
@@ -356,7 +430,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     }
 
     private func consoleDialog(_ message: String) -> UIAlertController {
-        UIAlertController(title: endpoint?.string ?? "Private console", message: String(message.prefix(4096)), preferredStyle: .alert)
+        UIAlertController(title: standalone ? "GEV TAK" : (endpoint?.string ?? "Private console"), message: String(message.prefix(4096)), preferredStyle: .alert)
     }
 
     private var canBeginExport: Bool {
@@ -441,7 +515,7 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
     }
 
     func download(_ download: WKDownload, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, decisionHandler: @escaping @MainActor @Sendable (WKDownload.RedirectPolicy) -> Void) {
-        let allowed = download === activeDownload && request.url.map { endpoint?.contains($0) == true } == true
+        let allowed = download === activeDownload && request.url.map { trusted($0) } == true
         decisionHandler(allowed ? .allow : .cancel)
     }
 
@@ -506,5 +580,5 @@ final class ConsoleViewController: UIViewController, WKNavigationDelegate, WKUID
         try? FileManager.default.removeItem(at: expected)
     }
     // No authentication-challenge override, script-message handlers, injected
-    // scripts, native HTTP transport, or JavaScript evaluation are installed.
+    // scripts or remote native HTTP transport are installed.
 }

@@ -66,27 +66,38 @@ hashed and checked again inside the IPA by the packaging script.
 
 ## Validation and release status
 
-The full web build and all 12 synthetic TAK browser scenarios passed, including
-34-layer startup, CoT import, marker submission, chat updates, privacy checks,
-phone-width controls and teardown. Icon provenance/coverage tests pass. The full unit run completed 9,646 tests: 9,643 passed, 2 failed, 1 skipped.
-One failure is the untranslated-UI audit described below. The other was the
-200 ms large-string timing assertion during concurrent browser/build work;
-both tests in that file passed on an isolated rerun (70.6 ms for the large-string
-case), without changing the threshold. All 12 GPS/follow/saved-view browser
-checks passed. Package boundaries, formatting and setup-doctor checks passed.
-All 471 staged iOS web files match both `dist` and their recorded SHA-256 hashes.
+The repair run completed `npm test` successfully: **9,667 passed, zero failed,
+one skipped** (Windows-only native ACL check) across the main suite and both serialized allocation suites.
+No test assertions or allocation budgets were disabled or loosened. The previous
+large-string failure was fixed by using a UTF-16 lower bound before iteration,
+avoiding V8 flattening a huge string unnecessarily; Unicode edge cases are tested.
 
-This is a development candidate, not a certified full-feature iPhone release.
-The upstream translation audit exposes English-only copy in the fork's TAK,
-offline-map, routing and location additions. That check remains enabled and is
-an open defect; existing upstream catalogs are retained.
+`npm run i18n` passes: all 3,125 catalog messages are complete in Spanish,
+Russian, Simplified Chinese and Traditional Chinese. The fork's TAK, map, routing,
+EMCON and location controls now use the existing translation system. Some
+server-supplied diagnostics retain their English fallback. Translated HTML is
+escaped, and protocol identifiers remain unchanged.
 
-Native source cannot be compiled on this Linux machine. macOS build, simulator
-rendering and physical-iPhone acceptance remain outstanding. The saved cloud
-network draft includes `api.github.com`, but runtime API requests return proxy
-403 until that setting is applied; Git access and the public Actions web page
-are separate capabilities. Do not report an IPA until a successful run produces
-and validates one.
+The production build, boundary checks and formatting pass. All 471 production
+assets stage successfully. Staging now publishes atomically, rejects symlinks and
+credential files, and has five passing filesystem regression tests. IPA packaging
+checks the exact asset inventory and publishes outputs only after its checks pass.
+
+Native fixes separate gateway storage from standalone storage so changing gateways
+preserves local maps/preferences. Local listener failures can recover through
+Reload. HTTP Host/HEAD handling, download redirects and retired-view permissions
+are tightened. These Swift changes remain **uncompiled in this Linux environment**.
+The macOS smoke now requires the full application to initialize, retain all 34
+layers and render a Cesium frame; its implementation is not evidence of a run.
+
+The repair browser run passed all 12 synthetic TAK scenarios against a fresh
+local lab, retaining the original transport and privacy assertions. An earlier
+run on the long-lived lab timed out waiting for a submission confirmation;
+the peer echo arrived, and the timeout did not recur after the lab restarted.
+The cause is not established. Bounded, token-free delivery diagnostics now
+accompany failed QA runs. Prior GPS/follow/saved-view verification passed all
+12 scenarios; the localization changes also passed focused location/UI tests.
+This remains a development candidate, not a full ATAK/iTAK replacement.
 
 ## Remaining work required by the requested product
 
@@ -97,7 +108,6 @@ and validates one.
   other Node APIs need a reachable gateway. Bundling UI code does not embed Node.
 - Native durable offline map storage, real-device permission/recovery testing,
   background GPS/transport and actual peer interoperability.
-- Complete localization of the fork's added controls.
 - A capability-by-capability ATAK/iTAK acceptance matrix. Full plugin/hardware
   parity has not been implemented or established by the existing tests.
 
@@ -106,10 +116,17 @@ synthetic TCP peers as ATAK/WinTAK/iTAK interoperability evidence.
 
 ## Delivery record
 
-The candidate was pushed to `origin/feature/tak-completion-20261027`; integration
-commit `832b13c7` includes the upstream merge and local-bundle source. The public
-Actions page did not show a run for this branch after the push, so automatic build
-startup is not confirmed. With access to the repository, dispatch **iOS unsigned
-IPA** for this branch and inspect its result. No new IPA was retrieved or produced
-in this environment. The cloud startup draft has been updated for this candidate;
-saving it does not apply the pending API network setting or publish an environment.
+Changes are on `feature/tak-completion-20261027`. The initial integrated source
+is commit `832b13c7`; subsequent fixes are on the same branch.
+
+The public GitHub Actions page explicitly reports: **“Workflows are not currently
+being run on this fork due to the scale of GitHub Actions usage. A repository
+maintainer can choose to re-enable these.”** This explains the missing builds;
+repeated pushes cannot clear it. The cloud GitHub API route separately returns
+proxy 403. Applying the pending API allowlist alone will not clear GitHub's pause.
+
+The IPA workflow is now manual-only and refuses private repositories, uses a
+standard hosted macOS runner, and does not enable paid runners or change billing.
+A maintainer must re-enable workflows on the repository Actions page, then run
+**iOS unsigned IPA** for `feature/tak-completion-20261027`. No new IPA has been
+produced or retrieved here. See [iLoader instructions](docs/TAK_IOS_IPA.md).

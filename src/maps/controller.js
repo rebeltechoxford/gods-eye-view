@@ -1,3 +1,4 @@
+import { msg } from '../i18n/marker.js';
 import { indexMapSources } from './registry.js';
 import * as Cesium from 'cesium';
 import { createMapCredits } from './credits.js';
@@ -117,7 +118,7 @@ export class MapSourceController {
       this._activeImageryProvider = null;
       this._credits.show(null);
       this._activeId = null;
-      this._lastError = 'Saved map removed';
+      this._lastError = msg('Saved map removed');
     }
     this._sources.delete(id);
     const cached = this._imageryProviders.get(id);

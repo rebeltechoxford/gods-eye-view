@@ -348,7 +348,9 @@ function errorState(text) {
 
 function streamingMessage(mode) {
   if (mode === 'adsb') return t('Receiving 1090 MHz ADS-B');
-  return mode === 'air' ? 'Receiving airband AM' : t('Receiving broadcast FM');
+  return mode === 'air'
+    ? t('Receiving airband AM')
+    : t('Receiving broadcast FM');
 }
 
 /**
@@ -1640,7 +1642,7 @@ export class SdrController {
       if (modeHasAudio(nextMode) && !(await this._ensureAudio())) {
         throw new Error(
           nextMode === 'air'
-            ? 'Browser audio is suspended; select AIR again to resume it'
+            ? msg('Browser audio is suspended; select AIR again to resume it')
             : t('Browser audio is suspended; select FM again to resume it'),
         );
       }
@@ -1829,7 +1831,11 @@ export class SdrController {
         squelchOpen: false,
         ...(quiet
           ? {}
-          : { message: `Tuned to ${formatAirMhz(frequency)} MHz AM` }),
+          : {
+              message: t('Tuned to {frequency} MHz AM', {
+                frequency: formatAirMhz(frequency),
+              }),
+            }),
       });
       return true;
     } catch (error) {

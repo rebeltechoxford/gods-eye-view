@@ -168,16 +168,16 @@
                 <strong data-i18n>LOCAL RTL-SDR</strong>
                 <span id="sdr-connection-state" data-i18n-runtime>NO USB</span>
               </div>
-              <p>Chrome/Edge · WebUSB · one local tuner shared by FM, airband and the Local ADS-B layer.</p>
+              <p data-i18n>Chrome/Edge · WebUSB · one local tuner shared by FM, airband and the Local ADS-B layer.</p>
               <div class="sdr-radio-actions">
                 <button id="sdr-connect-btn" class="panel-layer-toggle" type="button" aria-pressed="false" data-i18n>CONNECT</button>
                 <button id="sdr-locate-btn" type="button" title="Use your location for faster ADS-B position decoding" data-i18n-title data-i18n>LOCATE</button>
                 <button id="sdr-change-device-btn" type="button" title="Choose a different RTL-SDR or receiver channel" data-i18n-title data-i18n>CHANGE DEVICE</button>
               </div>
               <div class="sdr-mode-row" role="group" aria-label="RTL-SDR receiver mode" data-i18n-aria-label>
-                <button id="sdr-mode-fm-btn" class="active" type="button" aria-pressed="true" title="Broadcast FM radio">FM</button>
-                <button id="sdr-mode-air-btn" type="button" aria-pressed="false" title="Airband: aircraft and ATC voice, AM, 118.000–136.975 MHz">AIR</button>
-                <button id="sdr-mode-adsb-btn" type="button" aria-pressed="false">ADS-B · 1090</button>
+                <button id="sdr-mode-fm-btn" class="active" type="button" aria-pressed="true" title="Broadcast FM radio" data-i18n-title translate="no">FM</button>
+                <button id="sdr-mode-air-btn" type="button" aria-pressed="false" title="Airband: aircraft and ATC voice, AM, 118.000–136.975 MHz" data-i18n-title translate="no">AIR</button>
+                <button id="sdr-mode-adsb-btn" type="button" aria-pressed="false" translate="no">ADS-B · 1090</button>
               </div>
               <div class="sdr-gain-row">
                 <label for="sdr-gain-select" data-i18n>GAIN</label>
@@ -226,19 +226,19 @@
                 <button id="sdr-tune-btn" type="button" data-i18n>TUNE</button>
               </div>
               <datalist id="sdr-air-frequencies">
-                <option value="121.500" label="Guard / emergency"></option>
-                <option value="122.750" label="Air-to-air"></option>
-                <option value="123.025" label="Helicopter air-to-air"></option>
+                <option value="121.500" data-i18n>Guard / emergency</option>
+                <option value="122.750" data-i18n>Air-to-air</option>
+                <option value="123.025" data-i18n>Helicopter air-to-air</option>
               </datalist>
-              <p id="sdr-air-help" class="sdr-air-help" hidden>Enter the actual carrier frequency in MHz. 8.33 kHz channel labels are not converted (channel 118.005 uses a 118.000 MHz carrier). 121.500 guard/emergency · 122.750 air-to-air · 123.025 helicopter air-to-air. No receiver? <a href="https://www.liveatc.net/" target="_blank" rel="noopener noreferrer">Listen online at LiveATC</a> (opens liveatc.net; not available under EMCON).</p>
+              <p id="sdr-air-help" class="sdr-air-help" hidden><span data-i18n>Enter the actual carrier frequency in MHz. 8.33 kHz channel labels are not converted (channel 118.005 uses a 118.000 MHz carrier). 121.500 guard/emergency · 122.750 air-to-air · 123.025 helicopter air-to-air. No receiver?</span> <a href="https://www.liveatc.net/" target="_blank" rel="noopener noreferrer" data-i18n>Listen online at LiveATC</a> <span data-i18n>(opens liveatc.net; not available under EMCON).</span></p>
               <div id="sdr-seek-row" class="sdr-seek-row" role="group" aria-label="Seek broadcast FM stations" data-i18n-aria-label>
-                <button id="sdr-seek-back-btn" type="button" title="Seek down to the previous FM station" disabled data-i18n>◀ SEEK</button>
-                <button id="sdr-seek-forward-btn" type="button" title="Seek up to the next FM station" disabled data-i18n>SEEK ▶</button>
+                <button id="sdr-seek-back-btn" type="button" title="Seek down to the previous FM station" data-i18n-title disabled data-i18n>◀ SEEK</button>
+                <button id="sdr-seek-forward-btn" type="button" title="Seek up to the next FM station" data-i18n-title disabled data-i18n>SEEK ▶</button>
               </div>
               <label id="sdr-squelch-row" class="radio-volume-row sdr-squelch-row" for="sdr-squelch" hidden>
-                <span>SQUELCH</span>
-                <input id="sdr-squelch" class="gev-quantitative-slider" type="range" min="0" max="30" step="1" value="6" aria-label="Airband squelch threshold in dB, 0 is off" />
-                <output id="sdr-squelch-value" class="gev-slider-value" for="sdr-squelch">6 dB</output>
+                <span data-i18n>SQUELCH</span>
+                <input id="sdr-squelch" class="gev-quantitative-slider" type="range" min="0" max="30" step="1" value="6" aria-label="Airband squelch threshold in dB, 0 is off" data-i18n-aria-label />
+                <output id="sdr-squelch-value" class="gev-slider-value" for="sdr-squelch" translate="no">6 dB</output>
               </label>
               <label class="radio-volume-row" for="sdr-volume">
                 <span data-i18n>SDR VOL</span>

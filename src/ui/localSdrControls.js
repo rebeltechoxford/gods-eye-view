@@ -230,7 +230,7 @@ export class LocalSdrControls {
         message:
           listening === 'FM'
             ? t('Local FM stopped: internet radio started')
-            : `Local ${listening} stopped: internet radio started`,
+            : t('Local airband stopped: internet radio started'),
       });
     }
     this._radioAudioActive = radioAudioActive;

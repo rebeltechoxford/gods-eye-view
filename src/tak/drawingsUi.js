@@ -1,3 +1,9 @@
+import { t } from '../i18n/index.js';
+const htmlText = (value) =>
+  String(value).replace(
+    /[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+  );
 import './drawings.css';
 import { createDrawingsWorkflow } from './drawingsWorkflow.js';
 import { parseCoordinate } from './navigation.js';
@@ -8,6 +14,21 @@ import {
   GEOMETRY_LIMITS,
 } from './geometry.js';
 
+const routeLabel = (value) =>
+  ({
+    Driving: t('Driving'),
+    Walking: t('Walking'),
+    Flying: t('Flying'),
+    Swimming: t('Swimming'),
+    Watercraft: t('Watercraft'),
+    Infil: t('Infil'),
+    Exfil: t('Exfil'),
+    Primary: t('Primary'),
+    Secondary: t('Secondary'),
+  })[value] || value;
+const kindName = (kind) =>
+  ({ polyline: t('Line'), polygon: t('Area'), route: t('Route') })[kind] ||
+  kind;
 const distance = (metres) =>
   metres < 1000 ? `${metres.toFixed(1)} m` : `${(metres / 1000).toFixed(3)} km`;
 const rgb = (argb = -1) =>
@@ -28,37 +49,37 @@ export function createDrawingsPanel({
   section.className = 'tak-web-section tak-drawings';
   section.dataset.takSection = 'drawings';
   section.innerHTML = `
-    <summary>DRAWINGS / ROUTES</summary>
-    <p class="tak-web-hint">Create lines, areas and ordered routes on the globe. Drafts and saved drawings stay in this page until shared or exported in a mission package.</p>
-    <label class="tak-web-label" for="tak-drawing-saved">Session drawings</label>
-    <select id="tak-drawing-saved" data-drawing-saved><option value="">Select a drawing</option></select>
-    <div class="tak-web-row"><button type="button" data-drawing-edit>Edit mine</button><button type="button" data-drawing-copy>Copy selected</button><button type="button" data-drawing-focus-saved>Focus selected</button></div>
-    <div class="tak-web-row"><select data-drawing-kind aria-label="New drawing kind"><option value="polyline">Line</option><option value="polygon">Area</option><option value="route">Route</option></select><button type="button" data-drawing-new>New drawing</button></div>
+    <summary>${htmlText(t('DRAWINGS / ROUTES'))}</summary>
+    <p class="tak-web-hint">${htmlText(t('Create lines, areas and ordered routes on the globe. Drafts and saved drawings stay in this page until shared or exported in a mission package.'))}</p>
+    <label class="tak-web-label" for="tak-drawing-saved">${htmlText(t('Session drawings'))}</label>
+    <select id="tak-drawing-saved" data-drawing-saved><option value="">${htmlText(t('Select a drawing'))}</option></select>
+    <div class="tak-web-row"><button type="button" data-drawing-edit>${htmlText(t('Edit mine'))}</button><button type="button" data-drawing-copy>${htmlText(t('Copy selected'))}</button><button type="button" data-drawing-focus-saved>${htmlText(t('Focus selected'))}</button></div>
+    <div class="tak-web-row"><select data-drawing-kind aria-label="${htmlText(t('New drawing kind'))}"><option value="polyline">${htmlText(t('Line'))}</option><option value="polygon">${htmlText(t('Area'))}</option><option value="route">${htmlText(t('Route'))}</option></select><button type="button" data-drawing-new>${htmlText(t('New drawing'))}</button></div>
     <fieldset data-drawing-editor disabled>
-      <legend data-drawing-heading>Start a drawing</legend>
-      <label class="tak-web-label" for="tak-drawing-name">Drawing name</label><input id="tak-drawing-name" data-drawing-name maxlength="64" autocomplete="off">
-      <label class="tak-web-label" for="tak-drawing-notes">Notes</label><textarea id="tak-drawing-notes" data-drawing-notes maxlength="256" rows="2"></textarea>
-      <div class="tak-web-row"><label>Line color<input type="color" data-drawing-color value="#ffffff"></label><label>Width<input type="number" min="0.5" max="32" step="0.5" data-drawing-width value="3"></label><label>Area fill<input type="color" data-drawing-fill value="#ffffff"></label></div>
-      <div data-drawing-route hidden class="tak-drawing-route-options"><label>Travel method<select data-drawing-method></select></label><label>Direction<select data-drawing-direction></select></label><label>Route type<select data-drawing-route-type></select></label></div>
+      <legend data-drawing-heading>${htmlText(t('Start a drawing'))}</legend>
+      <label class="tak-web-label" for="tak-drawing-name">${htmlText(t('Drawing name'))}</label><input id="tak-drawing-name" data-drawing-name maxlength="64" autocomplete="off">
+      <label class="tak-web-label" for="tak-drawing-notes">${htmlText(t('Notes'))}</label><textarea id="tak-drawing-notes" data-drawing-notes maxlength="256" rows="2"></textarea>
+      <div class="tak-web-row"><label>${htmlText(t('Line color'))}<input type="color" data-drawing-color value="#ffffff"></label><label>${htmlText(t('Width'))}<input type="number" min="0.5" max="32" step="0.5" data-drawing-width value="3"></label><label>${htmlText(t('Area fill'))}<input type="color" data-drawing-fill value="#ffffff"></label></div>
+      <div data-drawing-route hidden class="tak-drawing-route-options"><label>${htmlText(t('Travel method'))}<select data-drawing-method></select></label><label>${htmlText(t('Direction'))}<select data-drawing-direction></select></label><label>${htmlText(t('Route type'))}<select data-drawing-route-type></select></label></div>
       <form data-drawing-vertex-form autocomplete="off">
-        <label class="tak-web-label" for="tak-drawing-format">Vertex format</label><select id="tak-drawing-format" data-drawing-format><option>DD</option><option>DMS</option><option>MGRS</option><option>UTM</option></select>
-        <label class="tak-web-label" for="tak-drawing-coordinate">Latitude, longitude / grid reference</label><input id="tak-drawing-coordinate" data-drawing-coordinate maxlength="160" placeholder="38.88927, -77.05020" required spellcheck="false" autocapitalize="off">
-        <label class="tak-web-label" for="tak-drawing-hae">HAE metres (optional, all vertices)</label><input id="tak-drawing-hae" data-drawing-hae type="number" min="-12000" max="1000000" step="any" placeholder="Blank: follow ground">
-        <div data-drawing-waypoint hidden><label class="tak-web-label" for="tak-drawing-waypoint-name">Waypoint name</label><input id="tak-drawing-waypoint-name" data-drawing-waypoint-name maxlength="64"><select data-drawing-waypoint-type aria-label="Route point kind"><option value="b-m-p-w">Waypoint / checkpoint</option><option value="b-m-p-c">Control point</option></select></div>
-        <div class="tak-web-row"><button type="submit" data-drawing-add>Add vertex</button><button type="button" data-drawing-center>Add map center</button></div>
-        <button type="button" data-drawing-cancel-vertex hidden>Cancel vertex edit</button>
+        <label class="tak-web-label" for="tak-drawing-format">${htmlText(t('Vertex format'))}</label><select id="tak-drawing-format" data-drawing-format><option>${'DD'}</option><option>${'DMS'}</option><option>${'MGRS'}</option><option>${'UTM'}</option></select>
+        <label class="tak-web-label" for="tak-drawing-coordinate">${htmlText(t('Latitude, longitude / grid reference'))}</label><input id="tak-drawing-coordinate" data-drawing-coordinate maxlength="160" placeholder="${'38.88927, -77.05020'}" required spellcheck="false" autocapitalize="off">
+        <label class="tak-web-label" for="tak-drawing-hae">${htmlText(t('HAE metres (optional, all vertices)'))}</label><input id="tak-drawing-hae" data-drawing-hae type="number" min="-12000" max="1000000" step="any" placeholder="${htmlText(t('Blank: follow ground'))}">
+        <div data-drawing-waypoint hidden><label class="tak-web-label" for="tak-drawing-waypoint-name">${htmlText(t('Waypoint name'))}</label><input id="tak-drawing-waypoint-name" data-drawing-waypoint-name maxlength="64"><select data-drawing-waypoint-type aria-label="${htmlText(t('Route point kind'))}"><option value="b-m-p-w">${htmlText(t('Waypoint / checkpoint'))}</option><option value="b-m-p-c">${htmlText(t('Control point'))}</option></select></div>
+        <div class="tak-web-row"><button type="submit" data-drawing-add>${htmlText(t('Add vertex'))}</button><button type="button" data-drawing-center>${htmlText(t('Add map center'))}</button></div>
+        <button type="button" data-drawing-cancel-vertex hidden>${htmlText(t('Cancel vertex edit'))}</button>
       </form>
       <ol data-drawing-vertices class="tak-drawing-vertices"></ol>
       <p data-drawing-measure class="tak-web-hint"></p>
       <p data-drawing-validation class="tak-web-hint"></p>
-      <div class="tak-web-row"><button type="button" data-drawing-reverse>Reverse order</button><button type="button" data-drawing-focus>Focus draft</button></div>
-      <label class="tak-web-check"><input type="checkbox" data-drawing-broadcast> Share this save with authorized TAK peers</label>
-      <button type="button" data-drawing-save>Save drawing locally</button>
-      <button type="button" data-drawing-copy-draft>Keep draft as a new copy</button>
+      <div class="tak-web-row"><button type="button" data-drawing-reverse>${htmlText(t('Reverse order'))}</button><button type="button" data-drawing-focus>${htmlText(t('Focus draft'))}</button></div>
+      <label class="tak-web-check"><input type="checkbox" data-drawing-broadcast> ${htmlText(t('Share this save with authorized TAK peers'))}</label>
+      <button type="button" data-drawing-save>${htmlText(t('Save drawing locally'))}</button>
+      <button type="button" data-drawing-copy-draft>${htmlText(t('Keep draft as a new copy'))}</button>
     </fieldset>
-    <button type="button" data-drawing-clear>Clear editor</button>
-    <p class="tak-web-hint">Range is WGS84 surface distance; bearings are TRUE north. Route vertices describe the path you enter; no road routing, turn alerts or background guidance. Shared transport status is not a peer receipt.</p>
-    <p data-drawing-status class="tak-web-status" role="status" aria-live="polite">Choose a drawing kind to begin.</p>`;
+    <button type="button" data-drawing-clear>${htmlText(t('Clear editor'))}</button>
+    <p class="tak-web-hint">${htmlText(t('Range is WGS84 surface distance; bearings are TRUE north. Route vertices describe the path you enter; no road routing, turn alerts or background guidance. Shared transport status is not a peer receipt.'))}</p>
+    <p data-drawing-status class="tak-web-status" role="status" aria-live="polite">${htmlText(t('Choose a drawing kind to begin.'))}</p>`;
   container.append(section);
   const $ = (selector) => section.querySelector(selector);
   const events = new AbortController();
@@ -72,14 +93,15 @@ export function createDrawingsPanel({
     ['[data-drawing-direction]', ROUTE_DIRECTIONS],
     ['[data-drawing-route-type]', ROUTE_TYPES],
   ])
-    for (const value of values) $(selector).add(new Option(value, value));
+    for (const value of values)
+      $(selector).add(new Option(routeLabel(value), value));
   function report(text, error = false) {
     $('[data-drawing-status]').textContent = text;
     $('[data-drawing-status]').classList.toggle('tak-web-error', error);
   }
   function selected() {
     const uid = $('[data-drawing-saved]').value;
-    if (!uid) throw new Error('Select a session drawing.');
+    if (!uid) throw new Error(t('Select a session drawing.'));
     return uid;
   }
   function settings() {
@@ -121,7 +143,7 @@ export function createDrawingsPanel({
     $('[data-drawing-coordinate]').value = '';
     $('[data-drawing-hae]').value = '';
     $('[data-drawing-waypoint-name]').value = '';
-    $('[data-drawing-add]').textContent = 'Add vertex';
+    $('[data-drawing-add]').textContent = t('Add vertex');
     $('[data-drawing-center]').disabled = false;
     $('[data-drawing-cancel-vertex]').hidden = true;
   }
@@ -160,8 +182,10 @@ export function createDrawingsPanel({
       draft = state?.draft;
     $('[data-drawing-editor]').disabled = !draft;
     $('[data-drawing-heading]').textContent = draft
-      ? `${draft.uid ? 'Edit' : 'New'} ${draft.kind}`
-      : 'Start a drawing';
+      ? draft.uid
+        ? t('Edit {kind}', { kind: kindName(draft.kind) })
+        : t('New {kind}', { kind: kindName(draft.kind) })
+      : t('Start a drawing');
     $('[data-drawing-route]').hidden = draft?.kind !== 'route';
     $('[data-drawing-waypoint]').hidden = draft?.kind !== 'route';
     const list = $('[data-drawing-vertices]');
@@ -170,17 +194,21 @@ export function createDrawingsPanel({
       const item = document.createElement('li'),
         text = document.createElement('span'),
         actions = document.createElement('div');
-      text.textContent = `${point.callsign || `Vertex ${index + 1}`} · ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}${point.hae == null ? ' · ground' : ` · HAE ${point.hae} m`}`;
+      text.textContent = `${point.callsign || t('Vertex {number}', { number: index + 1 })} · ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}${point.hae == null ? t(' · ground') : t(' · HAE {height} m', { height: point.hae })}`;
       actions.className = 'tak-drawing-vertex-actions';
       actions.append(
-        button('Edit', 'edit', index),
+        button(t('Edit'), 'edit', index),
         button('↑', 'up', index, index === 0),
         button('↓', 'down', index, index === draft.vertices.length - 1),
-        button('Focus', 'focus', index),
-        button('Remove', 'remove', index),
+        button(t('Focus'), 'focus', index),
+        button(t('Remove'), 'remove', index),
       );
-      actions.children[1].ariaLabel = `Move vertex ${index + 1} up`;
-      actions.children[2].ariaLabel = `Move vertex ${index + 1} down`;
+      actions.children[1].ariaLabel = t('Move vertex {number} up', {
+        number: index + 1,
+      });
+      actions.children[2].ariaLabel = t('Move vertex {number} down', {
+        number: index + 1,
+      });
       item.append(text, actions);
       list.append(item);
     }
@@ -190,13 +218,34 @@ export function createDrawingsPanel({
         const geometry = workflow.preview();
         overlay.setDraftGeometry(geometry);
         const legs = workflow.legs();
-        $('[data-drawing-measure]').textContent =
-          `${legs.length} legs · ${distance(legs.reduce((sum, leg) => sum + leg.distanceM, 0))} total. ${legs.map((leg, index) => `${index + 1}: ${distance(leg.distanceM)}, ${leg.trueBearingDeg == null ? 'bearing undefined' : `${leg.trueBearingDeg.toFixed(1)}° TRUE`}`).join(' · ')}`;
+        $('[data-drawing-measure]').textContent = t(
+          '{count} legs · {distance} total. {legs}',
+          {
+            count: legs.length,
+            distance: distance(
+              legs.reduce((sum, leg) => sum + leg.distanceM, 0),
+            ),
+            legs: legs
+              .map(
+                (leg, index) =>
+                  `${index + 1}: ${distance(leg.distanceM)}, ${leg.trueBearingDeg == null ? t('bearing undefined') : t('{degrees}° TRUE', { degrees: leg.trueBearingDeg.toFixed(1) })}`,
+              )
+              .join(' · '),
+          },
+        );
         $('[data-drawing-validation]').textContent = state.conflict
-          ? 'Source changed or disappeared. Reload or make a new copy before saving.'
-          : `${geometry.vertices.length}/${GEOMETRY_LIMITS.vertices} vertices · ${geometry.vertices.every((point) => point.hae == null) ? 'follows ground' : 'ellipsoidal HAE heights'} · ready to save`;
+          ? t(
+              'Source changed or disappeared. Reload or make a new copy before saving.',
+            )
+          : t('{count}/{limit} vertices · {heightMode} · ready to save', {
+              count: geometry.vertices.length,
+              limit: GEOMETRY_LIMITS.vertices,
+              heightMode: geometry.vertices.every((point) => point.hae == null)
+                ? t('follows ground')
+                : t('ellipsoidal HAE heights'),
+            });
         valid = !state.conflict;
-      } else throw new Error('Start a drawing to add vertices.');
+      } else throw new Error(t('Start a drawing to add vertices.'));
     } catch (error) {
       overlay.setDraftGeometry(null);
       $('[data-drawing-measure]').textContent = '';
@@ -205,8 +254,8 @@ export function createDrawingsPanel({
     $('[data-drawing-save]').disabled = !valid;
     $('[data-drawing-focus]').disabled = !valid;
     $('[data-drawing-save]').textContent = $('[data-drawing-broadcast]').checked
-      ? 'Save and submit to TAK'
-      : 'Save drawing locally';
+      ? t('Save and submit to TAK')
+      : t('Save drawing locally');
     lastConflict = !!state?.conflict;
   }
   function renderSaved() {
@@ -225,11 +274,11 @@ export function createDrawingsPanel({
       savedSignature = signature;
       const select = $('[data-drawing-saved]'),
         value = select.value;
-      select.replaceChildren(new Option('Select a drawing', ''));
+      select.replaceChildren(new Option(t('Select a drawing'), ''));
       for (const contact of contacts)
         select.add(
           new Option(
-            `${contact.callsign} · ${contact.geometryResult.geometry.kind}${client.isOwnGeometry(contact.uid) ? ' · mine' : ''}`,
+            `${contact.callsign} · ${kindName(contact.geometryResult.geometry.kind)}${client.isOwnGeometry(contact.uid) ? t(' · mine') : ''}`,
             contact.uid,
           ),
         );
@@ -245,7 +294,7 @@ export function createDrawingsPanel({
     try {
       action();
     } catch (error) {
-      report(error.message || 'Drawing action failed.', true);
+      report(error.message || t('Drawing action failed.'), true);
     }
     if (draft) renderDraft();
     renderSaved();
@@ -257,7 +306,7 @@ export function createDrawingsPanel({
     run(() => {
       workflow.start($('[data-drawing-kind]').value);
       populate();
-      report('New local draft. Add vertices by coordinate or map center.');
+      report(t('New local draft. Add vertices by coordinate or map center.'));
     }),
   );
   for (const [selector, copy] of [
@@ -270,8 +319,8 @@ export function createDrawingsPanel({
         populate();
         report(
           copy
-            ? 'Copied into a new local draft.'
-            : 'Loaded this session’s drawing for editing.',
+            ? t('Copied into a new local draft.')
+            : t('Loaded this session’s drawing for editing.'),
         );
       }),
     );
@@ -317,17 +366,17 @@ export function createDrawingsPanel({
       if (editingVertex === null) workflow.add(point);
       else workflow.replace(editingVertex, point);
       cancelVertex();
-      report('Draft vertex saved locally.');
+      report(t('Draft vertex saved locally.'));
     });
   });
   on('[data-drawing-center]', 'click', () =>
     run(() => {
       settings();
       const point = getMapCenter();
-      if (!point) throw new Error('Point the map at the ground first.');
+      if (!point) throw new Error(t('Point the map at the ground first.'));
       workflow.add(pointFields(point));
       cancelVertex();
-      report('Map center added to the draft.');
+      report(t('Map center added to the draft.'));
     }),
   );
   on('[data-drawing-cancel-vertex]', 'click', cancelVertex);
@@ -338,7 +387,7 @@ export function createDrawingsPanel({
       const index = Number(button.dataset.index),
         action = button.dataset.drawingAction;
       const point = workflow.state()?.draft.vertices[index];
-      if (!point) throw new Error('Vertex no longer exists.');
+      if (!point) throw new Error(t('Vertex no longer exists.'));
       if (action === 'edit') {
         editingVertex = index;
         $('[data-drawing-format]').value = 'DD';
@@ -346,7 +395,9 @@ export function createDrawingsPanel({
         $('[data-drawing-hae]').value = point.hae ?? '';
         $('[data-drawing-waypoint-name]').value = point.callsign || '';
         $('[data-drawing-waypoint-type]').value = point.type || 'b-m-p-w';
-        $('[data-drawing-add]').textContent = `Update vertex ${index + 1}`;
+        $('[data-drawing-add]').textContent = t('Update vertex {number}', {
+          number: index + 1,
+        });
         $('[data-drawing-center]').disabled = true;
         $('[data-drawing-cancel-vertex]').hidden = false;
         $('[data-drawing-coordinate]').focus();
@@ -362,7 +413,7 @@ export function createDrawingsPanel({
     run(() => {
       cancelVertex();
       workflow.reverse();
-      report('Vertex order reversed. Save to apply the change.');
+      report(t('Vertex order reversed. Save to apply the change.'));
     }),
   );
   on('[data-drawing-focus]', 'click', () =>
@@ -377,8 +428,10 @@ export function createDrawingsPanel({
       });
       report(
         result.sent
-          ? 'Saved and sent to the gateway. Check Network delivery status; this is not a peer receipt.'
-          : 'Saved locally. No successful network submission.',
+          ? t(
+              'Saved and sent to the gateway. Check Network delivery status; this is not a peer receipt.',
+            )
+          : t('Saved locally. No successful network submission.'),
       );
       populate();
       renderSaved();
@@ -389,7 +442,7 @@ export function createDrawingsPanel({
     run(() => {
       workflow.copyDraft();
       $('[data-drawing-broadcast]').checked = false;
-      report('Draft is now a new local copy; the source is unchanged.');
+      report(t('Draft is now a new local copy; the source is unchanged.'));
     }),
   );
   function clearPrivateInputs() {
@@ -397,7 +450,7 @@ export function createDrawingsPanel({
     populate();
     overlay.setDraftGeometry(null);
     renderDraft();
-    report('Editor cleared. Saved session drawings remain in the roster.');
+    report(t('Editor cleared. Saved session drawings remain in the roster.'));
   }
   on('[data-drawing-clear]', 'click', clearPrivateInputs);
   const unsubscribe = client.subscribe(renderSaved);

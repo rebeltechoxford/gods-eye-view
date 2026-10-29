@@ -1294,6 +1294,46 @@ try {
     `Passed ${results.length} synthetic TAK browser scenarios; no real TAK peer interoperability claimed.`,
   );
 } catch (error) {
+  // This runner admits only loopback synthetic fixtures. Capture bounded
+  // delivery metadata, never XML, chat, credentials or gateway configuration.
+  // A peer echo proves the data path but not receipt of the submission status.
+  const deliveryDiagnostics = [];
+  for (const page of (await browser.pages()).slice(0, 4)) {
+    const diagnostic = await page
+      .evaluate(() => {
+        const client = window.__godsEyeView?.takClient?.client;
+        if (!client) return null;
+        const marker = client.store
+          .list()
+          .find((contact) => contact.callsign.startsWith('QA GATEWAY MARKER'));
+        return {
+          linkState: client.link().state,
+          matchedMarkerUid: marker?.uid || null,
+          submissions: client
+            .submissions()
+            .slice(-10)
+            .map((item) => ({
+              id: item.id,
+              uid: item.uid,
+              kind: item.kind,
+              state: item.state,
+              createdAtMs: item.createdAtMs,
+              expiresAtMs: item.expiresAtMs,
+              routes: item.routes.slice(0, 2).map((route) => ({
+                id: route.id,
+                state: route.state,
+              })),
+            })),
+        };
+      })
+      .catch(() => null);
+    if (diagnostic) deliveryDiagnostics.push(diagnostic);
+  }
+  await fs.mkdir(artifactDir, { recursive: true });
+  await fs.writeFile(
+    path.join(artifactDir, 'tak-delivery.json'),
+    redact(JSON.stringify(deliveryDiagnostics, null, 2)),
+  );
   await saveFailureArtifacts({ dir: artifactDir, browser, monitors, error });
   await fs.writeFile(
     path.join(artifactDir, 'results.json'),

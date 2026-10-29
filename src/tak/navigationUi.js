@@ -1,3 +1,9 @@
+import { t } from '../i18n/index.js';
+const htmlText = (value) =>
+  String(value).replace(
+    /[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+  );
 import './navigation.css';
 import {
   COORDINATE_FORMATS,
@@ -34,30 +40,30 @@ export function createNavigationPanel({
   section.className = 'tak-web-section tak-navigation';
   section.dataset.takSection = 'navigation';
   section.innerHTML = `
-    <summary>COORDINATES / NAVIGATION</summary>
-    <p class="tak-web-hint">WGS84 datum. Range is ellipsoidal surface distance; bearing is initial TRUE north, not magnetic/grid north. No elevation or route guidance.</p>
+    <summary>${htmlText(t('COORDINATES / NAVIGATION'))}</summary>
+    <p class="tak-web-hint">${htmlText(t('WGS84 datum. Range is ellipsoidal surface distance; bearing is initial TRUE north, not magnetic/grid north. No elevation or route guidance.'))}</p>
     <form data-tak-nav-form autocomplete="off">
-      <label class="tak-web-label" for="tak-nav-format">Input format</label>
-      <select id="tak-nav-format" data-tak-nav-format aria-label="Coordinate format"><option>DD</option><option>DMS</option><option>MGRS</option><option>UTM</option><option>UPS</option></select>
-      <label class="tak-web-label" for="tak-nav-input">Waypoint coordinate</label>
+      <label class="tak-web-label" for="tak-nav-format">${htmlText(t('Input format'))}</label>
+      <select id="tak-nav-format" data-tak-nav-format aria-label="${htmlText(t('Coordinate format'))}"><option>${'DD'}</option><option>${'DMS'}</option><option>${'MGRS'}</option><option>${'UTM'}</option><option>${'UPS'}</option></select>
+      <label class="tak-web-label" for="tak-nav-input">${htmlText(t('Waypoint coordinate'))}</label>
       <textarea id="tak-nav-input" data-tak-nav-input maxlength="160" rows="2" required spellcheck="false" autocapitalize="off" aria-describedby="tak-nav-example"></textarea>
       <p id="tak-nav-example" class="tak-web-hint" data-tak-nav-example></p>
-      <button type="submit" data-tak-nav-validate>Validate coordinate</button>
+      <button type="submit" data-tak-nav-validate>${htmlText(t('Validate coordinate'))}</button>
     </form>
-    <div class="tak-web-row"><button type="button" data-tak-nav-center>Use map center</button><button type="button" data-tak-nav-position>Use my position</button></div>
+    <div class="tak-web-row"><button type="button" data-tak-nav-center>${htmlText(t('Use map center'))}</button><button type="button" data-tak-nav-position>${htmlText(t('Use my position'))}</button></div>
     <dl class="tak-navigation-readout" data-tak-nav-readout hidden></dl>
     <p class="tak-web-hint" data-tak-nav-resolution hidden></p>
-    <label class="tak-web-label" for="tak-nav-origin">Measure from</label>
-    <select id="tak-nav-origin" data-tak-nav-origin><option value="map">Map center (not GPS)</option><option value="position">My position</option></select>
+    <label class="tak-web-label" for="tak-nav-origin">${htmlText(t('Measure from'))}</label>
+    <select id="tak-nav-origin" data-tak-nav-origin><option value="map">${htmlText(t('Map center (not GPS)'))}</option><option value="position">${htmlText(t('My position'))}</option></select>
     <p class="tak-web-hint" data-tak-nav-reference></p>
-    <output class="tak-navigation-range" data-tak-nav-range>No validated waypoint.</output>
-    <button type="button" data-tak-nav-focus disabled>Focus waypoint</button>
-    <label class="tak-web-label" for="tak-nav-label">Local marker label</label>
-    <input id="tak-nav-label" data-tak-nav-label maxlength="120" autocomplete="off" placeholder="Waypoint label"/>
-    <button type="button" data-tak-nav-marker disabled>Add local waypoint marker</button>
-    <button type="button" data-tak-nav-clear>Clear waypoint</button>
-    <p class="tak-web-hint">Coordinates stay in this page. Local markers are unshared; this does not set or broadcast your position. MGRS/UTM covers 80°S…84°N; UPS covers the polar regions. UPS coordinates at either pole resolve longitude to 0° by convention.</p>
-    <p class="tak-web-status" data-tak-nav-status role="status" aria-live="polite">Enter a waypoint or use the map center.</p>`;
+    <output class="tak-navigation-range" data-tak-nav-range>${htmlText(t('No validated waypoint.'))}</output>
+    <button type="button" data-tak-nav-focus disabled>${htmlText(t('Focus waypoint'))}</button>
+    <label class="tak-web-label" for="tak-nav-label">${htmlText(t('Local marker label'))}</label>
+    <input id="tak-nav-label" data-tak-nav-label maxlength="120" autocomplete="off" placeholder="${htmlText(t('Waypoint label'))}"/>
+    <button type="button" data-tak-nav-marker disabled>${htmlText(t('Add local waypoint marker'))}</button>
+    <button type="button" data-tak-nav-clear>${htmlText(t('Clear waypoint'))}</button>
+    <p class="tak-web-hint">${htmlText(t('Coordinates stay in this page. Local markers are unshared; this does not set or broadcast your position. MGRS/UTM covers 80°S…84°N; UPS covers the polar regions. UPS coordinates at either pole resolve longitude to 0° by convention.'))}</p>
+    <p class="tak-web-status" data-tak-nav-status role="status" aria-live="polite">${htmlText(t('Enter a waypoint or use the map center.'))}</p>`;
   container.querySelector('[data-tak-section="marker"]')?.after(section);
   if (!section.isConnected) container.append(section);
   const $ = (selector) => section.querySelector(selector);
@@ -96,8 +102,11 @@ export function createNavigationPanel({
     const resolution = $('[data-tak-nav-resolution]');
     resolution.hidden = !target;
     resolution.textContent = target?.cellSizeM
-      ? `MGRS grid cell centre · ${target.cellSizeM} m square. More displayed digits do not improve input accuracy.`
-      : 'Displayed precision is not measured location accuracy.';
+      ? t(
+          'MGRS grid cell centre · {size} m square. More displayed digits do not improve input accuracy.',
+          { size: target.cellSizeM },
+        )
+      : t('Displayed precision is not measured location accuracy.');
     readout.replaceChildren();
     if (target)
       for (const name of COORDINATE_FORMATS) {
@@ -109,20 +118,22 @@ export function createNavigationPanel({
         } catch {
           value.textContent =
             name === 'UPS'
-              ? 'Available at 84°N…90°N or 80°S…90°S.'
-              : 'Unavailable outside 80°S…84°N; use UPS.';
+              ? t('Available at 84°N…90°N or 80°S…90°S.')
+              : t('Unavailable outside 80°S…84°N; use UPS.');
         }
         readout.append(term, value);
       }
     try {
       const from = reference();
       $('[data-tak-nav-reference]').textContent = from.label;
-      let text = 'No validated waypoint.';
+      let text = t('No validated waypoint.');
       if (target && from.point) {
         const measurement = rangeBearing(from.point, target);
-        text = `${measurement.distanceM < 1000 ? `${measurement.distanceM.toFixed(1)} m` : `${(measurement.distanceM / 1000).toFixed(3)} km`} · ${measurement.trueBearingDeg === null ? 'true bearing undefined at coincident points/poles' : `${measurement.trueBearingDeg.toFixed(1)}° TRUE`}`;
+        text = `${measurement.distanceM < 1000 ? `${measurement.distanceM.toFixed(1)} m` : `${(measurement.distanceM / 1000).toFixed(3)} km`} · ${measurement.trueBearingDeg === null ? t('true bearing undefined at coincident points/poles') : t('{degrees}° TRUE', { degrees: measurement.trueBearingDeg.toFixed(1) })}`;
       } else if (target)
-        text = 'Range/bearing unavailable until the selected origin is usable.';
+        text = t(
+          'Range/bearing unavailable until the selected origin is usable.',
+        );
       $('[data-tak-nav-range]').textContent = text;
     } catch (error) {
       $('[data-tak-nav-range]').textContent = error.message;
@@ -132,14 +143,14 @@ export function createNavigationPanel({
     try {
       action();
     } catch (error) {
-      report(error?.message || 'Navigation action failed.', true);
+      report(error?.message || t('Navigation action failed.'), true);
     }
     render();
   }
   function example() {
     input.placeholder = EXAMPLES[format.value];
     $('[data-tak-nav-example]').textContent =
-      `${EXAMPLES[format.value]}${format.value === 'UTM' ? ' · N/S means hemisphere, not MGRS latitude band.' : format.value === 'DMS' ? ' · Latitude N/S first, longitude E/W second.' : ''}`;
+      `${EXAMPLES[format.value]}${format.value === 'UTM' ? t(' · N/S means hemisphere, not MGRS latitude band.') : format.value === 'DMS' ? t(' · Latitude N/S first, longitude E/W second.') : ''}`;
   }
   function on(selector, type, action) {
     $(selector).addEventListener(type, action, { signal: events.signal });
@@ -147,7 +158,7 @@ export function createNavigationPanel({
   on('[data-tak-nav-input]', 'input', () =>
     run(() => {
       workflow.invalidate();
-      report('Coordinate changed. Validate it before navigation.');
+      report(t('Coordinate changed. Validate it before navigation.'));
     }),
   );
   on('[data-tak-nav-label]', 'input', () => markPrivate());
@@ -165,7 +176,7 @@ export function createNavigationPanel({
         }
       } else if (input.value) {
         workflow.invalidate();
-        report('Input format changed. Validate the coordinate.');
+        report(t('Input format changed. Validate the coordinate.'));
       }
     }),
   );
@@ -173,7 +184,9 @@ export function createNavigationPanel({
     event.preventDefault();
     run(() => {
       workflow.enter(input.value, format.value);
-      report('Waypoint validated. No position broadcast or network sharing.');
+      report(
+        t('Waypoint validated. No position broadcast or network sharing.'),
+      );
     });
   });
   function usePoint(kind) {
@@ -181,7 +194,7 @@ export function createNavigationPanel({
       const from = reference(kind);
       if (!from.point) throw new Error(from.label);
       input.value = workflow.fromPoint(from.point, format.value);
-      report(`Waypoint copied from ${from.label}.`);
+      report(t('Waypoint copied from {origin}.', { origin: from.label }));
     });
   }
   on('[data-tak-nav-center]', 'click', () => usePoint('map'));
@@ -193,21 +206,21 @@ export function createNavigationPanel({
   on('[data-tak-nav-focus]', 'click', () =>
     run(() => {
       if (workflow.focus() === false)
-        throw new Error('Camera navigation could not start.');
-      report('Focused on the validated waypoint.');
+        throw new Error(t('Camera navigation could not start.'));
+      report(t('Focused on the validated waypoint.'));
     }),
   );
   on('[data-tak-nav-marker]', 'click', () =>
     run(() => {
       workflow.addMarker($('[data-tak-nav-label]').value);
-      report('Local waypoint marker added. It has not been shared.');
+      report(t('Local waypoint marker added. It has not been shared.'));
     }),
   );
   function clearPrivateInputs() {
     workflow.clear();
     input.value = '';
     $('[data-tak-nav-label]').value = '';
-    report('Waypoint cleared. Privacy protection remains active.');
+    report(t('Waypoint cleared. Privacy protection remains active.'));
     render();
   }
   on('[data-tak-nav-clear]', 'click', clearPrivateInputs);

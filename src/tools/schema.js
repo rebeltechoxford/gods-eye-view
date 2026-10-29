@@ -113,8 +113,15 @@ export function validateValue(schema, value, path = 'arguments') {
           schema.minLength ?? 0,
           schema.maxLength != null ? schema.maxLength + 1 : 0,
         );
-        let length = 0;
-        for (const _ of value) if (++length >= limit) break;
+        // UTF-16 length is available without flattening a large rope string.
+        // Each code point occupies at most two code units. When even that
+        // lower bound reaches the decision limit, iteration cannot change
+        // either result and may otherwise allocate the entire string in V8.
+        let length = Math.ceil(value.length / 2);
+        if (length < limit) {
+          length = 0;
+          for (const _ of value) if (++length >= limit) break;
+        }
         if (schema.minLength != null && length < schema.minLength)
           fail(`must be at least ${schema.minLength} characters`);
         if (schema.maxLength != null && length > schema.maxLength)

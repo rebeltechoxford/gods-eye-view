@@ -1,3 +1,4 @@
+import { msg } from '../i18n/marker.js';
 /**
  * Airband (aircraft voice, AM) tuning for the local RTL-SDR: the band, the
  * offset tuning that keeps the RTL-SDR's DC spike off the listened channel,
@@ -39,9 +40,12 @@ export const AIRBAND_SQUELCH_STORAGE_KEY = 'gev:sdr:air-squelch:v1';
 
 /** Well-known airband channels offered as suggestions on the card. */
 export const AIRBAND_COMMON_FREQUENCIES = Object.freeze([
-  Object.freeze({ frequencyHz: 121_500_000, label: 'Guard / emergency' }),
-  Object.freeze({ frequencyHz: 122_750_000, label: 'Air-to-air' }),
-  Object.freeze({ frequencyHz: 123_025_000, label: 'Helicopter air-to-air' }),
+  Object.freeze({ frequencyHz: 121_500_000, label: msg('Guard / emergency') }),
+  Object.freeze({ frequencyHz: 122_750_000, label: msg('Air-to-air') }),
+  Object.freeze({
+    frequencyHz: 123_025_000,
+    label: msg('Helicopter air-to-air'),
+  }),
 ]);
 
 /**

@@ -10,8 +10,11 @@ final class BundledAppServer {
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
     private let root: URL
+    var didFail: ((Error) -> Void)?
 
     init(root: URL) { self.root = root.resolvingSymlinksInPath().standardizedFileURL }
+
+    deinit { listener?.cancel() }
 
     func start(completion: @escaping (Error?) -> Void) throws {
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("index.html").path) else {
@@ -22,12 +25,16 @@ final class BundledAppServer {
         let listener = try NWListener(using: parameters)
         self.listener = listener
         var answered = false
-        listener.stateUpdateHandler = { state in
+        listener.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
                 if !answered { answered = true; DispatchQueue.main.async { completion(nil) } }
             case .failed(let error):
                 if !answered { answered = true; DispatchQueue.main.async { completion(error) } }
+                else { DispatchQueue.main.async { self?.didFail?(error) } }
+                self?.listener?.cancel()
+                self?.connections.values.forEach { $0.cancel() }
+                self?.connections.removeAll()
             default: break
             }
         }
@@ -36,7 +43,7 @@ final class BundledAppServer {
             let id = UUID()
             self.connections[id] = connection
             connection.start(queue: self.queue)
-            self.queue.asyncAfter(deadline: .now() + 15) { self.close(id) }
+            self.queue.asyncAfter(deadline: .now() + 15) { [weak self] in self?.close(id) }
             self.receive(id, buffer: Data())
         }
         listener.start(queue: queue)
@@ -62,9 +69,9 @@ final class BundledAppServer {
     private func respond(_ id: UUID, header: String) {
         let lines = header.components(separatedBy: "\r\n")
         let request = (lines.first ?? "").split(separator: " ")
-        let host = lines.dropFirst().first { $0.lowercased().hasPrefix("host:") }?
-            .dropFirst(5).trimmingCharacters(in: .whitespaces).lowercased()
-        guard request.count == 3, ["GET", "HEAD"].contains(String(request[0])),
+        let hosts = lines.dropFirst().filter { $0.lowercased().hasPrefix("host:") }
+        let host = hosts.first?.dropFirst(5).trimmingCharacters(in: .whitespaces).lowercased()
+        guard request.count == 3, request[2] == "HTTP/1.1", hosts.count == 1, ["GET", "HEAD"].contains(String(request[0])),
               host == "127.0.0.1:\(Self.port)", request[1].hasPrefix("/"),
               !request[1].hasPrefix("//"),
               let parts = URLComponents(string: String(request[1])) else {
@@ -76,13 +83,14 @@ final class BundledAppServer {
             return
         }
         if path.hasPrefix("/api/") {
-            send(id, code: 404, body: Data("{\"error\":\"This service requires a connected gateway\"}".utf8), type: "application/json")
+            send(id, code: 404, body: Data("{\"error\":\"This service requires a connected gateway\"}".utf8), type: "application/json", head: request[0] == "HEAD")
             return
         }
         let relative = path == "/" || path.hasPrefix("/share/") ? "index.html" : String(path.dropFirst())
         let file = root.appendingPathComponent(relative).resolvingSymlinksInPath().standardizedFileURL
         guard !path.contains("\0"), file.path.hasPrefix(root.path + "/"),
-              let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              let info = try? file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+              info.isRegularFile == true, let size = info.fileSize, size >= 0,
               size <= 128 * 1024 * 1024, let body = try? Data(contentsOf: file, options: .mappedIfSafe) else {
             send(id, code: 404, body: Data()); return
         }

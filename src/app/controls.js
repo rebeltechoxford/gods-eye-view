@@ -80,7 +80,7 @@ export function createApplicationControls({
   // (Location tray, "Start here"), else the built-in default.
   if (!styleManager.hasShareState) {
     if (savedMapBounds) {
-      loaderStatus.textContent = 'Opening saved map area...';
+      loaderStatus.textContent = t('Opening saved map area...');
       const { west, south, east, north } = savedMapBounds;
       viewer.camera.setView({
         destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
@@ -90,7 +90,9 @@ export function createApplicationControls({
       loaderStatus.textContent =
         view === DEFAULT_START_VIEW
           ? t('Flying to Austin, TX...')
-          : `Flying to ${view.label || formatStartViewPlace(view)}...`;
+          : t('Flying to {place}...', {
+              place: view.label || formatStartViewPlace(view),
+            });
       defer(flyToStartView(viewer, view));
     }
   } else {

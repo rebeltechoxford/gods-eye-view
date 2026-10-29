@@ -1,3 +1,12 @@
+import { t } from '../i18n/index.js';
+const htmlText = (value) =>
+  String(value).replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        char
+      ],
+  );
 // "OFFLINE ROADS" section of the TAK panel: list the road packs the private
 // host offers, download one to this device (resumable, SHA-256 verified) and
 // remove installed packs. Driving directions then use an installed pack on
@@ -37,13 +46,13 @@ export function createOfflineRoadsPanel({
   const root = document.createElement('details');
   root.className = 'tak-web-section';
   root.dataset.takSection = 'roads';
-  root.innerHTML = `<summary>OFFLINE ROADS / ROUTING</summary>
-    <p class="tak-web-hint">Download a road pack once, then driving directions work with no signal: both ends of the trip must be inside the pack. Times are estimates from road types and speed limits; closures, live traffic and turn restrictions are not known offline. Road data © OpenStreetMap contributors (ODbL).</p>
-    <h4>ON THIS DEVICE</h4>
+  root.innerHTML = `<summary>${htmlText(t('OFFLINE ROADS / ROUTING'))}</summary>
+    <p class="tak-web-hint">${htmlText(t('Download a road pack once, then driving directions work with no signal: both ends of the trip must be inside the pack. Times are estimates from road types and speed limits; closures, live traffic and turn restrictions are not known offline. Road data © OpenStreetMap contributors (ODbL).'))}</p>
+    <h4>${htmlText(t('ON THIS DEVICE'))}</h4>
     <ul class="tak-road-pack-list" data-roads-installed></ul>
-    <h4>AVAILABLE FROM THE PRIVATE SERVER</h4>
+    <h4>${htmlText(t('AVAILABLE FROM THE PRIVATE SERVER'))}</h4>
     <ul class="tak-road-pack-list" data-roads-available></ul>
-    <button type="button" data-roads-refresh>Refresh list</button>
+    <button type="button" data-roads-refresh>${htmlText(t('Refresh list'))}</button>
     <p class="tak-web-hint" data-roads-status role="status" aria-live="polite"></p>`;
   container.append(root);
   const $ = (name) => root.querySelector(`[data-roads-${name}]`);

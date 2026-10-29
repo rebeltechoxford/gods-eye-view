@@ -24,7 +24,9 @@ emconStartupReady
       return;
     }
     console.error("God's Eye View initialization failed:", error);
-    loaderStatus.textContent = `Error: ${describeError(error)}`;
+    loaderStatus.textContent = t('Error: {message}', {
+      message: describeError(error),
+    });
     loaderStatus.style.color = '#ff4444';
   });
 

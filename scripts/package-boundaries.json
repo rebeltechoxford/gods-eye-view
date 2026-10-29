@@ -3614,7 +3614,8 @@
       "src/voice/actionSchemas.js",
       "src/voice/layerManifest.js",
       "src/hudLayoutPolicy.js",
-      "src/maps/referenceCatalog.js"
+      "src/maps/referenceCatalog.js",
+      "src/i18n/marker.js"
     ],
     "external": []
   },
@@ -4258,7 +4259,8 @@
       "src/data/idSwitches.js",
       "src/data/layerState.js",
       "src/data/layerStateTokenReservations.json",
-      "src/maps/referenceCatalog.js"
+      "src/maps/referenceCatalog.js",
+      "src/i18n/marker.js"
     ],
     "external": []
   },
