@@ -1,8 +1,11 @@
 name: iOS unsigned IPA
 
-# Build on explicit request, not on every web edit. Standard hosted runners
-# are free for public repositories; never substitute a paid/larger runner.
+# Manual builds and changes to this build workflow only; ordinary web edits do not start a build.
+# Standard hosted runners are free for public repositories.
 on:
+  push:
+    branches: [feature/tak-completion-20261027]
+    paths: [.github/workflows/ios-ipa.yml]
   workflow_dispatch:
 
 permissions:
